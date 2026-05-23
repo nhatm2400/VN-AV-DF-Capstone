@@ -1,5 +1,4 @@
-data/raw/
-data/clips/
+data
 *.mp4
 *.m4a
 *.wav
