@@ -5,7 +5,7 @@ import yt_dlp
 def get_project_root():
     """Trả về đường dẫn gốc của dự án (VN-AV-DF-Capstone)"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(current_dir))
+    return os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
 
 def download_videos_for_tier(csv_file_path, output_dir):
     """Đọc URL từ file CSV và tải video về thư mục đích bằng yt-dlp."""
@@ -15,10 +15,20 @@ def download_videos_for_tier(csv_file_path, output_dir):
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(output_dir, '%(id)s.%(ext)s'),
+        # Dùng cookies từ trình duyệt 
+        'cookiesfrombrowser': ('chrome',),  # hoặc ('firefox',), ('edge',), ('chrome',)
+        # 'cookiefile': 'cookies.txt', #dùng file cookies riêng thay vì đọc trực tiếp từ trình duyệt
         'ignoreerrors': True,
         'quiet': False,
         'no_warnings': True,
-        'merge_output_format': 'mp4'
+        'merge_output_format': 'mp4',
+        # ----- Thêm delay và retry để tránh rate limit -----
+        'sleep_interval': 15,          # nghỉ 15 giây giữa các video
+        'max_sleep_interval': 30,      # nghỉ ngẫu nhiên 15-30 giây
+        'retries': 10,                 # retry tối đa 10 lần nếu lỗi
+        'fragment_retries': 10,        # retry cho từng fragment
+        'extract_flat': False,
+        'throttledratelimit': 1000000, # 1 MB/s tối thiểu để tránh bị chậm
     }
 
     try:
