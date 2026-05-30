@@ -6,10 +6,13 @@ import tempfile
 import numpy as np
 import librosa
 from ultralytics import YOLO
+import static_ffmpeg
+static_ffmpeg.add_paths()
 
 def get_project_root():
+    """Trả về đường dẫn gốc của dự án (VN-AV-DF-Capstone)"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(current_dir))
+    return os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
 
 def check_video_metadata(video_path, min_height=480, min_fps=24):
     cap = cv2.VideoCapture(video_path)
@@ -129,7 +132,7 @@ def main():
 
     try:
         print("Đang khởi tạo mô hình YOLOv8-Face...")
-        yolo_model = YOLO('yolov8n-face.pt') 
+        yolo_model = YOLO('../../model/yolov8n-face.pt')
     except Exception as e:
         print(f"Lỗi tải mô hình YOLO: {e}")
         return

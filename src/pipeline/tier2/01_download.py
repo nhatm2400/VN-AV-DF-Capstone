@@ -1,6 +1,9 @@
 import os
 import csv
 import yt_dlp
+from pathlib import Path
+import static_ffmpeg
+static_ffmpeg.add_paths()
 
 def get_project_root():
     """Trả về đường dẫn gốc của dự án (VN-AV-DF-Capstone)"""
@@ -8,43 +11,57 @@ def get_project_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
 
 def download_videos_for_tier(csv_file_path, output_dir):
-    """Đọc URL từ file CSV và tải video về thư mục đích bằng yt-dlp."""
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # Tạo thư mục nếu chưa tồn tại
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
 
+    # 1. Đọc danh sách video đã tải thành công
+    downloaded_ids = set()
+    for f in Path(output_dir).glob('*.mp4'):
+        # Lấy tên file (không bao gồm phần mở rộng)
+        video_id = f.stem
+        downloaded_ids.add(video_id)
+
+    # 2. Đọc danh sách URL từ CSV và lọc
+    urls_to_download = []
+    total_urls = 0
+    with open(csv_file_path, mode='r', encoding='utf-8') as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            total_urls += 1
+            video_id = row['video_id']
+            if video_id not in downloaded_ids:
+                urls_to_download.append(row['url'])
+
+    if not urls_to_download:
+        print(f"Không có video mới để tải trong {csv_file_path}.")
+        return
+
+    print(f"Tìm thấy {len(urls_to_download)} video mới (đã bỏ qua {len(downloaded_ids)} video cũ).")
+
+    # 3. Cấu hình yt-dlp (quan trọng: thay đổi cookiefile nếu cần)
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(output_dir, '%(id)s.%(ext)s'),
-        # Dùng cookies từ trình duyệt 
-        'cookiesfrombrowser': ('chrome',),  # hoặc ('firefox',), ('edge',), ('chrome',)
-        # 'cookiefile': 'cookies.txt', #dùng file cookies riêng thay vì đọc trực tiếp từ trình duyệt
-        'ignoreerrors': True,
+        #THAY ĐỔI ĐƯỜNG DẪN NÀY NẾU CẦN 
+        'cookiefile': 'cookies.txt',  # Sử dụng file cookies.txt đã xuất
+        'ignoreerrors': True,          # Bỏ qua lỗi của video và tiếp tục
         'quiet': False,
         'no_warnings': True,
         'merge_output_format': 'mp4',
-        # ----- Thêm delay và retry để tránh rate limit -----
-        'sleep_interval': 15,          # nghỉ 15 giây giữa các video
-        'max_sleep_interval': 30,      # nghỉ ngẫu nhiên 15-30 giây
-        'retries': 10,                 # retry tối đa 10 lần nếu lỗi
-        'fragment_retries': 10,        # retry cho từng fragment
-        'extract_flat': False,
-        'throttledratelimit': 1000000, # 1 MB/s tối thiểu để tránh bị chậm
+        # Tăng thời gian chờ để tránh bị chặn IP
+        'sleep_interval': 90,          # Nghỉ 90 giây giữa các video
+        'max_sleep_interval': 45,      # Nghỉ ngẫu nhiên 30-45 giây
+        'retries': 10,
+        'fragment_retries': 10,
+        'throttledratelimit': 1000000, # 1 MB/s tối thiểu
     }
 
     try:
-        with open(csv_file_path, mode='r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
-            urls = [row['url'] for row in reader if 'url' in row]
-            
-            if not urls:
-                print(f"Không có URL nào trong {csv_file_path}.")
-                return
-
-            print(f"\n--- Bắt đầu tải {len(urls)} video vào {output_dir} ---")
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download(urls)
-            print(f"--- Hoàn thành tải cho thư mục {output_dir} ---\n")
-            
+        print(f"\n--- Bắt đầu tải {len(urls_to_download)} video vào {output_dir} ---")
+        # Sử dụng with statement để tự động quản lý tài nguyên
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download(urls_to_download)
+        print(f"--- Hoàn thành tải cho thư mục {output_dir} ---\n")
     except Exception as e:
         print(f"Lỗi khi xử lý {csv_file_path}: {str(e)}")
 
@@ -76,11 +93,11 @@ def main():
         if choice == '0' or choice == tier['id']:
             csv_path = os.path.join(project_root, 'data', tier['csv'])
             output_path = os.path.join(project_root, 'data', tier['out'])
-            
+
             if not os.path.exists(csv_path):
                 print(f"Bỏ qua Tier {tier['id']}: Không tìm thấy file {csv_path}")
                 continue
-                
+
             download_videos_for_tier(csv_path, output_path)
 
 if __name__ == "__main__":
