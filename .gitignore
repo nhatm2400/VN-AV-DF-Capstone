@@ -1,5 +1,6 @@
 data/raw/
 data/clips/
+docs
 *.mp4
 *.m4a
 *.wav
