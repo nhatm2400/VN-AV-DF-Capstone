@@ -1,7 +1,9 @@
 import os
+# pyrefly: ignore [missing-import]
 import cv2
 import csv
 import subprocess
+# pyrefly: ignore [missing-import]
 import static_ffmpeg
 static_ffmpeg.add_paths()
 
