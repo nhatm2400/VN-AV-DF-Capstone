@@ -26,8 +26,6 @@ def check_video_metadata(video_path, min_height=480, min_fps=24):
     return True, f"Pass (Height: {height}p, FPS: {fps:.2f})"
 
 def check_audio_exists(video_path):
-    # Quality gate chỉ kiểm tra video CÓ luồng âm thanh hay không.
-    # SNR/chất lượng âm thanh được đánh giá per-clip ở bước 03_cut_clips.
     try:
         cmd = ['ffprobe', '-v', 'error', '-select_streams', 'a',
                '-show_entries', 'stream=index', '-of', 'csv=p=0', video_path]
