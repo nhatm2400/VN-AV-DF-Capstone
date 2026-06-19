@@ -5,8 +5,9 @@ import yt_dlp
 from pathlib import Path
 
 def get_project_root():
+    # file ở src/pipeline/01_collect/tier2/ -> repo root: lùi 4 cấp
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))))
 
 def retry_failed_downloads(csv_file_path, output_dir, failed_log_path='download_errors.log'):
     # 1. Đọc danh sách video đã tải

@@ -3,8 +3,9 @@ import os
 import csv
 
 def get_project_root():
+    # file ở src/pipeline/01_collect/tier2/ -> repo root: lùi 4 cấp
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(current_dir))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))))
 
 def generate_download_script():
     project_root = get_project_root()

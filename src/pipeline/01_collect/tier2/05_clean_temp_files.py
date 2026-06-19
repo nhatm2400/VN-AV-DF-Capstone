@@ -4,8 +4,9 @@ from pathlib import Path
 
 def get_project_root():
     """Trả về đường dẫn gốc của dự án (VN-AV-DF-Capstone)"""
+    # file ở src/pipeline/01_collect/tier2/ -> repo root: lùi 4 cấp
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))))
 
 def clean_tier2_temp_files():
     project_root = get_project_root()
