@@ -1,8 +1,8 @@
 """
-03c_curate.py — BƯỚC QUYẾT ĐỊNH (decision pass) — chạy CUỐI trong bộ 03a/03b/03c
+04_curate.py — BƯỚC QUYẾT ĐỊNH (decision pass) — chạy CUỐI trong bộ 02/03/04
 
-Đọc output của 03a_score_clips.py (scored CSV + embeddings.npy), tùy chọn có thêm
-cột sync_conf từ 03b_sync_score.py, rồi:
+Đọc output của 02_score_clips.py (scored CSV + embeddings.npy), tùy chọn có thêm
+cột sync_conf từ 03_sync_score.py, rồi:
   [B2] cluster embedding -> speaker_id   (agglomerative, cosine)
   [B3] gate: loại clip không mặt / mặt quá nhỏ (CHỈ rác rõ ràng)
   [B4] cân bằng: cap N clip/speaker, ưu tiên chất lượng + trải đều video/thời điểm
@@ -19,10 +19,10 @@ sync_conf / embed_consistency: nếu CSV có thì tự đưa vào quality score;
 
 Ví dụ:
   # 1) Xem phân bố + số cụm ở vài ngưỡng (không xuất gì)
-  python 03c_curate.py --scored_csv tier1_scored_tier1.csv --emb embeddings_tier1.npy --calibrate
+  python 04_curate.py --scored_csv tier1_scored_tier1.csv --emb embeddings_tier1.npy --calibrate
 
   # 2) Chốt ngưỡng rồi xuất
-  python 03c_curate.py --scored_csv ... --emb ... \\
+  python 04_curate.py --scored_csv ... --emb ... \\
       --cluster_dist 0.5 --min_det_ratio 0.6 --min_face_area 0.01 --cap_per_speaker 12 \\
       --out tier1_clean.csv
 """

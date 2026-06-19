@@ -1,5 +1,5 @@
 """
-04a_temporal_desync.py — Pseudo-fake: LỆCH PHA audio-visual (Temporal Desync)
+01_temporal_desync.py — Pseudo-fake: LỆCH PHA audio-visual (Temporal Desync)
 
 Tuần 2 (Pseudo-fake Engineering) — kỹ thuật ƯU TIÊN LÀM ĐẦU theo docs/Pipeline.
 
@@ -19,14 +19,14 @@ Chỉ dùng thư viện chuẩn + ffmpeg/ffprobe trong PATH (không cần ffmpeg
 
 Ví dụ:
   # Mỗi clip 1 fake, lệch ngẫu nhiên trong {3,7,15} frames, hướng ngẫu nhiên
-  python 04a_temporal_desync.py --input_csv data/clips/tier1_clean.csv \\
+  python 01_temporal_desync.py --input_csv data/clips/tier1_clean.csv \\
       --out_dir data/fake --labels data/labels.csv
 
   # Sinh cả 3 mức lệch cho mỗi clip
-  python 04a_temporal_desync.py --input_csv ... --mode all
+  python 01_temporal_desync.py --input_csv ... --mode all
 
   # Thử 5 clip để kiểm
-  python 04a_temporal_desync.py --input_csv ... --limit 5
+  python 01_temporal_desync.py --input_csv ... --limit 5
 """
 
 import os

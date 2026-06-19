@@ -1,8 +1,8 @@
 """
-03b_sync_score.py — Tính LSE-C / LSE-D (Sync Confidence) — chạy GIỮA trong bộ 03a/03b/03c
+03_sync_score.py — Tính LSE-C / LSE-D (Sync Confidence) — chạy GIỮA trong bộ 02/03/04
 
 Đây là bước DUY NHẤT nối hình với tiếng: so cử động môi với sóng âm theo thời gian.
-(Khác bước cắt 03_cut_clips: ở đó VAD chỉ kiểm "có tiếng" và YOLO chỉ kiểm "có mặt"
+(Khác bước cắt 04_cut_clips: ở đó VAD chỉ kiểm "có tiếng" và YOLO chỉ kiểm "có mặt"
  một cách RIÊNG RẼ — không biết miệng trên hình có phải nguồn của tiếng đó không.)
 
 Dựa trên joonson/syncnet_python (chuẩn để tính LSE-C/LSE-D trong Wav2Lip).
@@ -14,9 +14,9 @@ Hai chế độ:
   --full       : chạy toàn bộ CSV, thêm cột sync_conf + sync_min_dist + sync_flag_reject
 
 Trình tự bộ script:
-  03a_score_clips.py  (đo mặt + embedding)
-  03b_sync_score.py   (đo độ khớp môi-tiếng)        <-- file này
-  03c_curate.py       (cluster -> gate -> cân bằng -> xuất tập sạch)
+  02_score_clips.py  (đo mặt + embedding)
+  03_sync_score.py   (đo độ khớp môi-tiếng)        <-- file này
+  04_curate.py       (cluster -> gate -> cân bằng -> xuất tập sạch)
 
 SETUP (chạy 1 lần trước khi dùng script này):
   !git clone https://github.com/joonson/syncnet_python /kaggle/working/syncnet_python
@@ -27,13 +27,13 @@ SETUP (chạy 1 lần trước khi dùng script này):
 
 Ví dụ:
   # Calibrate trên 20 clip ngẫu nhiên (KHÔNG đặt ngưỡng — chỉ xem phân bố)
-  python 03b_sync_score.py \\
+  python 03_sync_score.py \\
       --input_csv tier1_scored_tier1.csv \\
       --syncnet_dir /kaggle/working/syncnet_python \\
       --calibrate --n_samples 20
 
   # Chạy toàn bộ, thêm sync_conf vào CSV (workers=1 cho an toàn VRAM trên 1 GPU)
-  python 03b_sync_score.py \\
+  python 03_sync_score.py \\
       --input_csv tier1_scored_tier1.csv \\
       --syncnet_dir /kaggle/working/syncnet_python \\
       --full --out tier1_scored_sync.csv --workers 1 --lse_c_threshold <từ calibrate>
@@ -251,7 +251,7 @@ def full_mode(df, syncnet_dir, base_data_dir, out_path, workers, lse_c_threshold
 
     df.to_csv(out_path, index=False)
     print(f"\nCSV mới (có cột sync_conf) -> {out_path}")
-    print("Tiếp theo: dùng file này làm input cho 03c_curate.py "
+    print("Tiếp theo: dùng file này làm input cho 04_curate.py "
           "(sẽ tự nhận cột sync_conf vào quality score).")
 
 

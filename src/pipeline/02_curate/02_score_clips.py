@@ -1,5 +1,5 @@
 """
-03a_score_clips.py — BƯỚC ĐO (measurement pass) — chạy ĐẦU TIÊN trong bộ 03a/03b/03c
+02_score_clips.py — BƯỚC ĐO (measurement pass) — chạy ĐẦU TIÊN trong bộ 02/03/04
 
 Đọc tier*_v3_clips_*.csv, với mỗi clip lấy K frame rải đều, chạy InsightFace để:
   - đếm số frame phát hiện được mặt        -> det_ratio
@@ -8,14 +8,14 @@
   - đo độ nhất quán danh tính giữa các frame-> embed_consistency
 
 KHÔNG loại bỏ clip nào ở bước này. Chỉ đo và ghi metadata.
-Quyết định (cluster / gate / cân bằng) để 03c_curate.py xử lý.
+Quyết định (cluster / gate / cân bằng) để 04_curate.py xử lý.
 
 Chạy trên Kaggle T4 (ctx_id=0). Clip ngắn nên decode rẻ -> không cần NVDEC ở đây.
 
 Trình tự bộ script:
-  03a_score_clips.py  (đo mặt + embedding)          <-- file này
-  03b_sync_score.py   (đo độ khớp môi-tiếng, sync)
-  03c_curate.py       (cluster speaker -> gate -> cân bằng -> xuất tập sạch)
+  02_score_clips.py  (đo mặt + embedding)          <-- file này
+  03_sync_score.py   (đo độ khớp môi-tiếng, sync)
+  04_curate.py       (cluster speaker -> gate -> cân bằng -> xuất tập sạch)
 
 Output:
   - <OUT_DIR>/tier1_scored_<TAG>.csv   (CSV gốc + cột face stats, cùng thứ tự dòng với npy)
@@ -224,7 +224,7 @@ def main():
         print(f"\n[CẢNH BÁO] {no_face}/{len(df)} (>50%) clip 'không mặt'. "
               "Kiểm tra lại đường dẫn / video lỗi trước khi tin kết quả.")
 
-    print("\nTiếp theo: 03b_sync_score.py (đo sync) hoặc thẳng 03c_curate.py --calibrate.")
+    print("\nTiếp theo: 03_sync_score.py (đo sync) hoặc thẳng 04_curate.py --calibrate.")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ def generate_download_script():
     project_root = get_project_root()
     csv_path = os.path.join(project_root, 'data', 'youtube_tier2_urls.csv')
     if not os.path.exists(csv_path):
-        print("Chưa tìm thấy youtube_tier2_urls.csv. Hãy chạy 00_fetch_youtube_tier2_urls.py trước.")
+        print("Chưa tìm thấy youtube_tier2_urls.csv. Hãy chạy 01_fetch_youtube_urls.py trước.")
         return
 
     with open(csv_path, 'r', encoding='utf-8') as f:

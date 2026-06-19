@@ -1,6 +1,13 @@
 data/raw/
 data/clips/
 docs
+
+# Output sinh tu dong — giu folder, bo noi dung
+data/fake/*
+!data/fake/.gitkeep
+data/features/*
+!data/features/.gitkeep
+
 *.mp4
 *.m4a
 *.wav

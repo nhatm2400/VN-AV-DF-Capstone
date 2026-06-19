@@ -1,5 +1,5 @@
 """
-03_prep_manifest.py — CHUẨN BỊ đầu vào cho 03a (chạy TRƯỚC bộ 03a/03b/03c)
+01_prep_manifest.py — CHUẨN BỊ đầu vào cho 03a (chạy TRƯỚC bộ 02/03/04)
 
 Ba vấn đề thực tế cần xử lý trước khi đo:
   1) file_path trong CSV là đường dẫn Kaggle (/kaggle/working/clips/...), KHÔNG tồn
@@ -21,14 +21,14 @@ bước 02) là CẤP VIDEO, KHÔNG phải clip CSV — đừng dùng làm input
 Chỉ dùng thư viện chuẩn + ffprobe trong PATH -> chạy mọi nơi, không cần pandas.
 
 Dùng (gộp cả 3 tier):
-  python 03_prep_manifest.py \\
+  python 01_prep_manifest.py \\
     --add tier1 "data/clips/tier1/**/*_v3_clips_*.csv" "data/clips/tier1" \\
     --add tier2 "data/clips/tier2/**/*_v3_clips_*.csv" "data/clips/tier2" \\
     --add tier3 "data/clips/tier3/**/*_v3_clips_*.csv" "data/clips/tier3" \\
     --out data/clips/all_manifest.csv
   # thêm --no_verify nếu muốn bỏ qua bước ffprobe (nhanh hơn, kém an toàn)
 
-Tiếp theo: python 03a_score_clips.py --input_csv <manifest> --tag <tag>
+Tiếp theo: python 02_score_clips.py --input_csv <manifest> --tag <tag>
 """
 
 import os
@@ -154,7 +154,7 @@ def main():
     print(f"Tong: {len(all_rows)} clip -> {args.out}")
     if not verify:
         print("  (CHUA verify ffprobe — co the con file hong)")
-    print(f"Tiep theo: python 03a_score_clips.py --input_csv {args.out} --tag all")
+    print(f"Tiep theo: python 02_score_clips.py --input_csv {args.out} --tag all")
 
 
 if __name__ == "__main__":
