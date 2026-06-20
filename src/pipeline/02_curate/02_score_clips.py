@@ -12,6 +12,14 @@ Quyết định (cluster / gate / cân bằng) để 04_curate.py xử lý.
 
 Chạy trên Kaggle T4 (ctx_id=0). Clip ngắn nên decode rẻ -> không cần NVDEC ở đây.
 
+LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
+  python 02_score_clips.py
+  -> đọc data/clips/all_manifest.csv, xuất data/curate/tier1_scored_all.csv + embeddings_all.npy
+  GPU Windows: file đã gọi onnxruntime.preload_dlls() để onnxruntime-gpu thấy CUDA;
+     cần env có onnxruntime-gpu + nvidia-cudnn-cu12==9.8.0.87 (xem memory env). Không
+     có GPU -> tự lùi về CPU (chậm ~6x). Đo: GPU ~32ms/frame, CPU ~195ms/frame.
+KAGGLE: python 02_score_clips.py --input_csv /kaggle/working/all_manifest.csv --out_dir /kaggle/working
+
 Trình tự bộ script:
   02_score_clips.py  (đo mặt + embedding)          <-- file này
   03_sync_score.py   (đo độ khớp môi-tiếng, sync)
@@ -27,7 +35,20 @@ import time
 import argparse
 import numpy as np
 import pandas as pd
+# pyrefly: ignore [missing-import]
 import cv2
+
+# Nạp DLL CUDA/cuDNN từ wheel pip nvidia-* (cần để onnxruntime-gpu thấy GPU trên Windows).
+# Vô hại nếu chạy CPU hoặc onnxruntime đã tự nạp.
+try:
+    # pyrefly: ignore [missing-import]
+    import onnxruntime as _ort
+    if hasattr(_ort, "preload_dlls"):
+        _ort.preload_dlls()
+except Exception:
+    pass
+
+# pyrefly: ignore [missing-import]
 from insightface.app import FaceAnalysis
 
 # ----------------------------- Config -----------------------------
@@ -149,9 +170,10 @@ def score_clip(app, path, k_frames):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input_csv", required=True, help="tier*_v3_clips_*.csv")
-    ap.add_argument("--out_dir", default="/kaggle/working")
-    ap.add_argument("--tag", default="tier1", help="hậu tố tên file output")
+    ap.add_argument("--input_csv", default="data/clips/all_manifest.csv",
+                    help="manifest từ 01_prep_manifest (mặc định local)")
+    ap.add_argument("--out_dir", default="data/curate")
+    ap.add_argument("--tag", default="all", help="hậu tố tên file output")
     ap.add_argument("--path_col", default="file_path", help="cột chứa đường dẫn .mp4")
     ap.add_argument("--k_frames", type=int, default=K_FRAMES, help="số frame lấy mẫu mỗi clip")
     args = ap.parse_args()

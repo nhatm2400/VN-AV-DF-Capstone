@@ -20,7 +20,12 @@ bước 02) là CẤP VIDEO, KHÔNG phải clip CSV — đừng dùng làm input
 
 Chỉ dùng thư viện chuẩn + ffprobe trong PATH -> chạy mọi nơi, không cần pandas.
 
-Dùng (gộp cả 3 tier):
+LOCAL (mặc định — chạy KHÔNG cần tham số, chạy từ thư mục gốc dự án):
+  python 01_prep_manifest.py
+  -> tự gộp 3 tier trong data/clips/ (glob ** quét mọi batch), verify ffprobe,
+     xuất data/clips/all_manifest.csv
+
+Dùng tùy chỉnh / KAGGLE (truyền path /kaggle/input/...):
   python 01_prep_manifest.py \\
     --add tier1 "data/clips/tier1/**/*_v3_clips_*.csv" "data/clips/tier1" \\
     --add tier2 "data/clips/tier2/**/*_v3_clips_*.csv" "data/clips/tier2" \\
@@ -39,6 +44,15 @@ import subprocess
 
 FIELDS = ["clip_id", "source_video", "start_time", "end_time", "duration",
           "face_ratio", "speech_ratio", "snr", "file_path", "tier", "has_cut_meta"]
+
+# Mặc định local: chạy thẳng `python 01_prep_manifest.py` không cần tham số.
+# (Override bằng --add khi chạy nơi khác, vd Kaggle /kaggle/input/...)
+DEFAULT_ADDS = [
+    ["tier1", "data/clips/tier1/**/*_v3_clips_*.csv", "data/clips/tier1"],
+    ["tier2", "data/clips/tier2/**/*_v3_clips_*.csv", "data/clips/tier2"],
+    ["tier3", "data/clips/tier3/**/*_v3_clips_*.csv", "data/clips/tier3"],
+]
+DEFAULT_OUT = "data/clips/all_manifest.csv"
 
 
 def is_valid_video(path):
@@ -127,15 +141,19 @@ def prep_tier(tier, csv_glob, clips_root, verify=True):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--add", nargs=3, action="append", metavar=("TIER", "CSV_GLOB", "CLIPS_ROOT"),
-                    required=True, help="khai bao 1 tier: ten, glob CSV, thu muc goc chua .mp4")
-    ap.add_argument("--out", required=True)
+                    default=None, help="khai bao 1 tier: ten, glob CSV, thu muc goc chua .mp4 "
+                    "(khong truyen -> dung mac dinh 3 tier local)")
+    ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--no_verify", action="store_true",
                     help="bo qua ffprobe (nhanh hon nhung giu ca file hong)")
     args = ap.parse_args()
 
     verify = not args.no_verify
+    adds = args.add if args.add else DEFAULT_ADDS
+    if not args.add:
+        print("(khong co --add -> dung mac dinh 3 tier local: tier1/tier2/tier3)")
     all_rows = []
-    for tier, csv_glob, clips_root in args.add:
+    for tier, csv_glob, clips_root in adds:
         all_rows.extend(prep_tier(tier, csv_glob, clips_root, verify=verify))
 
     out_dir = os.path.dirname(os.path.abspath(args.out)) or "."

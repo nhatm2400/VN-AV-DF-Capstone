@@ -85,7 +85,8 @@ def make_desync(in_path, out_path, offset_sec):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input_csv", required=True, help="CSV clip real (cần cột file_path)")
+    ap.add_argument("--input_csv", default="data/curate/all_clean.csv",
+                    help="CSV clip real (cần cột file_path) — mặc định tập sạch từ 04_curate")
     ap.add_argument("--path_col", default="file_path")
     ap.add_argument("--id_col", default="clip_id")
     ap.add_argument("--out_dir", default="data/fake")
