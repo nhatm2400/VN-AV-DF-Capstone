@@ -31,12 +31,18 @@ Output:
 """
 
 import os
+import sys
 import time
 import argparse
 import numpy as np
 import pandas as pd
 # pyrefly: ignore [missing-import]
 import cv2
+
+try:                                  # in được tiếng Việt khi pipe/redirect (console cp1252)
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 # Nạp DLL CUDA/cuDNN từ wheel pip nvidia-* (cần để onnxruntime-gpu thấy GPU trên Windows).
 # Vô hại nếu chạy CPU hoặc onnxruntime đã tự nạp.

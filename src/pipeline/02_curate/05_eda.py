@@ -29,9 +29,16 @@ Ví dụ tùy chỉnh / KAGGLE:
 """
 
 import os
+import sys
 import argparse
 import numpy as np
 import pandas as pd
+
+try:                                  # in được tiếng Việt khi pipe/redirect (console cp1252)
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 import matplotlib
 matplotlib.use("Agg")  # không cần màn hình -> lưu file
 import matplotlib.pyplot as plt

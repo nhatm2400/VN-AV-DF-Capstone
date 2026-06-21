@@ -32,8 +32,14 @@ Ví dụ tùy chỉnh / KAGGLE:
       --out tier1_clean.csv
 """
 
+import sys
 import argparse
 import numpy as np
+
+try:                                  # in được tiếng Việt khi pipe/redirect (console cp1252)
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 import pandas as pd
 from sklearn.cluster import AgglomerativeClustering
 

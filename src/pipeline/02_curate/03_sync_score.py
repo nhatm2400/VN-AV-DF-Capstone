@@ -55,6 +55,11 @@ import time
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+try:                                  # in được tiếng Việt khi pipe/redirect (console cp1252)
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 import numpy as np
 import pandas as pd
 
@@ -148,7 +153,7 @@ def process_one(args):
 
 # ----------------------------- Calibrate -----------------------------
 
-def calibrate_mode(df, syncnet_dir, n_samples, base_data_dir):
+def calibrate_mode(df, syncnet_dir, n_samples, base_data_dir, out_csv="calibrate_sync_results.csv"):
     sample = df.sample(min(n_samples, len(df)), random_state=42)
     print(f"\n===== CALIBRATE: chạy syncnet trên {len(sample)} clip ngẫu nhiên =====")
     print("(Không xóa hay sửa CSV — chỉ in phân bố để chọn ngưỡng)\n")
@@ -193,7 +198,8 @@ def calibrate_mode(df, syncnet_dir, n_samples, base_data_dir):
         print(f"  Siết sync mạnh cho real -> đẩy real về 'sync cao' -> model học tắt (leakage).")
         print(f"  NGHE THỬ vài clip có LSE-C thấp nhất để xác nhận trước khi chốt ngưỡng.")
 
-    calib_out = "calibrate_sync_results.csv"
+    calib_out = out_csv
+    os.makedirs(os.path.dirname(os.path.abspath(calib_out)) or ".", exist_ok=True)
     rdf.to_csv(calib_out, index=False)
     print(f"\nKết quả chi tiết -> {calib_out}")
     print("Tiếp theo: chạy --full --lse_c_threshold <ngưỡng bạn chọn>")
@@ -302,7 +308,9 @@ def main():
     os.makedirs(args.data_dir, exist_ok=True)
 
     if args.calibrate:
-        calibrate_mode(df, args.syncnet_dir, args.n_samples, args.data_dir)
+        calib_out = os.path.join(os.path.dirname(os.path.abspath(args.input_csv)) or ".",
+                                 "calibrate_sync_results.csv")
+        calibrate_mode(df, args.syncnet_dir, args.n_samples, args.data_dir, out_csv=calib_out)
     else:
         full_mode(df, args.syncnet_dir, args.data_dir, args.out, args.workers, args.lse_c_threshold)
 
