@@ -14,7 +14,7 @@ Chạy trên Kaggle T4 (ctx_id=0). Clip ngắn nên decode rẻ -> không cần 
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
   python 02_score_clips.py
-  -> đọc data/clips/all_manifest.csv, xuất data/curate/tier1_scored_all.csv + embeddings_all.npy
+  -> đọc data/clips/all_manifest.csv, xuất data/02_curate/tier1_scored_all.csv + embeddings_all.npy
   GPU Windows: file đã gọi onnxruntime.preload_dlls() để onnxruntime-gpu thấy CUDA;
      cần env có onnxruntime-gpu + nvidia-cudnn-cu12==9.8.0.87 (xem memory env). Không
      có GPU -> tự lùi về CPU (chậm ~6x). Đo: GPU ~32ms/frame, CPU ~195ms/frame.
@@ -178,7 +178,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_csv", default="data/clips/all_manifest.csv",
                     help="manifest từ 01_prep_manifest (mặc định local)")
-    ap.add_argument("--out_dir", default="data/curate")
+    ap.add_argument("--out_dir", default="data/02_curate")
     ap.add_argument("--tag", default="all", help="hậu tố tên file output")
     ap.add_argument("--path_col", default="file_path", help="cột chứa đường dẫn .mp4")
     ap.add_argument("--k_frames", type=int, default=K_FRAMES, help="số frame lấy mẫu mỗi clip")

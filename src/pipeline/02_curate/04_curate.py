@@ -19,8 +19,8 @@ sync_conf / embed_consistency: nếu CSV có thì tự đưa vào quality score;
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
   python 04_curate.py --calibrate   # 1) xem phân bố, chọn ngưỡng
-  python 04_curate.py               # 2) export (ngưỡng mặc định) -> data/curate/all_clean.csv
-  -> tự đọc data/curate/tier1_scored_all.csv + embeddings_all.npy
+  python 04_curate.py               # 2) export (ngưỡng mặc định) -> data/02_curate/all_clean.csv
+  -> tự đọc data/02_curate/tier1_scored_all.csv + embeddings_all.npy
 
 Ví dụ tùy chỉnh / KAGGLE:
   # 1) Xem phân bố + số cụm ở vài ngưỡng (không xuất gì)
@@ -175,9 +175,9 @@ def calibrate(df, emb):
 # ----------------------------- Main -----------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scored_csv", default="data/curate/tier1_scored_all.csv",
+    ap.add_argument("--scored_csv", default="data/02_curate/tier1_scored_all.csv",
                     help="output của 02_score_clips (mặc định local)")
-    ap.add_argument("--emb", default="data/curate/embeddings_all.npy")
+    ap.add_argument("--emb", default="data/02_curate/embeddings_all.npy")
     ap.add_argument("--calibrate", action="store_true", help="chỉ in phân bố, không xuất")
     ap.add_argument("--cluster_dist", type=float, default=0.5, help="cosine distance threshold")
     ap.add_argument("--min_det_ratio", type=float, default=0.6, help="gate: tỉ lệ frame có mặt tối thiểu")
@@ -189,7 +189,7 @@ def main():
                          "không ai nói). MẶC ĐỊNH None = không động tới sync. CHỈ đặt giá trị "
                          "CỰC THẤP lấy từ calibrate, và PHẢI áp y hệt cho tập fake (đối xứng).")
     ap.add_argument("--cap_per_speaker", type=int, default=12)
-    ap.add_argument("--out", default="data/curate/all_clean.csv")
+    ap.add_argument("--out", default="data/02_curate/all_clean.csv")
     args = ap.parse_args()
 
     df, emb = load(args.scored_csv, args.emb)

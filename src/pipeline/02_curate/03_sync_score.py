@@ -27,7 +27,7 @@ SETUP (chạy 1 lần trước khi dùng script này):
 
 LOCAL (TÙY CHỌN — sync khó dựng trên Windows; có thể BỎ, bước 04/05 vẫn chạy):
   cần repo syncnet_python trên máy, truyền --syncnet_dir <đường dẫn local>:
-  python 03_sync_score.py --input_csv data/curate/tier1_scored_all.csv \\
+  python 03_sync_score.py --input_csv data/02_curate/tier1_scored_all.csv \\
       --syncnet_dir <repo_local> --calibrate
   # input mặc định không trỏ sẵn -> luôn truyền --input_csv (và --syncnet_dir).
 
