@@ -1,6 +1,5 @@
 data/raw/
 data/clips/
-data/curate/
 docs
 
 # Output sinh tu dong — giu folder, bo noi dung
@@ -29,6 +28,8 @@ yolov8n-face.pt
 
 *.npy
 *.npz
+# ngoai le: commit embedding cua stage curate (14MB) de tai su dung khong phai chay lai 02
+!data/curate/embeddings_all.npy
 
 __pycache__/
 *.py[cod]
