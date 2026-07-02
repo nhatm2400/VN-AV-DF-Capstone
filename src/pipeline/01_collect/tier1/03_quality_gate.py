@@ -10,7 +10,7 @@ static_ffmpeg.add_paths()
 def get_project_root():
     """Trả về đường dẫn gốc của dự án (VN-AV-DF-Capstone)"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))))
 
 def check_video_metadata(video_path, min_height=480, min_fps=24):
     cap = cv2.VideoCapture(video_path)
@@ -39,7 +39,7 @@ def check_audio_exists(video_path):
 def process_tier_gate(tier_id, project_root):
     tier_name = f"tier{tier_id}"
     raw_dir = os.path.join(project_root, 'data', 'raw', tier_name)
-    output_csv = os.path.join(project_root, 'data', f'{tier_name}_quality_gate_passed.csv')
+    output_csv = os.path.join(project_root, 'data', '01_collect', f'{tier_name}_quality_gate_passed.csv')
 
     if not os.path.exists(raw_dir):
         print(f"Bỏ qua: Không tìm thấy thư mục {raw_dir}")

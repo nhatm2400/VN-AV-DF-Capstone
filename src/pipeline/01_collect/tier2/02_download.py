@@ -8,7 +8,7 @@ static_ffmpeg.add_paths()
 def get_project_root():
     """Trả về đường dẫn gốc của dự án (VN-AV-DF-Capstone)"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))))
 
 def download_videos_for_tier(csv_file_path, output_dir):
     # Tạo thư mục nếu chưa tồn tại
@@ -39,15 +39,19 @@ def download_videos_for_tier(csv_file_path, output_dir):
     print(f"Tìm thấy {len(urls_to_download)} video mới (đã bỏ qua {len(downloaded_ids)} video cũ).")
 
     # 3. Cấu hình yt-dlp (quan trọng: thay đổi cookiefile nếu cần)
+    cookie_path = os.path.join(get_project_root(), 'cookies.txt')
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(output_dir, '%(id)s.%(ext)s'),
         #THAY ĐỔI ĐƯỜNG DẪN NÀY NẾU CẦN 
-        'cookiefile': 'cookies.txt',  # Sử dụng file cookies.txt đã xuất
+        'cookiefile': cookie_path,  # Sử dụng file cookies.txt đã xuất ở thư mục gốc
         'ignoreerrors': True,          # Bỏ qua lỗi của video và tiếp tục
         'quiet': False,
         'no_warnings': True,
         'merge_output_format': 'mp4',
+        # Cấu hình JavaScript runtime và Remote Challenge Solver để bypass bot check / n challenge
+        'js_runtimes': {'node': {}, 'deno': {}},
+        'remote_components': ['ejs:github'],
         # Tăng thời gian chờ để tránh bị chặn IP
         'sleep_interval': 90,          # Nghỉ 90 giây giữa các video
         'max_sleep_interval': 45,      # Nghỉ ngẫu nhiên 30-45 giây
@@ -91,7 +95,7 @@ def main():
 
     for tier in tiers_config:
         if choice == '0' or choice == tier['id']:
-            csv_path = os.path.join(project_root, 'data', tier['csv'])
+            csv_path = os.path.join(project_root, 'data', '01_collect', tier['csv'])
             output_path = os.path.join(project_root, 'data', tier['out'])
 
             if not os.path.exists(csv_path):

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 def get_project_root():
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.dirname(os.path.dirname(current_dir))
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_dir))))
 
 load_dotenv()
 API_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -139,8 +139,8 @@ def main():
         time.sleep(1)
 
     # Lưu CSV nội bộ (KHÔNG PUBLIC)
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    output_csv = os.path.join(project_root, 'data', 'youtube_tier2_urls.csv')
+    project_root = get_project_root()
+    output_csv = os.path.join(project_root, 'data', '01_collect', 'youtube_tier2_urls.csv')
     if all_videos:
         with open(output_csv, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=all_videos[0].keys())

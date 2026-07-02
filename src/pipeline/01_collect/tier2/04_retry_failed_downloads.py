@@ -44,14 +44,18 @@ def retry_failed_downloads(csv_file_path, output_dir, failed_log_path='download_
     print(f"Sẽ thử lại {len(urls_to_retry)} video.")
 
     # 4. Cấu hình yt-dlp (giống với bản cập nhật)
+    cookie_path = os.path.join(get_project_root(), 'cookies.txt')
     ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(output_dir, '%(id)s.%(ext)s'),
-        'cookiefile': 'cookies.txt',  # Đảm bảo file này đã được tạo
+        'cookiefile': cookie_path,  # Đảm bảo file này đã được tạo
         'ignoreerrors': True,
         'quiet': False,
         'no_warnings': True,
         'merge_output_format': 'mp4',
+        # Cấu hình JavaScript runtime và Remote Challenge Solver để bypass bot check / n challenge
+        'js_runtimes': {'node': {}, 'deno': {}},
+        'remote_components': ['ejs:github'],
         'sleep_interval': 30,
         'max_sleep_interval': 45,
         'retries': 10,
@@ -68,6 +72,6 @@ def retry_failed_downloads(csv_file_path, output_dir, failed_log_path='download_
 if __name__ == "__main__":
     project_root = get_project_root()
     output_path = os.path.join(project_root, 'data', 'raw', 'tier2')
-    csv_path = os.path.join(project_root, 'data', 'youtube_tier2_urls.csv')
+    csv_path = os.path.join(project_root, 'data', '01_collect', 'youtube_tier2_urls.csv')
     # File log sẽ được tạo tự động bởi yt-dlp khi có lỗi, bạn có thể điều chỉnh tên file cho phù hợp
     retry_failed_downloads(csv_path, output_path, failed_log_path='download_errors.log')
