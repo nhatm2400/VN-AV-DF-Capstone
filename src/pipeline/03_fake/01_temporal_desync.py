@@ -43,7 +43,9 @@ except Exception:
     pass
 
 SHIFTS = [3, 7, 15]   # frames — theo pipeline
-LABEL_FIELDS = ["clip_id", "file_path", "label", "method", "shift_frames",
+# Schema nhãn DÙNG CHUNG cho cả 4 method trong 03_fake -> mọi script append được
+# vào cùng 1 labels.csv. "param" là mô tả độ mạnh thao tác (mỗi method tự format).
+LABEL_FIELDS = ["clip_id", "file_path", "label", "method", "param",
                 "source_clip", "source_video", "speaker_id", "tier"]
 
 
@@ -89,8 +91,8 @@ def main():
                     help="CSV clip real (cần cột file_path) — mặc định tập sạch từ 04_curate")
     ap.add_argument("--path_col", default="file_path")
     ap.add_argument("--id_col", default="clip_id")
-    ap.add_argument("--out_dir", default="data/fake")
-    ap.add_argument("--labels", default="data/labels.csv")
+    ap.add_argument("--out_dir", default="data/03_fake")
+    ap.add_argument("--labels", default="data/03_fake/labels.csv")
     ap.add_argument("--mode", choices=["random", "all"], default="random",
                     help="random: 1 fake/clip lệch ngẫu nhiên; all: 1 fake cho mỗi mức 3/7/15")
     ap.add_argument("--shifts", default="3,7,15", help="danh sách frame lệch, vd '3,7,15'")
@@ -149,7 +151,7 @@ def main():
                     "file_path": out_path,
                     "label": 1,
                     "method": "temporal_desync",
-                    "shift_frames": sign * n,
+                    "param": f"shift={sign * n}f",
                     "source_clip": src_id,
                     "source_video": r.get("source_video", ""),
                     "speaker_id": r.get("speaker_id", ""),
