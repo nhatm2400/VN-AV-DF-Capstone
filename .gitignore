@@ -10,6 +10,7 @@ data/04_features/*
 !data/04_features/.gitkeep
 data/05_labels/*
 !data/05_labels/.gitkeep
+!data/05_labels/labels.csv
 
 *.mp4
 *.m4a
