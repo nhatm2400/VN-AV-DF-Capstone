@@ -48,7 +48,9 @@ except Exception:
     pass
 
 try:
+    # pyrefly: ignore [missing-import]
     import parselmouth
+    # pyrefly: ignore [missing-import]
     from parselmouth.praat import call
 except Exception:
     print("Thiếu praat-parselmouth. Cài: pip install praat-parselmouth")
