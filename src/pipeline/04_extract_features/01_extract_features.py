@@ -127,72 +127,85 @@ def prosody_features(wav_path, sig_i16):
 
 
 # ---------------------------------------------------------------- visual helper
-def detect_box_seq(model, mp4, target_fps, detect_every, conf):
+def _crop_mouth(frame, box, size):
+    """Crop nửa dưới bbox (vùng miệng), nới ngang 10%, -> grayscale size×size. None nếu suy biến."""
+    x1, y1, x2, y2 = box
+    bw, bh = x2 - x1, y2 - y1
+    mx1 = int(max(0, x1 - 0.10 * bw))
+    mx2 = int(min(frame.shape[1], x2 + 0.10 * bw))
+    my1 = int(y1 + 0.55 * bh)
+    my2 = int(min(frame.shape[0], y2 + 0.10 * bh))
+    if mx2 <= mx1 or my2 <= my1:
+        return None
+    g = cv2.cvtColor(frame[my1:my2, mx1:mx2], cv2.COLOR_BGR2GRAY)
+    return cv2.resize(g, (size, size))
+
+
+def detect_and_crop(model, mp4, target_fps, size, detect_every, conf):
     """
-    Trả LIST box (x1,y1,x2,y2) — ĐÚNG 1 box cho mỗi sampled-frame — để chuỗi mouth
-    ROI luôn cùng độ dài với lưới thời gian (không co/lệch với audio).
-      - detect thành công  -> cập nhật box
-      - detect fail giữa clip -> GIỮ box hợp lệ gần nhất (carry-forward)
-      - fail ở ĐẦU clip   -> backward-fill bằng box hợp lệ đầu tiên
-      - cả clip không có mặt -> None (hard-drop hợp lệ)
-    KHÔNG crop ở đây (tách khỏi crop_from_boxes) để anon tái dùng chuỗi box của
-    real ghép cặp mà không phụ thuộc YOLO trên mặt đã mờ.
+    MỘT lần decode: detect (carry-forward + backward-fill) + crop mouth. Trả
+    (boxes, mouth[T,size,size]); (None, None) nếu cả clip không có mặt.
+    Mỗi output-frame LUÔN có 1 box -> chuỗi ROI không co/lệch với audio. `boxes`
+    trả ra để anon ghép cặp tái dùng (crop trên video anon, không detect mặt mờ).
     """
     cap = cv2.VideoCapture(mp4)
     if not cap.isOpened():
-        return None
+        return None, None
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    step = max(1, round(src_fps / target_fps))
-    boxes, box, fi, det_i = [], None, 0, 0
+    boxes, rois, pending = [], [], []      # pending: (idx, frame) chưa có box -> backfill sau
+    box, fi, oi, det_i = None, 0, 0, 0
     while True:
         ok, frame = cap.read()
         if not ok:
             break
-        if fi % step == 0:
+        while fi >= round(oi * src_fps / target_fps):      # emit output-frame (target_fps thật)
             if det_i % max(1, detect_every) == 0:
                 res = model.predict(frame, verbose=False, conf=conf)[0]
                 if res.boxes is not None and len(res.boxes) > 0:
                     xyxy = res.boxes.xyxy.cpu().numpy()
                     areas = (xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
-                    box = xyxy[int(areas.argmax())][:4]   # fail -> giữ box cũ (carry-forward)
+                    box = xyxy[int(areas.argmax())][:4]    # fail -> giữ box cũ (carry-forward)
             det_i += 1
-            boxes.append(box)                              # có thể None nếu chưa detect được lần nào
+            boxes.append(box)
+            if box is None:
+                pending.append((oi, frame.copy())); rois.append(None)   # backfill khi có box đầu
+            else:
+                rois.append(_crop_mouth(frame, box, size))
+            oi += 1
         fi += 1
     cap.release()
     first = next((b for b in boxes if b is not None), None)
     if first is None:
-        return None                                        # cả clip không bắt được mặt
-    return [b if b is not None else first for b in boxes]   # backward-fill các None ở đầu
+        return None, None                                  # cả clip không bắt được mặt
+    for k, fr in pending:                                  # backward-fill các None ở đầu
+        boxes[k] = first
+        rois[k] = _crop_mouth(fr, first, size)
+    rois = [r for r in rois if r is not None]
+    if not rois:
+        return boxes, None
+    return boxes, np.stack(rois).astype(np.uint8)
 
 
 def crop_from_boxes(mp4, boxes, target_fps, size):
     """
-    Crop vùng miệng (nửa dưới bbox) theo chuỗi box cho trước — 1 box/sampled-frame.
-    Frame dư cuối clip (anon lệch 1–4 frame so với real do encode) dùng box CUỐI.
-    Trả uint8 [T, size, size] hoặc None.
+    Crop mouth trên VIDEO này theo chuỗi box cho sẵn (anon dùng box của real ghép cặp).
+    Cùng sampler timestamp target_fps -> output-frame khớp box theo thời gian; frame dư
+    cuối (anon lệch 1–4 frame do encode) dùng box CUỐI. Trả uint8 [T,size,size] | None.
     """
     cap = cv2.VideoCapture(mp4)
     if not cap.isOpened():
         return None
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-    step = max(1, round(src_fps / target_fps))
-    rois, fi, si = [], 0, 0
+    rois, fi, oi = [], 0, 0
     while True:
         ok, frame = cap.read()
         if not ok:
             break
-        if fi % step == 0:
-            x1, y1, x2, y2 = boxes[min(si, len(boxes) - 1)]
-            bw, bh = x2 - x1, y2 - y1
-            # vùng miệng: nửa dưới mặt, nới ngang 10%
-            mx1 = int(max(0, x1 - 0.10 * bw))
-            mx2 = int(min(frame.shape[1], x2 + 0.10 * bw))
-            my1 = int(y1 + 0.55 * bh)
-            my2 = int(min(frame.shape[0], y2 + 0.10 * bh))
-            if mx2 > mx1 and my2 > my1:
-                g = cv2.cvtColor(frame[my1:my2, mx1:mx2], cv2.COLOR_BGR2GRAY)
-                rois.append(cv2.resize(g, (size, size)))
-            si += 1
+        while fi >= round(oi * src_fps / target_fps):
+            c = _crop_mouth(frame, boxes[min(oi, len(boxes) - 1)], size)
+            if c is not None:
+                rois.append(c)
+            oi += 1
         fi += 1
     cap.release()
     if not rois:
@@ -304,14 +317,18 @@ def main():
                 if boxes is None:                            # real bị skip/drop -> detect lại trên real
                     real_mp4 = real_path_by_orig.get(src, "")
                     if real_mp4 and os.path.isfile(real_mp4):
-                        boxes = detect_box_seq(yolo, real_mp4, args.fps, args.detect_every, args.conf)
+                        boxes, _ = detect_and_crop(yolo, real_mp4, args.fps, args.mouth_size,
+                                                   args.detect_every, args.conf)
                 if boxes is None:                            # không tra được real -> đành thử trên anon
-                    boxes = detect_box_seq(yolo, mp4, args.fps, args.detect_every, args.conf)
+                    boxes, _ = detect_and_crop(yolo, mp4, args.fps, args.mouth_size,
+                                               args.detect_every, args.conf)
+                mouth = crop_from_boxes(mp4, boxes, args.fps, args.mouth_size) if boxes is not None else None
             else:
-                boxes = detect_box_seq(yolo, mp4, args.fps, args.detect_every, args.conf)
+                # real + fake không-anon: 1 lần decode vừa detect vừa crop (video của chính clip)
+                boxes, mouth = detect_and_crop(yolo, mp4, args.fps, args.mouth_size,
+                                               args.detect_every, args.conf)
                 if r["_method"] == "real" and boxes is not None:
                     box_cache[r.get("orig_clip_id") or cid] = boxes   # cache cho anon ghép cặp
-            mouth = crop_from_boxes(mp4, boxes, args.fps, args.mouth_size) if boxes is not None else None
             if not extract_wav(mp4, wav_tmp):
                 raise RuntimeError("ffmpeg_wav_failed")
             sig = read_wav_int16(wav_tmp)
