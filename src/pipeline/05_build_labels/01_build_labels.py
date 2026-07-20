@@ -12,14 +12,18 @@ Output: data/05_labels/labels.csv — schema:
   speaker_id, tier, split
 
 Quy tắc chia split (chống leakage — QUAN TRỌNG NHẤT của cả project):
-  1. Đơn vị chia là NHÓM speaker (speaker_id; fallback source_video) — mọi clip
-     của cùng một người nói nằm trọn trong 1 split -> speaker-disjoint.
+  1. Đơn vị chia là CONNECTED COMPONENT của đồ thị (speaker_id ∪ source_video):
+     hai clip chung speaker_id HOẶC chung source_video -> buộc cùng 1 split.
+     Lý do: 02_curate over-cluster (dist=0.6) chẻ 1 người thật thành nhiều
+     speaker_id; nếu chỉ gom theo speaker_id thì 1 video có thể trải nhiều split
+     -> cùng một người (nhiều ID) rơi vào train lẫn test = leak identity đội lốt
+     "speaker-disjoint". Gom theo component khoá cả hai chiều speaker + video.
   2. FAKE luôn đi theo split của source_clip real sinh ra nó (không bao giờ để
      fake ở test trong khi real gốc ở train — leak cả identity lẫn nội dung).
   3. Tỉ lệ 70/15/15 tính trên số CLIP REAL (greedy bin-packing nhóm lớn trước,
      deterministic theo --seed).
-  4. Cuối script tự VERIFY: không speaker nào xuất hiện ở 2 split; in cảnh báo
-     nếu method phân bố lệch giữa các split.
+  4. Cuối script tự VERIFY: không speaker VÀ không source_video nào xuất hiện ở
+     2 split; in cảnh báo nếu method phân bố lệch giữa các split.
 
 Chỉ dùng thư viện chuẩn.
 
@@ -52,15 +56,44 @@ def read_csv(path):
         return list(csv.DictReader(fh))
 
 
-def group_key(row):
-    """Đơn vị chia split: speaker_id nếu có, fallback source_video, fallback clip_id."""
+def _spk_node(row):
     sid = (row.get("speaker_id") or "").strip()
-    if sid not in ("", "-1"):
-        return f"spk_{sid}"
+    return f"spk_{sid}" if sid not in ("", "-1") else None
+
+
+def _vid_node(row):
     sv = (row.get("source_video") or "").strip()
-    if sv:
-        return f"vid_{sv}"
-    return f"clip_{row.get('clip_id', '')}"
+    return f"vid_{sv}" if sv else None
+
+
+def primary_node(row):
+    """Node đại diện 1 clip: speaker nếu có, fallback video, fallback clip_id."""
+    return _spk_node(row) or _vid_node(row) or f"clip_{row.get('clip_id', '')}"
+
+
+class UnionFind:
+    """Gom clip vào connected component qua các cạnh (speaker_id ∪ source_video)."""
+
+    def __init__(self):
+        self.parent = {}
+
+    def find(self, x):
+        self.parent.setdefault(x, x)
+        root = x
+        while self.parent[root] != root:
+            root = self.parent[root]
+        while self.parent[x] != root:          # path compression
+            self.parent[x], x = root, self.parent[x]
+        return root
+
+    def union(self, a, b):
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[ra] = rb
+
+    def key(self, row):
+        """Khoá nhóm = root component của clip (cùng component -> cùng split)."""
+        return self.find(primary_node(row))
 
 
 def main():
@@ -84,10 +117,13 @@ def main():
     if not fake_rows:
         print(f"CẢNH BÁO: chưa có fake ({args.fake_labels} trống/thiếu) — labels chỉ có real.")
 
-    # ---------- 1) Gom nhóm speaker trên tập REAL ----------
-    groups = defaultdict(list)                      # key -> [real row]
+    # ---------- 1) Gom connected component (speaker_id ∪ source_video) trên REAL ----------
+    uf = UnionFind()
+    for r in real_rows:                             # nối speaker <-> video của cùng 1 clip
+        uf.union(primary_node(r), _vid_node(r) or primary_node(r))
+    groups = defaultdict(list)                      # component root -> [real row]
     for r in real_rows:
-        groups[group_key(r)].append(r)
+        groups[uf.key(r)].append(r)
 
     # ---------- 2) Greedy bin-packing: nhóm to trước, nhét vào split đang thiếu nhiều nhất ----------
     n_real = len(real_rows)
@@ -117,7 +153,7 @@ def main():
     out_rows = []
     split_of_clip = {}
     for r in real_rows:
-        sp = split_of_group[group_key(r)]
+        sp = split_of_group[uf.key(r)]
         cid = r.get("clip_id", "")
         split_of_clip[cid] = sp
         out_rows.append({
@@ -139,7 +175,7 @@ def main():
         src = r.get("source_clip", "")
         sp = split_of_clip.get(src)
         if sp is None:                              # real gốc không nằm trong tập sạch
-            sp = split_of_group.get(group_key(r))   # thử theo speaker
+            sp = split_of_group.get(uf.key(r))      # thử theo component (speaker/video)
             if sp is None:
                 orphan += 1
                 continue                            # bỏ fake mồ côi (an toàn hơn là đoán)
@@ -168,12 +204,17 @@ def main():
         print(f"  (bỏ {orphan} fake mồ côi — source_clip không có trong tập real sạch)")
 
     stat = defaultdict(Counter)
-    spk_in_split = defaultdict(set)
+    spk_in_split = defaultdict(set)                  # speaker_id  -> {split}
+    vid_in_split = defaultdict(set)                  # source_video -> {split}
     for r in out_rows:
         stat[r["split"]][f"label{r['label']}"] += 1
         stat[r["split"]][r["method"]] += 1
-        key = group_key(r)
-        spk_in_split[key].add(r["split"])
+        sid = (r.get("speaker_id") or "").strip()
+        if sid not in ("", "-1"):
+            spk_in_split[sid].add(r["split"])
+        sv = (r.get("source_video") or "").strip()
+        if sv:
+            vid_in_split[sv].add(r["split"])
 
     print(f"\n{'split':6} | {'real':>6} | {'fake':>6} | theo method")
     for sp in SPLITS:
@@ -181,12 +222,17 @@ def main():
         methods = {m: n for m, n in c.items() if not m.startswith("label") and m != "real"}
         print(f"{sp:6} | {c['label0']:6} | {c['label1']:6} | {dict(sorted(methods.items()))}")
 
-    leaks = {k: v for k, v in spk_in_split.items() if len(v) > 1}
-    if leaks:
-        print(f"\n❌ LEAKAGE: {len(leaks)} nhóm speaker xuất hiện ở >1 split! Ví dụ: "
-              f"{list(leaks.items())[:3]}")
+    spk_leaks = {k: v for k, v in spk_in_split.items() if len(v) > 1}
+    vid_leaks = {k: v for k, v in vid_in_split.items() if len(v) > 1}
+    if spk_leaks or vid_leaks:
+        if spk_leaks:
+            print(f"\n❌ LEAKAGE: {len(spk_leaks)} speaker_id ở >1 split! Ví dụ: "
+                  f"{list(spk_leaks.items())[:3]}")
+        if vid_leaks:
+            print(f"\n❌ LEAKAGE: {len(vid_leaks)} source_video ở >1 split! Ví dụ: "
+                  f"{list(vid_leaks.items())[:3]}")
         sys.exit(1)
-    print("\n✅ Verify speaker-disjoint: không nhóm speaker nào nằm ở 2 split.")
+    print("\n✅ Verify: không speaker_id NÀO và không source_video NÀO nằm ở 2 split.")
 
 
 if __name__ == "__main__":
