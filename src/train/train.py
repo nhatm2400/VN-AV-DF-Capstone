@@ -25,7 +25,13 @@ except Exception:
 import torch
 from torch.utils.data import DataLoader
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+_HERE = os.path.dirname(os.path.abspath(__file__))          # src/train
+# Gỡ script-dir (src/train) khỏi path: chạy `python src/train/train.py` thì src/train
+# nằm ở sys.path[0] và chính train.py CHE mất package `train` -> `train.dataset` fail.
+# Bỏ nó đi rồi thêm `src` -> `train` trỏ đúng namespace package src/train (chạy được
+# cả `python src/train/train.py` lẫn `python -m src.train.train`).
+sys.path[:] = [p for p in sys.path if os.path.abspath(p or ".") != _HERE]
+sys.path.insert(0, os.path.dirname(_HERE))                  # src
 from model.avsp_net import AVSPNet, compute_losses          # noqa: E402
 from train.dataset import AVSPDataset, collate              # noqa: E402
 
