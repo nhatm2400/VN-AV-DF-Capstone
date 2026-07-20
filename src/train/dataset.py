@@ -16,9 +16,11 @@ import os
 import re
 import csv
 import sys
+import random
 
 import torch
 from torch.utils.data import Dataset
+from torchvision.transforms.functional import gaussian_blur
 
 # import offset map từ src/model (namespace package, chạy từ repo root)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -41,9 +43,15 @@ def _pad_trunc(x, T):
 
 
 class AVSPDataset(Dataset):
-    def __init__(self, labels_csv, features_dir, split, branches=("audio", "visual", "prosody")):
+    def __init__(self, labels_csv, features_dir, split, branches=("audio", "visual", "prosody"),
+                 real_blur_aug_p=0.0, blur_sigma=(2.0, 8.0)):
+        # real_blur_aug_p: xác suất blur mouth ROI của clip REAL khi train -> chống leak
+        #   "mờ = fake". Đặt ≈ tỉ lệ anon trong fake (~0.25) để P(blur|real)≈P(blur|fake).
+        #   CHỈ bật cho split train (val/test giữ nguyên để đo trung thực).
         self.features_dir = features_dir
         self.branches = tuple(branches)
+        self.real_blur_aug_p = real_blur_aug_p
+        self.blur_sigma = blur_sigma
         self.rows = []
         with open(labels_csv, newline="", encoding="utf-8") as fh:
             for r in csv.DictReader(fh):
@@ -80,6 +88,11 @@ class AVSPDataset(Dataset):
         # visual (mouth ROI)
         if "visual" in self.branches and obj.get("mouth") is not None:
             mouth = _pad_trunc(obj["mouth"].float() / 255.0, T_MOUTH)
+            # blur đối xứng: làm mờ ROI của một phần REAL -> "mờ" hết là chỉ báo của fake
+            if int(r["label"]) == 0 and self.real_blur_aug_p > 0 \
+                    and random.random() < self.real_blur_aug_p:
+                s = random.uniform(*self.blur_sigma)
+                mouth = gaussian_blur(mouth.unsqueeze(1), kernel_size=9, sigma=s).squeeze(1)
         else:
             mouth = torch.zeros(T_MOUTH, MOUTH_SIZE, MOUTH_SIZE)
 

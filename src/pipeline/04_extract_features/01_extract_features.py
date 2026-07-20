@@ -6,6 +6,10 @@ KHÔNG dùng full-frame (leak identity/background/codec); thay bằng:
 
   1. MOUTH ROI  : YOLOv8n-face detect mặt -> crop nửa dưới khuôn mặt (vùng miệng)
                   -> grayscale 96x96, sample ~25fps  -> uint8 [T_v, 96, 96]
+                  Mỗi sampled-frame LUÔN có 1 ROI (carry-forward + backward-fill khi
+                  detect fail) -> chuỗi hình không co/lệch với audio. ANON (mặt mờ,
+                  YOLO fail): dùng chuỗi box của REAL ghép cặp (source_clip) áp lên
+                  anon theo timestamp -> crop môi chặt, không phụ thuộc detect trên mờ.
   2. AUDIO      : wav2vec2-base-vietnamese-250h (frozen) trên wav 16k mono
                   -> float16 [T_a, 768]   (tùy chọn --no_w2v để bỏ)
   3. PROSODY    : F0 (parselmouth, fallback librosa.pyin), delta-F0, energy RMS,
@@ -123,14 +127,23 @@ def prosody_features(wav_path, sig_i16):
 
 
 # ---------------------------------------------------------------- visual helper
-def mouth_rois(model, mp4, target_fps, size, detect_every, conf):
-    """uint8 [T, size, size] — crop vùng miệng (nửa dưới bbox mặt to nhất)."""
+def detect_box_seq(model, mp4, target_fps, detect_every, conf):
+    """
+    Trả LIST box (x1,y1,x2,y2) — ĐÚNG 1 box cho mỗi sampled-frame — để chuỗi mouth
+    ROI luôn cùng độ dài với lưới thời gian (không co/lệch với audio).
+      - detect thành công  -> cập nhật box
+      - detect fail giữa clip -> GIỮ box hợp lệ gần nhất (carry-forward)
+      - fail ở ĐẦU clip   -> backward-fill bằng box hợp lệ đầu tiên
+      - cả clip không có mặt -> None (hard-drop hợp lệ)
+    KHÔNG crop ở đây (tách khỏi crop_from_boxes) để anon tái dùng chuỗi box của
+    real ghép cặp mà không phụ thuộc YOLO trên mặt đã mờ.
+    """
     cap = cv2.VideoCapture(mp4)
     if not cap.isOpened():
         return None
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
     step = max(1, round(src_fps / target_fps))
-    rois, box, fi, det_i = [], None, 0, 0
+    boxes, box, fi, det_i = [], None, 0, 0
     while True:
         ok, frame = cap.read()
         if not ok:
@@ -138,24 +151,48 @@ def mouth_rois(model, mp4, target_fps, size, detect_every, conf):
         if fi % step == 0:
             if det_i % max(1, detect_every) == 0:
                 res = model.predict(frame, verbose=False, conf=conf)[0]
-                box = None
                 if res.boxes is not None and len(res.boxes) > 0:
                     xyxy = res.boxes.xyxy.cpu().numpy()
                     areas = (xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
-                    box = xyxy[int(areas.argmax())][:4]
+                    box = xyxy[int(areas.argmax())][:4]   # fail -> giữ box cũ (carry-forward)
             det_i += 1
-            if box is not None:
-                x1, y1, x2, y2 = box
-                bw, bh = x2 - x1, y2 - y1
-                # vùng miệng: nửa dưới mặt, nới ngang 10%
-                mx1 = int(max(0, x1 - 0.10 * bw))
-                mx2 = int(min(frame.shape[1], x2 + 0.10 * bw))
-                my1 = int(y1 + 0.55 * bh)
-                my2 = int(min(frame.shape[0], y2 + 0.10 * bh))
-                if mx2 > mx1 and my2 > my1:
-                    crop = frame[my1:my2, mx1:mx2]
-                    g = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-                    rois.append(cv2.resize(g, (size, size)))
+            boxes.append(box)                              # có thể None nếu chưa detect được lần nào
+        fi += 1
+    cap.release()
+    first = next((b for b in boxes if b is not None), None)
+    if first is None:
+        return None                                        # cả clip không bắt được mặt
+    return [b if b is not None else first for b in boxes]   # backward-fill các None ở đầu
+
+
+def crop_from_boxes(mp4, boxes, target_fps, size):
+    """
+    Crop vùng miệng (nửa dưới bbox) theo chuỗi box cho trước — 1 box/sampled-frame.
+    Frame dư cuối clip (anon lệch 1–4 frame so với real do encode) dùng box CUỐI.
+    Trả uint8 [T, size, size] hoặc None.
+    """
+    cap = cv2.VideoCapture(mp4)
+    if not cap.isOpened():
+        return None
+    src_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    step = max(1, round(src_fps / target_fps))
+    rois, fi, si = [], 0, 0
+    while True:
+        ok, frame = cap.read()
+        if not ok:
+            break
+        if fi % step == 0:
+            x1, y1, x2, y2 = boxes[min(si, len(boxes) - 1)]
+            bw, bh = x2 - x1, y2 - y1
+            # vùng miệng: nửa dưới mặt, nới ngang 10%
+            mx1 = int(max(0, x1 - 0.10 * bw))
+            mx2 = int(min(frame.shape[1], x2 + 0.10 * bw))
+            my1 = int(y1 + 0.55 * bh)
+            my2 = int(min(frame.shape[0], y2 + 0.10 * bh))
+            if mx2 > mx1 and my2 > my1:
+                g = cv2.cvtColor(frame[my1:my2, mx1:mx2], cv2.COLOR_BGR2GRAY)
+                rois.append(cv2.resize(g, (size, size)))
+            si += 1
         fi += 1
     cap.release()
     if not rois:
@@ -215,9 +252,13 @@ def main():
 
     # gộp real (label=0) + fake (label=1)
     rows = []
+    real_path_by_orig = {}          # orig_clip_id (=source_clip của fake) -> .mp4 real trên đĩa
     with open(args.real_csv, newline="", encoding="utf-8") as fh:
         for r in csv.DictReader(fh):
             r["_label"], r["_method"] = 0, "real"
+            key = r.get("orig_clip_id") or r.get("clip_id", "")   # SNVSM: orig_clip_id; thô: clip_id
+            if key:
+                real_path_by_orig[key] = r.get("file_path", "")
             rows.append(r)
     if os.path.isfile(args.fake_labels):
         with open(args.fake_labels, newline="", encoding="utf-8") as fh:
@@ -239,6 +280,7 @@ def main():
 
     tmpdir = tempfile.mkdtemp(prefix="feat_")
     wav_tmp = os.path.join(tmpdir, "a.wav")
+    box_cache = {}                  # orig_clip_id -> chuỗi box của real (anon ghép cặp tái dùng)
     done = skipped = failed = 0
     for i, r in enumerate(rows):
         cid = r.get("clip_id", f"clip{i:06d}")
@@ -255,8 +297,21 @@ def main():
             continue
 
         try:
-            mouth = mouth_rois(yolo, mp4, args.fps, args.mouth_size,
-                               args.detect_every, args.conf)
+            if r["_method"] == "anonymization":
+                # anon: mặt đã mờ -> KHÔNG detect trên anon; dùng chuỗi box của real ghép cặp
+                src = r.get("source_clip", "")
+                boxes = box_cache.get(src)
+                if boxes is None:                            # real bị skip/drop -> detect lại trên real
+                    real_mp4 = real_path_by_orig.get(src, "")
+                    if real_mp4 and os.path.isfile(real_mp4):
+                        boxes = detect_box_seq(yolo, real_mp4, args.fps, args.detect_every, args.conf)
+                if boxes is None:                            # không tra được real -> đành thử trên anon
+                    boxes = detect_box_seq(yolo, mp4, args.fps, args.detect_every, args.conf)
+            else:
+                boxes = detect_box_seq(yolo, mp4, args.fps, args.detect_every, args.conf)
+                if r["_method"] == "real" and boxes is not None:
+                    box_cache[r.get("orig_clip_id") or cid] = boxes   # cache cho anon ghép cặp
+            mouth = crop_from_boxes(mp4, boxes, args.fps, args.mouth_size) if boxes is not None else None
             if not extract_wav(mp4, wav_tmp):
                 raise RuntimeError("ffmpeg_wav_failed")
             sig = read_wav_int16(wav_tmp)

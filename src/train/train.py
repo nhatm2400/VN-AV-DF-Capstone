@@ -77,6 +77,9 @@ def main():
     ap.add_argument("--wd", type=float, default=1e-4)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--patience", type=int, default=7, help="early stop theo val AUC")
+    ap.add_argument("--real_blur_aug_p", type=float, default=0.25,
+                    help="xác suất blur mouth ROI của REAL (train) chống leak 'mờ=fake'; "
+                         "≈ tỉ lệ anon trong fake. 0 = tắt")
     ap.add_argument("--amp", action="store_true", help="mixed precision (GPU)")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
@@ -89,9 +92,11 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Run: {run_name} | branches={branches} | device={device}")
 
-    ds_tr = AVSPDataset(args.labels, args.features, "train", branches)
-    ds_va = AVSPDataset(args.labels, args.features, "val", branches)
-    print(f"train={len(ds_tr)} val={len(ds_va)} | pos_weight={ds_tr.pos_weight().item():.3f}")
+    ds_tr = AVSPDataset(args.labels, args.features, "train", branches,
+                        real_blur_aug_p=args.real_blur_aug_p)   # blur aug CHỈ ở train
+    ds_va = AVSPDataset(args.labels, args.features, "val", branches)   # val: không aug
+    print(f"train={len(ds_tr)} val={len(ds_va)} | pos_weight={ds_tr.pos_weight().item():.3f} "
+          f"| real_blur_aug_p={args.real_blur_aug_p}")
     dl_tr = DataLoader(ds_tr, batch_size=args.bs, shuffle=True,
                        num_workers=args.workers, collate_fn=collate, drop_last=True)
     dl_va = DataLoader(ds_va, batch_size=args.bs, shuffle=False,
