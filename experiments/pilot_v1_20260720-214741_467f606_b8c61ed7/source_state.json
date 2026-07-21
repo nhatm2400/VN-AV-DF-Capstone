@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "captured_retroactively": true,
+  "git_base_at_run_start": "467f606",
+  "git_base_commit_time": "2026-07-20T19:55:35+07:00",
+  "worktree_dirty_at_run": true,
+  "known_uncommitted_change": "Wav2Vec2 fail-fast change in src/pipeline/04_extract_features/01_extract_features.py; later committed as 2e05bd2.",
+  "provenance_note": "The run folder uses the committed base available at inferred run start, not the repository HEAD created after the pilot."
+}

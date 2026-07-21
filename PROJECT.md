@@ -4,9 +4,9 @@
 
 Dự án phát hiện **Deepfake âm thanh-hình ảnh tiếng Việt** (Vietnamese Audio-Visual Deepfake Detection). Mục tiêu là xây dựng dataset và huấn luyện mô hình phát hiện video giả mạo (deepfake) đặc thù cho người Việt, tập trung vào sự lệch pha giữa âm thanh và khẩu hình miệng.
 
-Mô hình cốt lõi: **PAMF (Prosody-Aligned Multi-modal Fusion)** — kết hợp audio và visual thông qua Cross-Attention. Đề xuất mô hình mở rộng (mouth-ROI + nhánh prosody + đa nhiệm) nằm ở [MODEL_PROPOSAL.md](MODEL_PROPOSAL.md) (AVSP-Net / VietTone-AVDF).
+Mô hình hiện đã chạy pilot: **AVSP-Net V1** — mouth ROI + Wav2Vec + prosody, hợp nhất bằng Cross-Attention. Kiến trúc mục tiêu mới là **AVSP-Net V2**, gồm V2a (local temporal core, tái dùng feature hiện có) và V2b (mở rộng để tổng quát hóa sang deepfake thực tế), xem [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
 
-Trạng thái hiện tại: **dữ liệu + curation đã xong** (6.888 clip → 3.001 clip sạch); **03_fake đã sinh đủ 12.004 fake (4 method), SNVSM đồng bộ codec 15.005 clip, `data/05_labels/labels.csv` đã build + split speaker/video-disjoint verified**; **PILOT đã chạy xong** (2.700 clip, test AUC **0.809** — xem [PILOT](#pilot-đã-chạy-2026-07-21--de-risk-trước-full-run)); **chưa trích feature FULL, chưa train mô hình chính**. Điểm yếu đã biết: `frame_reverse` gần như không detect được (AUC 0.535).
+Trạng thái hiện tại: **dữ liệu + curation đã xong** (6.888 clip → 3.001 clip sạch); **03_fake đã sinh đủ 12.004 fake (4 method), SNVSM đồng bộ codec 15.005 clip, `data/05_labels/labels.csv` đã build + split speaker/video-disjoint verified**; **PILOT V1 đã chạy xong** (2.700 clip, test AUC **0.809** — xem [PILOT](#pilot-đã-chạy-2026-07-21--de-risk-trước-full-run)); **chưa trích feature FULL, chưa train mô hình chính**. Trạng thái quyết định hiện tại là **NO-GO full V1**: phải sửa artifact của `temporal_desync`, nâng lên V2a và chạy lại pilot diagnostic trước. Xem [báo cáo đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
 
 ---
 
@@ -85,10 +85,14 @@ Trạng thái hiện tại: **dữ liệu + curation đã xong** (6.888 clip →
 │   ├── raw/tier{N}/                    # video gốc tải về
 │   └── label.csv                       # nhãn legacy (từ PoC)
 ├── configs/                            # (placeholder test.py)
-├── docs/                               # PROPOSAL_CAPSTONE.pdf, Pipeline/, References/, Report checkpoint/, Proposal md
+├── docs/                               # Tài liệu kiến trúc, báo cáo, proposal dữ liệu và tài liệu tham khảo
+│   ├── architecture/
+│   │   └── MODEL_PROPOSAL.md           # AVSP-Net V2a/V2b + roadmap + output contract
+│   └── reports/
+│       ├── PILOT_REPORT.md             # Báo cáo pilot gốc
+│       └── PILOT_V1_REVIEW_AND_V2_PLAN.md
 ├── experiments/exp001_baseline/
 ├── notebooks/                          # (trống)
-├── MODEL_PROPOSAL.md                   # Đề xuất kiến trúc AVSP-Net / VietTone-AVDF
 ├── README.md
 ├── yolov8n-face.pt                     # Đặt ở root — quality gate + anonymization
 └── requirements.txt
@@ -123,7 +127,7 @@ Visual [B,T_V,1280]──LayerNorm──Linear──► Key,Value [B,T_V,512]
 
 **Nguyên lý:** Audio làm Query đi tìm khẩu hình miệng (Visual Key/Value) tương ứng. Nếu lệch pha → Deepfake.
 
-> Đề xuất nâng cấp (xem [MODEL_PROPOSAL.md](MODEL_PROPOSAL.md)): thay full-frame MobileNetV2 bằng **mouth-ROI** (chống leak identity/background), thêm **nhánh prosody/F0** (bắt fake `03_pitch_flatten`), dùng `BCEWithLogitsLoss` + head phụ dự đoán offset, chia split **speaker-disjoint**.
+> AVSP-Net V1 đã triển khai mouth ROI + prosody nhưng pilot cho thấy global fusion/offset loss chưa đủ. Kiến trúc thay thế V2a/V2b nằm tại [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
 
 ### Training (PoC)
 
@@ -241,7 +245,7 @@ python src/pipeline/03_fake/05_snvsm_compress.py --input_csv data/03_fake/labels
 
 ### 04_extract_features — Trích feature 3 nhánh
 
-Theo MODEL_PROPOSAL.md §4: **KHÔNG dùng full-frame** (leak identity/background) — mỗi clip (real + fake) trích 1 file `.pt` vào `data/04_features/`:
+Theo data contract V1 đã triển khai: **KHÔNG dùng full-frame** (giảm leak identity/background) — mỗi clip (real + fake) trích 1 file `.pt` vào `data/04_features/`:
 - `mouth`: uint8 `[T,96,96]` — YOLOv8n-face detect, crop nửa dưới bbox (vùng miệng), ~25fps. **Mỗi sampled-frame LUÔN có 1 ROI** (carry-forward khi detect fail giữa clip, backward-fill khi fail ở đầu) → chuỗi hình không co/lệch với audio. **ANON** (mặt mờ, YOLO fail ~18-25%): dùng chuỗi box của **REAL ghép cặp** (`source_clip`→`orig_clip_id`, cache khi xử lý real trước) áp lên anon theo timestamp — crop môi chặt, không phụ thuộc detect trên mặt mờ, không tạo shortcut "static-crop = anon".
 - `w2v`: float16 `[T,768]` — wav2vec2-base-vietnamese-250h frozen (tắt bằng `--no_w2v`)
 - `prosody`: float32 `[T,4]` — f0_z, delta_f0, energy_z, voiced @100Hz (parselmouth, fallback librosa.pyin)
@@ -266,7 +270,7 @@ Gộp real (`all_clean.csv`, label=0) + fake (`data/03_fake/labels.csv`, label=1
 
 ### Train / Eval (AVSP-Net — `src/model/avsp_net.py`)
 
-Kiến trúc theo [MODEL_PROPOSAL.md](MODEL_PROPOSAL.md): audio Query × mouth-ROI Key/Value (cross-attention), nhánh prosody BiGRU (bắt `03_pitch_flatten`), 2 head (real/fake `BCEWithLogitsLoss` + offset 7 lớp `CE`) + consistency loss. ~2.3M params (chưa tính wav2vec2 frozen ngoài model).
+Kiến trúc đang có trong code là **AVSP-Net V1**: audio Query × mouth-ROI Key/Value (cross-attention), nhánh prosody BiGRU, 2 head (real/fake `BCEWithLogitsLoss` + offset 7 lớp `CE`) + consistency loss. Đây là baseline pilot; kiến trúc mục tiêu mới nằm tại [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
 
 ```bash
 # Baselines §7 (chạy đủ trước khi claim fusion tốt):
@@ -292,24 +296,34 @@ python src/pipeline/04_extract_features/01_extract_features.py \
     --fake_labels data/03_fake/snvsm/pilot_fake_snvsm.csv \
     --out_dir data/04_features_pilot --detect_every 4        # ~1h, 2700/2700 ok, 0 fail
 python src/train/train.py --labels data/05_labels/labels_pilot.csv \
-    --features data/04_features_pilot --run_name pilot_avsp_full --epochs 30 --amp
-python src/eval/evaluate.py --ckpt experiments/pilot_avsp_full/best.pt \
+    --features data/04_features_pilot --run_name pilot_v1_<timestamp>_<git-sha>_<config-hash> --epochs 30 --amp
+# Không tái dùng run ID đã hoàn tất. Pilot V1 lịch sử hiện được khóa tại:
+# experiments/pilot_v1_20260720-214741_467f606_b8c61ed7/
+python src/eval/evaluate.py --ckpt experiments/pilot_v1_20260720-214741_467f606_b8c61ed7/best.pt \
     --labels data/05_labels/labels_pilot.csv --features data/04_features_pilot --split test
 ```
 
-**Kết quả:** best val AUC **0.813** @epoch 21 (early-stop 28); test AUC **0.809**, F1 0.789, precision 0.94, recall 0.68, FPR real 0.173. val≈test → **không overfit, speaker-disjoint giữ vững**.
+**Kết quả đo được:** best val AUC **0.813** @epoch 21 (early-stop 28); test AUC **0.809**, F1 0.789, precision 0.94, recall 0.68, FPR real 0.173. Val và test gần nhau trong cùng phân phối pseudo-fake; điều này **không đủ để kết luận không overfit artifact**. Audit metadata xác nhận split không trùng `speaker_id`/`source_video`, nhưng `speaker_id` là clustering tự động nên không phải ground-truth danh tính tuyệt đối.
 
 | Method | Recall | F1 | AUC | Ghi chú |
 |---|---|---|---|---|
-| `pitch_flatten` | 1.000 | 0.921 | **0.990** | nhánh prosody/F0 hoạt động đúng thiết kế |
-| `anonymization` | 0.975 | 0.908 | **0.960** | paired-real box + blur-aug ăn; không sập "mờ=fake" |
-| `temporal_desync` | 0.543 | 0.633 | 0.750 | vừa phải — kỳ vọng cải thiện khi full data |
+| `pitch_flatten` | 1.000 | 0.921 | **0.990** | phát hiện tốt phép biến đổi F0 mạnh; chưa chứng minh hiểu thanh điệu Việt |
+| `anonymization` | 0.975 | 0.908 | **0.960** | extractor cứu đủ anon; shortcut blur vẫn rất mạnh |
+| `temporal_desync` | 0.543 | 0.633 | 0.750 | đang nhiễm artifact biên/độ dài từ generator; chưa đo thuần AV sync |
 | `frame_reverse` | 0.198 | 0.288 | **0.535** | ⚠️ **gần như random** |
 
 ⚠️ **Điểm yếu đã biết (chưa xử lý):**
 1. **`frame_reverse` AUC 0.535 ≈ chance** — vấn đề KIẾN TRÚC, không phải bug data: đảo ngược cửa sổ 0.3–1s trong clip ~4s là tín hiệu visual-motion cục bộ+ngắn; nhánh mouth (2D-CNN + temporal transformer) chưa nhạy **thứ tự thời gian**, và cross-attention thiên "khớp nội dung" nên đoạn đảo vẫn ~khớp audio. Hướng sửa: thêm feature delta giữa frame / motion-consistency loss / head nhạy temporal-order.
-2. **`temporal_desync` 0.75** — chưa mạnh, theo dõi ở full run.
-3. **FPR real 0.173** — 17% real bị gắn fake; theo dõi.
+2. **`temporal_desync` generator có artifact blocking** — positive shift tạo khoảng trống đầu audio; negative shift có thể làm ngắn video/mouth do `-itsoffset` + `-shortest`. Phải sửa và regenerate trước full.
+3. **Offset head không học được shift** — accuracy bằng majority-zero baseline; consistency loss còn áp giả định sai cho fake vẫn đồng bộ.
+4. **FPR real 0.173** — 17% real bị gắn fake; cần chọn threshold trên validation và kiểm tra calibration.
+5. **Loader chỉ lấy 4 giây đầu và không có padding mask** — gây mất local anomaly và có thể tạo duration shortcut.
+
+Chi tiết bằng chứng và thứ tự xử lý: [PILOT_V1_REVIEW_AND_V2_PLAN.md](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
+
+### Quy ước experiment bất biến
+
+Từ V2 trở đi, mọi pilot/full/test run phải nằm trong một thư mục run ID duy nhất dưới `experiments/`, chứa scope (`pilot`/`full`), model (`v2a`/`v2b`), timestamp, git SHA và config hash. Run hoàn tất không được ghi đè. Cấu trúc artifact đầy đủ nằm ở [MODEL_PROPOSAL.md §18](docs/architecture/MODEL_PROPOSAL.md#18-experiment-output-bất-biến).
 
 ---
 
@@ -365,8 +379,9 @@ Cần bổ sung ít nhất **4 metrics** vào báo cáo (xem docs). **Cosine sim
 
 | File | Mục đích |
 |---|---|
-| [MODEL_PROPOSAL.md](MODEL_PROPOSAL.md) | Đề xuất kiến trúc AVSP-Net / VietTone-AVDF + roadmap |
-| [docs/Proposal - Pipeline Data & Pseudo-fake.md](docs/Proposal%20-%20Pipeline%20Data%20&%20Pseudo-fake.md) | Mô tả pipeline dữ liệu + pseudo-fake (số thật) |
+| [docs/architecture/MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md) | Đề xuất AVSP-Net V2a/V2b, code layout, output contract và roadmap |
+| [docs/reports/PILOT_REPORT.md](docs/reports/PILOT_REPORT.md) | Báo cáo chi tiết quá trình pilot gốc |
+| [docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md) | Review V1 sau pilot, fact-check và quyết định NO-GO/roadmap V2 |
 | [PoC/src/fusion_model.py](PoC/src/fusion_model.py) | Định nghĩa PAMF_Fusion (Cross-Attention) |
 | [PoC/src/feature_extractor.py](PoC/src/feature_extractor.py) | Wav2Vec2 + MobileNetV2 extractor |
 | [src/pipeline/03_fake/01_temporal_desync.py](src/pipeline/03_fake/01_temporal_desync.py) | Mẫu chuẩn của 4 method fake (schema labels chung) |

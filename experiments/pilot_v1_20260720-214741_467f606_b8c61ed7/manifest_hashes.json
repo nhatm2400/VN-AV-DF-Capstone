@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "algorithm": "sha256",
+  "inputs": {
+    "data/03_fake/snvsm/pilot_real_snvsm.csv": "74C1ECF5654160D38BCB12CFF814AA782E960693E9C60E1AAAAD92F3A5511CA2",
+    "data/03_fake/snvsm/pilot_fake_snvsm.csv": "6535BDCAAB5B9CE6F98101C0DA08D578C8FB31DAE4666A5AB7FED6FF78CEDACB",
+    "data/05_labels/labels_pilot.csv": "3E42A7DF5AE3B945A02AACD009B2294A214FD281C167697BA446A2AC5FF7ED5F",
+    "data/04_features_pilot/features_index.csv": "21C84DD21C34CB7AA3E7B907EDFD1EC82B9190E3D63C5B80E745588A2B8FDA44"
+  },
+  "artifacts": {
+    "best.pt": "9F016A6FC490C589BAC9765811A07E55ACEFE70E9B4A9ED5CE2965DCD307C496",
+    "last.pt": "1A4533AABE81EE7E03F1599988EDA46E54DC19DFCE80661B9A0D19BA74BBB43F",
+    "history.json": "03E0FD9664F7667791D70B2955EE86A05845DE94CBC4770C5ABFAC1829028530",
+    "eval_test.json": "BB80A7815D8137C19968083BEBF2AEBEDD12552B7868AFCE2DEF9CF57EA3FA78"
+  },
+  "note": "eval_test.json hash changed only because its embedded checkpoint path was updated after the immutable run rename. Model scores and metrics are unchanged."
+}

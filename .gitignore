@@ -53,6 +53,18 @@ Thumbs.db
 
 docs/
 
+# Tai lieu song can version-control; cac noi dung docs khac van giu ignore
+!docs/
+docs/*
+!docs/README.md
+!docs/architecture/
+docs/architecture/*
+!docs/architecture/MODEL_PROPOSAL.md
+!docs/reports/
+docs/reports/*
+!docs/reports/PILOT_REPORT.md
+!docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md
+
 cookies.txt
 
 LA_draft/
