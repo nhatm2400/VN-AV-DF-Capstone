@@ -48,6 +48,7 @@ except Exception:
 import numpy as np
 
 try:
+    # pyrefly: ignore [missing-import]
     import torch
 except Exception:
     print("Thiếu torch. Cài: pip install torch")
@@ -261,7 +262,12 @@ def main():
             w2v = W2V(device)
             print("wav2vec2-base-vietnamese-250h: OK")
         except Exception as e:
-            print(f"CẢNH BÁO: không nạp được wav2vec2 ({e}) — tiếp tục không có nhánh audio.")
+            # FAIL-FAST: không im lặng chạy tiếp ra feature THIẾU nhánh audio (phí cả run dài).
+            # Muốn cố ý bỏ audio thì truyền --no_w2v.
+            print(f"LỖI: không nạp được wav2vec2 ({e}). "
+                  f"Dừng để tránh trích feature thiếu nhánh audio. "
+                  f"Nếu CỐ Ý bỏ nhánh audio, chạy lại với --no_w2v.")
+            sys.exit(1)
 
     # gộp real (label=0) + fake (label=1)
     rows = []
