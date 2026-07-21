@@ -8,6 +8,7 @@ data/03_fake/*
 !data/03_fake/.gitkeep
 data/04_features/*
 !data/04_features/.gitkeep
+data/04_features_pilot/
 data/05_labels/*
 !data/05_labels/.gitkeep
 !data/05_labels/labels.csv
@@ -56,5 +57,5 @@ cookies.txt
 
 LA_draft/
 
+# Huong dan lam viec voi AI — giu LOCAL (tai lieu project o PROJECT.md, co commit)
 CLAUDE.md
-RULES.md
