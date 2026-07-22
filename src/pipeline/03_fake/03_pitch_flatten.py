@@ -53,6 +53,7 @@ from src.pipeline.fake_media_contract import (
     probe_media,
     publish_validated,
     remove_if_exists,
+    same_file_path,
 )
 from src.pipeline.timeline_contract import (
     TIMELINE_FIELDS,
@@ -227,7 +228,7 @@ def main():
         existing = existing_rows.get(fake_id)
         if existing:
             recorded_path = os.path.abspath(existing.get("file_path", ""))
-            if (os.path.normcase(recorded_path) != os.path.normcase(out_path)
+            if (not same_file_path(recorded_path, out_path)
                     or existing.get("param", "") != expected_param):
                 raise ValueError(f"Resume contract sai cho {fake_id}")
             if is_valid_repaired_output(out_path, media):

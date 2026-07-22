@@ -48,7 +48,10 @@ def probe_media(path):
         target_samples = _round_fraction(
             audio_duration_fraction * AUDIO_TARGET_RATE
         )
-        if fps <= 0 or frames <= 0 or video_duration <= 0 or target_samples <= 0:
+        native_rate = int(audio.get("sample_rate", 0) or 0)
+        native_samples = _round_fraction(audio_duration_fraction * native_rate)
+        if (fps <= 0 or frames <= 0 or video_duration <= 0
+                or target_samples <= 0 or native_rate <= 0 or native_samples <= 0):
             return None
         return {
             "video_frames": frames,
@@ -57,10 +60,11 @@ def probe_media(path):
             "video_start": float(video.get("start_time", 0) or 0),
             "video_codec": str(video.get("codec_name", "")),
             "audio_target_samples": target_samples,
+            "audio_native_samples": native_samples,
             "audio_duration": target_samples / AUDIO_TARGET_RATE,
             "audio_start": float(audio.get("start_time", 0) or 0),
             "audio_codec": str(audio.get("codec_name", "")),
-            "audio_sample_rate": int(audio.get("sample_rate", 0) or 0),
+            "audio_sample_rate": native_rate,
             "audio_channels": int(audio.get("channels", 0) or 0),
         }
     except (KeyError, ValueError, IndexError, StopIteration, ZeroDivisionError,
@@ -95,6 +99,18 @@ def remove_if_exists(path):
         os.remove(path)
     except FileNotFoundError:
         pass
+
+
+def same_file_path(left, right):
+    """Accept workspace aliases only when Windows resolves them to one file."""
+    try:
+        if os.path.exists(left) and os.path.exists(right):
+            return os.path.samefile(left, right)
+    except OSError:
+        pass
+    return os.path.normcase(os.path.abspath(left)) == os.path.normcase(
+        os.path.abspath(right)
+    )
 
 
 def publish_validated(partial_path, out_path, source_media):

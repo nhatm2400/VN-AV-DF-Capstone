@@ -30,6 +30,10 @@ BUILDER = _load_module(
     "fake_manifest_v2_non_temporal",
     "src/pipeline/03_fake/06_build_fake_manifest_v2.py",
 )
+METADATA_GATE = _load_module(
+    "metadata_shortcut_gate",
+    "src/pipeline/03_fake/07_metadata_shortcut_gate.py",
+)
 
 
 def _run(args):
@@ -166,6 +170,38 @@ class NonTemporalGeneratorContractTest(unittest.TestCase):
         legacy[0]["param"] = "legacy"
         with self.assertRaisesRegex(ValueError, "không thuộc generator V2"):
             BUILDER.compose_rows(legacy, temporal, check_files=False)
+
+    def test_metadata_gate_is_group_disjoint_and_detects_shortcut(self):
+        methods = list(BUILDER.METHOD_ORDER)
+
+        def rows(shortcut):
+            output = []
+            for group_index in range(10):
+                source = f"source_{group_index}"
+                base = {
+                    feature: float(group_index + feature_index / 100)
+                    for feature_index, feature in enumerate(METADATA_GATE.FEATURE_NAMES)
+                }
+                output.append({
+                    **base, "clip_id": f"{source}_real",
+                    "source_clip": source, "method": "real", "label": 0,
+                })
+                for method in methods:
+                    fake = dict(base)
+                    if shortcut:
+                        fake["log_file_size"] += 100.0
+                    output.append({
+                        **fake, "clip_id": f"{source}_{method}",
+                        "source_clip": source, "method": method, "label": 1,
+                    })
+            return output
+
+        clean, _ = METADATA_GATE.evaluate_feature_rows(rows(False), threshold=0.65)
+        leaked, _ = METADATA_GATE.evaluate_feature_rows(rows(True), threshold=0.65)
+        self.assertAlmostEqual(clean["max_auc"], 0.5)
+        self.assertTrue(clean["passed"])
+        self.assertGreater(leaked["max_auc"], 0.99)
+        self.assertFalse(leaked["passed"])
 
 
 if __name__ == "__main__":

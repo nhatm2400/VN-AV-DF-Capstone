@@ -45,6 +45,7 @@ from src.pipeline.fake_media_contract import (
     probe_media,
     publish_validated,
     remove_if_exists,
+    same_file_path,
 )
 from src.pipeline.timeline_contract import (
     TIMELINE_FIELDS,
@@ -156,10 +157,10 @@ def ffmpeg_anon(in_path, out_path, box, mode, sigma, source_media=None):
 
     partial_path = out_path + ".part.mp4"
 
-    def run(acodec):
+    def run(filter_graph, audio_map, acodec):
         remove_if_exists(partial_path)
-        cmd = ["ffmpeg", "-y", "-i", in_path, "-filter_complex", vf,
-               "-map", "[v]", "-map", "0:a:0",
+        cmd = ["ffmpeg", "-y", "-i", in_path, "-filter_complex", filter_graph,
+               "-map", "[v]", "-map", audio_map,
                "-c:v", "libx264", "-crf", "20", "-preset", "veryfast", "-pix_fmt", "yuv420p",
                "-c:a", acodec, "-fps_mode", "passthrough",
                "-loglevel", "error", partial_path]
@@ -168,7 +169,13 @@ def ffmpeg_anon(in_path, out_path, box, mode, sigma, source_media=None):
             remove_if_exists(partial_path)
             return False
         return publish_validated(partial_path, out_path, source_media)
-    return run("copy") or run("alac")
+    if run(vf, "0:a:0", "copy"):
+        return True
+    lossless_graph = (
+        vf + f";[0:a:0]atrim=end_sample={source_media['audio_native_samples']},"
+        "asetpts=PTS-STARTPTS[aout]"
+    )
+    return run(lossless_graph, "[aout]", "alac")
 
 
 def main():
@@ -240,7 +247,7 @@ def main():
         existing = existing_rows.get(fake_id)
         if existing:
             recorded_path = os.path.abspath(existing.get("file_path", ""))
-            if (os.path.normcase(recorded_path) != os.path.normcase(out_path)
+            if (not same_file_path(recorded_path, out_path)
                     or existing.get("param", "") != expected_param):
                 raise ValueError(f"Resume contract sai cho {fake_id}")
             if (args.skip_existing

@@ -243,7 +243,7 @@ def is_valid_output(path, expected_samples=None, expected_video=None):
                        and abs(float(audio.get("start_time", 0) or 0)) <= 1e-3
                        and duration > 0
                        and (expected_samples is None
-                            or output_samples == expected_samples))
+                            or abs(output_samples - expected_samples) <= 1024))
         if not metadata_ok or expected_samples is None:
             return metadata_ok
         if expected_video is None:

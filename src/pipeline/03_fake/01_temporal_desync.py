@@ -55,6 +55,7 @@ from src.pipeline.timeline_contract import (
     build_timeline_contract,
     validate_timeline_contract,
 )
+from src.pipeline.fake_media_contract import same_file_path
 
 try:                                  # in được tiếng Việt trên console Windows (cp1252)
     sys.stdout.reconfigure(encoding="utf-8")
@@ -114,7 +115,7 @@ def ffprobe_media(path):
     try:
         proc = subprocess.run(
             ["ffprobe", "-v", "error", "-count_packets", "-show_entries",
-             "stream=codec_type,codec_name,avg_frame_rate,time_base,start_time,duration,"
+             "stream=codec_type,codec_name,r_frame_rate,avg_frame_rate,time_base,start_time,duration,"
              "duration_ts,sample_rate,channels,nb_read_packets:format=duration",
              "-of", "json", path],
             capture_output=True, text=True
@@ -126,7 +127,9 @@ def ffprobe_media(path):
         video = next(s for s in streams if s.get("codec_type") == "video")
         audio = next(s for s in streams if s.get("codec_type") == "audio")
 
-        fps = Fraction(video["avg_frame_rate"])
+        fps = Fraction(video.get("r_frame_rate") or video["avg_frame_rate"])
+        if fps <= 0:
+            fps = Fraction(video["avg_frame_rate"])
         sample_rate = int(audio["sample_rate"])
         if fps <= 0 or sample_rate <= 0:
             return None
@@ -150,7 +153,7 @@ def ffprobe_media(path):
             return None
         return {
             "fps": fps,
-            "fps_text": str(video["avg_frame_rate"]),
+            "fps_text": str(fps),
             "video_duration": float(video.get("duration")
                                     or data.get("format", {}).get("duration", 0)),
             "video_duration_ts": (int(video["duration_ts"])
@@ -189,11 +192,17 @@ def is_valid_output(path, source_media=None):
             and abs(media["video_duration_ts"]
                     - source_media["video_duration_ts"]) <= 1
         )
+    same_stage04_target = (
+        _round_fraction(Fraction(media["audio_samples"], media["sample_rate"]) * 16000)
+        == _round_fraction(Fraction(source_media["audio_samples"],
+                                    source_media["sample_rate"]) * 16000)
+    )
     return (media["fps"] == source_media["fps"]
             and media["video_codec"] == source_media["video_codec"]
             and media["video_packets"] == source_media["video_packets"]
             and duration_ts_ok
-            and media["audio_samples"] == source_media["audio_samples"]
+            and abs(media["audio_samples"] - source_media["audio_samples"]) <= 1
+            and same_stage04_target
             and media["sample_rate"] == source_media["sample_rate"]
             and media["channels"] == source_media["channels"]
             and abs(media["video_duration"]
@@ -229,7 +238,8 @@ def make_desync(in_path, out_path, shift_frames, media=None):
             "asetpts=PTS-STARTPTS[tail];"
             f"[a1]atrim=start_sample=0:end_sample={split},"
             "asetpts=PTS-STARTPTS[head];"
-            "[tail][head]concat=n=2:v=0:a=1[outa]"
+            f"[tail][head]concat=n=2:v=0:a=1,atrim=end_sample={total_samples},"
+            "asetpts=PTS-STARTPTS[outa]"
         )
         valid_start = float(signed_shift)
         valid_end = media["audio_duration"]
@@ -240,7 +250,8 @@ def make_desync(in_path, out_path, shift_frames, media=None):
             "asetpts=PTS-STARTPTS[rest];"
             f"[a1]atrim=start_sample=0:end_sample={shift_samples},"
             "asetpts=PTS-STARTPTS[prefix];"
-            "[rest][prefix]concat=n=2:v=0:a=1[outa]"
+            f"[rest][prefix]concat=n=2:v=0:a=1,atrim=end_sample={total_samples},"
+            "asetpts=PTS-STARTPTS[outa]"
         )
         valid_start = 0.0
         valid_end = media["audio_duration"] - float(abs(signed_shift))
@@ -376,7 +387,7 @@ def main():
             existing = existing_rows.get(fake_id)
             if existing:
                 recorded_path = os.path.abspath(existing.get("file_path", ""))
-                if os.path.normcase(recorded_path) != os.path.normcase(out_path):
+                if not same_file_path(recorded_path, out_path):
                     raise ValueError(
                         f"{fake_id} đã có trong manifest nhưng file_path khác: "
                         f"{recorded_path} != {out_path}"
@@ -421,6 +432,8 @@ def main():
           f"sửa file thiếu: {repaired} | bỏ qua: {skipped} | lỗi: {failed}")
     print(f"  Video -> {args.out_dir}/  | nhãn (append) -> {args.labels}")
     print("Lưu ý: nén SNVSM 4 mức CRF ở bước sau sẽ đồng bộ codec cho cả real+fake.")
+    if skipped or failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -48,6 +48,7 @@ from src.pipeline.fake_media_contract import (
     probe_media,
     publish_validated,
     remove_if_exists,
+    same_file_path,
 )
 from src.pipeline.timeline_contract import (
     TIMELINE_FIELDS,
@@ -109,21 +110,27 @@ def make_reverse(in_path, out_path, start_frame, end_frame, source_media=None):
     )
     partial_path = out_path + ".part.mp4"
     remove_if_exists(partial_path)
-    cmd = ["ffmpeg", "-y",
-           "-i", in_path,
-           "-filter_complex", vf,
-           "-map", "[v]", "-map", "0:a:0",
-           "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
-           "-pix_fmt", "yuv420p",
-           "-c:a", "copy",
-           "-r", str(source_media["video_fps"]),
-           "-frames:v", str(total),
-           "-loglevel", "error", partial_path]
-    proc = subprocess.run(cmd, capture_output=True)
-    if proc.returncode != 0:
+    def run(filter_graph, audio_map, audio_codec):
         remove_if_exists(partial_path)
-        return False
-    return publish_validated(partial_path, out_path, source_media)
+        cmd = ["ffmpeg", "-y", "-i", in_path,
+               "-filter_complex", filter_graph,
+               "-map", "[v]", "-map", audio_map,
+               "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
+               "-pix_fmt", "yuv420p", "-c:a", audio_codec,
+               "-r", str(source_media["video_fps"]),
+               "-frames:v", str(total),
+               "-loglevel", "error", partial_path]
+        proc = subprocess.run(cmd, capture_output=True)
+        return (proc.returncode == 0
+                and publish_validated(partial_path, out_path, source_media))
+
+    if run(vf, "0:a:0", "copy"):
+        return True
+    lossless_graph = (
+        vf + f";[0:a:0]atrim=end_sample={source_media['audio_native_samples']},"
+        "asetpts=PTS-STARTPTS[aout]"
+    )
+    return run(lossless_graph, "[aout]", "alac")
 
 
 def main():
@@ -197,7 +204,7 @@ def main():
             existing = existing_rows.get(fake_id)
             if existing:
                 recorded_path = os.path.abspath(existing.get("file_path", ""))
-                if (os.path.normcase(recorded_path) != os.path.normcase(out_path)
+                if (not same_file_path(recorded_path, out_path)
                         or existing.get("param", "") != expected_param):
                     raise ValueError(f"Resume contract sai cho {fake_id}")
                 if is_valid_repaired_output(out_path, media):

@@ -1,10 +1,10 @@
 # Báo cáo Phase 0 — sửa và smoke-test `temporal_desync`
 
-**Ngày kiểm tra:** 2026-07-21; cập nhật contract ngày 2026-07-22
+**Ngày kiểm tra:** 2026-07-21; cập nhật contract và stratified smoke ngày 2026-07-22
 
 **Checkpoint Phase 0 cơ chế:** `1c592a4`; phần structured timeline là thay đổi của Bước 2 sau checkpoint này
 
-**Trạng thái:** cơ chế của cả bốn generator V2, SNVSM, structured timeline và synthetic contract-test đã đạt; **chưa chạy stratified real-data smoke/metadata gate, chưa normalize/extract repaired pilot 2.700 clip, chưa train V2a**
+**Trạng thái:** cơ chế của cả bốn generator V2, SNVSM, structured timeline, synthetic contract-test và stratified real-data smoke/metadata gate đã đạt; **chưa normalize/extract repaired pilot 2.700 clip, chưa train V2a**
 
 ## 1. Mục tiêu
 
@@ -92,7 +92,7 @@ Code V2 của [`02_frame_reverse.py`](../../src/pipeline/03_fake/02_frame_revers
 - cả ba dùng output/manifest V2 riêng, ID mới và ghi `av_timeline_v1`; resume chỉ chấp nhận đúng generator version + contract;
 - utility dùng chung nằm tại [`fake_media_contract.py`](../../src/pipeline/fake_media_contract.py).
 
-Đây mới là **code repair + synthetic smoke**. Chưa có kết luận về tỷ lệ pass trên data thật cho đến Bước 4 stratified smoke.
+Phần code repair đã qua cả synthetic smoke lẫn Bước 4 stratified smoke thật ở mục 5.3. Mẫu 15 nguồn chỉ là gate trước pilot, không phải ước lượng tỷ lệ lỗi trên toàn bộ 3.001 clip.
 
 ## 3. Test tự động
 
@@ -111,7 +111,7 @@ Matrix synthetic đã chạy:
 - tổng cộng 30 trường hợp temporal;
 - thêm test SNVSM real/fake qua đúng decode Stage 04, input audio 44,1 kHz stereo vs 16 kHz mono, guard V1, resume-idempotency và builder master V2.
 
-Kết quả cuối sau Bước 3: `16` test pass, `1` real-data test skip mặc định (`17` test được discover). Test real temporal được bật riêng bằng biến môi trường và đã pass ở mục 4 tại checkpoint cơ chế.
+Kết quả cuối sau Bước 4: `17` test pass, `1` real-data test skip mặc định (`18` test được discover). Test real temporal được bật riêng bằng biến môi trường và đã pass ở mục 4 tại checkpoint cơ chế.
 
 Các invariant được kiểm tra:
 
@@ -256,27 +256,52 @@ Exact source selection để tái lập:
 
 Đây là mẫu phân tầng xác nhận lỗi tồn tại ở cả ba nguồn dữ liệu, **không phải ước lượng tỷ lệ lỗi trên 3.001 clip**. Cơ chế cũng khớp code: cả ba generator V1 vẫn dùng `-shortest`. Vì vậy reuse media V1 cho repaired pilot là NO-GO; SNVSM chỉ giữ/normalize timeline hiện có và không thể phục hồi frame đã mất.
 
-### 5.3 Provenance của snapshot smoke
+### 5.3 Stratified real-data smoke `v2r6` và metadata-shortcut gate
 
-Raw media/manifests dưới `data/` bị gitignore theo quy tắc repo. Bảng dưới tách rõ source/test của Bước 2 với r4/r5 là artifact lịch sử. `labels_phase0_smoke_v2r4.csv` không tái tạo được bằng code hiện tại nếu vẫn dùng ba media V1 lỗi; r5 cũng không còn qua structured-contract gate và chủ động không có labels.
+Đúng 15 source ở mục 5.2 được regenerate bằng toàn bộ code V2 hiện tại. Kết quả đo được:
+
+- input: 15 real, gồm 5 source/tier;
+- generator: `15/15` temporal, `15/15` frame reverse, `15/15` pitch flatten, `15/15` anonymization; raw paired media contract đạt `60/60`;
+- SNVSM: `15/15` real + `60/60` fake; chỉ có một codec signature H.264/yuv420p + AAC/16 kHz/mono;
+- Stage 05: `75/75` labels, gồm train 50, validation 15, test 10; không trùng `speaker_id` hoặc `source_video` qua split theo metadata;
+- metadata gate dùng 18 thuộc tính quan sát được từ media/container, GroupKFold 5-fold theo `source_clip`; tuyệt đối không dùng method/path/ID/CRF làm feature.
+
+| Model metadata-only | AUC | Group-bootstrap 95% CI | Kết luận với ngưỡng 0,65 |
+|---|---:|---:|---|
+| Logistic regression cân bằng | 0,530 | [0,503; 0,557] | Đạt |
+| Random forest depth 3 cân bằng | 0,546 | [0,500; 0,614] | Đạt |
+
+Method-wise AUC của logistic: anonymization 0,524; frame reverse 0,471; pitch flatten **0,649**; temporal 0,476. Random forest tương ứng: 0,544; 0,540; 0,607; 0,493. Max AUC tổng là `0,546 ≤ 0,65`, nên gate smoke **đạt**. Tuy nhiên pitch flatten sát ngưỡng và cỡ mẫu chỉ 15 source; đây là lý do metadata gate trên đủ repaired pilot vẫn là điều kiện bắt buộc.
+
+Smoke còn phát hiện và sửa hai edge case dữ liệu thật mà fixture synthetic không cover:
+
+- remux có thể làm `avg_frame_rate` thay đổi một tick dù cadence thật không đổi; validator chuyển sang ưu tiên `r_frame_rate`, trim audio concat đúng native sample và chỉ cho phép sai lệch một native sample khi target Stage 04 ở 16 kHz vẫn giống hệt;
+- source tier3 `7204326198501969178_clip0000_t00000` có audio start 0,135 giây; frame reverse/anonymization dùng fallback ALAC lossless, trim đúng native sample và reset PTS. SNVSM chấp nhận sai lệch duration metadata trong tối đa một AAC frame nhưng vẫn yêu cầu decoded PCM đủ target chính xác.
+
+Artifact cục bộ nằm tại `data/03_fake/phase0_stratified_smoke_v2r6/` và `data/05_labels/labels_phase0_stratified_smoke_v2r6.csv`; chúng bị gitignore và chỉ dùng làm bằng chứng smoke, không tái dùng làm repaired pilot.
+
+### 5.4 Provenance của snapshot smoke
+
+Raw media/manifests dưới `data/` bị gitignore theo quy tắc repo. Bảng dưới khóa source/test hiện tại cùng các artifact r4/r5 lịch sử và r6 hiện hành. `labels_phase0_smoke_v2r4.csv` không tái tạo được bằng code hiện tại nếu vẫn dùng ba media V1 lỗi; r5 cũng không còn qua structured-contract gate và chủ động không có labels.
 
 Các CSV smoke chứa absolute path của workspace lúc chạy và chỉ là bằng chứng cục bộ; không dùng chúng làm input cho repaired pilot.
 
 | Artifact | SHA-256 |
 |---|---|
-| `fake_media_contract.py` | `D4D04C14957BA378CADF5F43AEA12E293985B5B03766ADFB07D599DA3F17144A` |
+| `fake_media_contract.py` | `8A14C9AC4316AAE9DEF352CD424177332BE2696919F34707E86A68F62F38000F` |
 | `timeline_contract.py` | `D6C2D644A2DBDB39A7DB2AC82EA0C1190BDC2D9421DA0BC16071C07F624C04F3` |
-| `01_temporal_desync.py` | `7D6E0836455659801BCF12C9FCB32B6031944AE8D9E9B3E86B271EDFD00C49CD` |
-| `02_frame_reverse.py` | `2DC2CB19BAD65F1A900CB3A679A99838DCD3E79757929FC970E8D34AE15F29AF` |
-| `03_pitch_flatten.py` | `02F696F7165F964A844A34DF6FF671683BB36F588B3E76C496F1D96B1350E7EE` |
-| `04_anonymization.py` | `E4A1E27FAE61BDB12A19F64B1D5FE800D5EA012E7837F393E04E6252854A3F3B` |
-| `05_snvsm_compress.py` | `ECE7E3E15F26E0592D64B1AD4165E6BEC6529C10BB3923307C68588891039E8D` |
+| `01_temporal_desync.py` | `423D47BCE543DAEAEB89FAEACAB6A19136EA0F124C47F99B2F7BE75AE0DCB79E` |
+| `02_frame_reverse.py` | `8603E944266189765A0B06ADD4BD3CFE2FEF3FFE4CA216F215C41BDB1C2CC7B2` |
+| `03_pitch_flatten.py` | `3E1B3D87E0DFDD6579B5B60DECA01BC6190F69620CC808556988D0DFC1FBF165` |
+| `04_anonymization.py` | `1B0BF53969CB14AF2FA8579ECD6C295BD8BB35FBE0D2E392B8F83CF834C7BB5A` |
+| `05_snvsm_compress.py` | `D130720F006B8C408634654E0EF130DF750A91E189FEFF78102BDC3606ADF9B4` |
 | `06_build_fake_manifest_v2.py` | `0BAA76BC3B25AB6D87658352C0E891C1BF5D7CD5F34ADB7666F58D3A908D82B3` |
+| `07_metadata_shortcut_gate.py` | `200A01FE793E73435CDDBE7CCB500764860641181248C72C1FE54A81089CC419` |
 | `04_extract_features/01_extract_features.py` | `49B5419146000C2A5DA8FFBA5103A33D0E6B59A7DFFE82812120716ECE16BD00` |
 | `01_build_labels.py` | `F20942D33F0F9E2144B06448C7CC8226D10BFE81E87F60A2B3E7E7BEC8805DC7` |
 | `train/dataset.py` | `8E1BCCEA1F108E8771C214F68AA113DDA7ABB3A410923D96FC66F6455B9756DF` |
 | `tests/test_temporal_desync.py` | `E81AF770339F1A9A6E3D2012F12B38181204E0C12B06DEBFF3C981E344C961B6` |
-| `tests/test_non_temporal_generators.py` | `19BCAC485CD63A1514C734140D4A029572F6408C7761774165EEC52154F0FB57` |
+| `tests/test_non_temporal_generators.py` | `CE500B35C01B00E77473D93CF8C9074792E08E1004C00DDC52476CFA50127FFF` |
 | `real_integration_audit.json` | `912A344FF354F46844A38D2BA12B8BD3900351C19A0B6D42EAFDEA615AA509DA` |
 | `temporal_v2.csv` | `C35965A0C628F77065AAF6EC8A24181EB419DD7E4A44C2DD1C4BA919E4C4307F` |
 | `fake_all.csv` | `B493E9D2DCFC8BF53438E812638AC39A69C0E268465C2EADEA58EE1F164B8A68` |
@@ -285,6 +310,17 @@ Các CSV smoke chứa absolute path của workspace lúc chạy và chỉ là b�
 | `labels_phase0_smoke_v2r4.csv` | `19A3D650A8DA1CEACAF06B5D706E8E6E6FAEDF88EC511FA9AA37B32F3A30A990` |
 | `policy_smoke_v2r5/real_snvsm.csv` | `F11744A422CF00BD5C54CE36409998CE0ADF8DA76FCC7E086B0072E9AD6CE51E` |
 | `policy_smoke_v2r5/fake_snvsm.csv` | `38DC581217073764D8282864DB1D9F1E42029BC6A4CCE58D1CA0DE6C24F579F9` |
+| `stratified_smoke_v2r6/input_real.csv` | `CFC8BEB2BF0E81D3863BD78105BCAF5BDBFCD81C1518B714B4A53F88AE722169` |
+| `stratified_smoke_v2r6/temporal_desync.csv` | `F10A13D2AF51F8716E0392D90B9EE54FC924B769A3BCAC199C4FCADA75E44653` |
+| `stratified_smoke_v2r6/frame_reverse.csv` | `8DE0126EA1411BA4D76529A4A6881340F62071F7253FC1425204FE30A6EFEB6A` |
+| `stratified_smoke_v2r6/pitch_flatten.csv` | `64D5F77BFC7D77F4414791722FC43DBEF2C69EC5B76FADD6CE7E84C270647CA0` |
+| `stratified_smoke_v2r6/anonymization.csv` | `EC004D1416C4CE436E89BA43E4C85CA2D9B920B73765E5EB753775375AEDC167` |
+| `stratified_smoke_v2r6/fake_all.csv` | `8604397867A0EE12C5EB3FE7DF330ACDB8213149923E6080744C02C26B52AFC7` |
+| `stratified_smoke_v2r6/real_snvsm.csv` | `AD2F7ABBDFE20CF99C9735D7AE0D654701F1CC5CBBD5F3E10B5B3C8C7F443C4B` |
+| `stratified_smoke_v2r6/fake_snvsm.csv` | `B5B157D0E06481246A53328273F1FD114687E9EDE241802E39A95DC3A236E4F5` |
+| `stratified_smoke_v2r6/metadata_gate.json` | `43CD4C065D17C2F5F2A34815760CFF93042FD8B25971F0D4D7FE3E3911D3BA28` |
+| `stratified_smoke_v2r6/metadata_predictions.csv` | `4960C85F0E06641B30A3E5D5105DD468805A7481BA5895FE97A478ED5E958FDA` |
+| `labels_phase0_stratified_smoke_v2r6.csv` | `4AD7BD45D2AD957AD0449CEFDD7323500CC35AB39542598ABBCAC94D22D2344C` |
 
 ## 6. Bảo toàn pilot V1
 
@@ -311,8 +347,7 @@ Chưa xác minh:
 - 540 temporal clip của repaired pilot;
 - SNVSM V2 và feature extraction mới trên đủ 2.700 clip repaired pilot;
 - metadata-only baseline trên toàn pilot;
-- stratified real-data smoke và metadata-only baseline cho code V2 của `frame_reverse`, `pitch_flatten`, `anonymization`;
 - V2a loader/model có thực sự tiêu thụ structured timeline và fixed-common-window đối xứng ở mọi nhánh;
 - metric model sau repair.
 
-Vì vậy trạng thái vẫn là **NO-GO full extraction/full training**. Structured schema và code repair bốn generator đã hoàn tất đến mức synthetic contract. Bước tiếp theo là chạy stratified smoke trên dữ liệu thật cho ba method không-temporal, compose đủ bốn V2 rồi chạy metadata-shortcut gate. Chỉ khi gate dữ liệu đạt mới tạo repaired pilot: regenerate các method bị ảnh hưởng, SNVSM lại 540 real + 2.160 fake, qua Stage 05 và metadata-only gate trên toàn labels, rồi mới extract 2.700 feature vào path versioned trước khi train.
+Vì vậy trạng thái vẫn là **NO-GO full extraction/full training**. Structured schema, code repair bốn generator và stratified metadata gate đã đạt. Bước tiếp theo là tạo repaired pilot: regenerate đủ bốn method, SNVSM lại 540 real + 2.160 fake, qua Stage 05 và metadata-only gate trên toàn labels, rồi mới extract 2.700 feature vào path versioned trước khi train.
