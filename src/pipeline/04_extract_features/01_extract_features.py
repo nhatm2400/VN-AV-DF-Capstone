@@ -10,8 +10,9 @@ KHÔNG dùng full-frame (leak identity/background/codec); thay bằng:
                   detect fail) -> chuỗi hình không co/lệch với audio. ANON (mặt mờ,
                   YOLO fail): dùng chuỗi box của REAL ghép cặp (source_clip) áp lên
                   anon theo timestamp -> crop môi chặt, không phụ thuộc detect trên mờ.
-  2. AUDIO      : wav2vec2-base-vietnamese-250h (frozen) trên wav 16k mono
-                  -> float16 [T_a, 768]   (tùy chọn --no_w2v để bỏ)
+  2. AUDIO      : wav2vec2-base-vietnamese-250h (frozen) trên wav 16k mono.
+                  Với SNVSM V2, cắt phần đệm AAC đúng snvsm_target_samples trước
+                  khi tạo wav/prosody/w2v -> float16 [T_a, 768].
   3. PROSODY    : F0 (parselmouth, fallback librosa.pyin), delta-F0, energy RMS,
                   voiced flag — hop 10ms -> float32 [T_p, 4]
                   (nhánh bắt fake 03_pitch_flatten — đặc thù tiếng Việt)
@@ -21,11 +22,12 @@ Mỗi clip -> 1 file .pt trong data/04_features/:
    w2v: float16[T,768] | None, wave: int16[N] | None, prosody: float32[T,4], meta}
 
 Input: đọc CẢ real (all_clean.csv) lẫn fake (data/03_fake/labels.csv) — feature
-không phụ thuộc split nên chạy trước/sau 05_build_labels đều được.
+không phụ thuộc split. Với SNVSM V2 phải chạy gate Stage 05 trước để fail-fast
+coverage/audio/video/CRF rồi mới launch extraction dài.
 
-⚠️ SNVSM: nén CRF đối xứng real+fake nên áp TRƯỚC bước này (trên .mp4), hoặc
-augment ở dataloader — nếu không, codec khác nhau giữa real/fake sẽ leak vào
-mouth ROI. (TODO: script nén riêng.)
+⚠️ SNVSM: nén CRF đối xứng real+fake nên áp TRƯỚC bước này (trên .mp4). Manifest
+SNVSM phải giữ snvsm_target_samples để bước này loại trailing AAC padding trước
+khi model nhìn thấy audio.
 
 Ví dụ:
   python src/pipeline/04_extract_features/01_extract_features.py --limit 5 --no_w2v
@@ -36,9 +38,11 @@ import os
 import sys
 import csv
 import json
+import hashlib
 import argparse
 import tempfile
 import subprocess
+from fractions import Fraction
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -55,7 +59,9 @@ except Exception:
     sys.exit(1)
 
 try:
+    # pyrefly: ignore [missing-import]
     import cv2
+    # pyrefly: ignore [missing-import]
     from ultralytics import YOLO
 except Exception as e:
     print(f"Thiếu thư viện visual: {e}. Cài: pip install ultralytics opencv-python")
@@ -66,13 +72,100 @@ INDEX_FIELDS = ["clip_id", "feature_path", "label", "method", "speaker_id",
 
 HOP_SEC = 0.010          # 10ms cho prosody
 F0_FLOOR, F0_CEIL = 75.0, 500.0   # dải F0 tiếng Việt (khớp 03_pitch_flatten)
+SNVSM_MARKERS = ("snvsm_version", "snvsm_config_id", "snvsm_encoder",
+                 "snvsm_preset", "snvsm_audio", "snvsm_sample_rate",
+                 "snvsm_channels", "snvsm_target_samples", "snvsm_mode",
+                 "snvsm_crf_set", "snvsm_seed", "snvsm_pair_key",
+                 "snvsm_video_frames", "snvsm_video_fps",
+                 "snvsm_video_duration_s")
+EXPECTED_SNVSM_VERSION = "snvsm_v2_h264_aac16k_mono_exactdur"
+EXPECTED_SNVSM_AUDIO = "aac_128k_16khz_mono"
+FEATURE_SCHEMA_VERSION = "avsp_feature_v2_contract"
+W2V_MODEL_NAME = "nguyenvulebinh/wav2vec2-base-vietnamese-250h"
+
+
+def expected_snvsm_config_id(row, crf_set):
+    """Rebuild the Stage-03 normalization hash instead of trusting provenance."""
+    config = {
+        "normalization_version": EXPECTED_SNVSM_VERSION,
+        "video_encoder": row["snvsm_encoder"].strip(),
+        "video_preset": row["snvsm_preset"].strip(),
+        "pixel_format": "yuv420p",
+        "audio_codec": "aac",
+        "audio_bitrate": "128k",
+        "audio_sample_rate": 16000,
+        "audio_channels": 1,
+        "crfs": crf_set,
+        "mode": row["snvsm_mode"].strip(),
+        "seed": int(row["snvsm_seed"]),
+    }
+    canonical = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:10]
+
+
+def file_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def feature_config_id(fps, mouth_size, detect_every, conf, face_model_hash,
+                      no_w2v=False, save_wave=False):
+    config = {
+        "schema_version": FEATURE_SCHEMA_VERSION,
+        "fps": float(fps),
+        "mouth_size": int(mouth_size),
+        "detect_every": int(detect_every),
+        "confidence": float(conf),
+        "face_model_sha256": face_model_hash,
+        "w2v_model": None if no_w2v else W2V_MODEL_NAME,
+        "save_wave": bool(save_wave),
+        "hop_sec": HOP_SEC,
+        "f0_floor": F0_FLOOR,
+        "f0_ceil": F0_CEIL,
+    }
+    canonical = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+
+
+def csv_has_rows(path):
+    if not os.path.isfile(path):
+        return False
+    with open(path, newline="", encoding="utf-8") as handle:
+        return next(csv.DictReader(handle), None) is not None
 
 
 # ---------------------------------------------------------------- audio helpers
-def extract_wav(mp4, wav):
-    subprocess.run(["ffmpeg", "-y", "-i", mp4, "-vn", "-ac", "1", "-ar", "16000",
-                    "-loglevel", "error", wav], capture_output=True)
-    return os.path.exists(wav) and os.path.getsize(wav) > 0
+def extract_wav(mp4, wav, target_samples=None):
+    """Decode 16 kHz mono; trim AAC padding to the manifest contract when present."""
+    try:
+        if os.path.exists(wav):
+            os.remove(wav)
+    except OSError:
+        return False
+    cmd = ["ffmpeg", "-y", "-i", mp4, "-vn", "-map", "0:a:0"]
+    if target_samples is not None:
+        if target_samples <= 0:
+            return False
+        audio_filter = (
+            "aresample=16000,aformat=sample_fmts=s16:channel_layouts=mono,"
+            f"atrim=end_sample={target_samples},"
+            "asetpts=PTS-STARTPTS"
+        )
+        cmd += ["-af", audio_filter]
+    cmd += ["-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+            "-loglevel", "error", wav]
+    proc = subprocess.run(cmd, capture_output=True)
+    ok = proc.returncode == 0 and os.path.exists(wav) and os.path.getsize(wav) > 0
+    if not ok:
+        try:
+            if os.path.exists(wav):
+                os.remove(wav)
+        except OSError:
+            pass
+    return ok
 
 
 def read_wav_int16(path):
@@ -81,6 +174,108 @@ def read_wav_int16(path):
         assert w.getframerate() == 16000 and w.getnchannels() == 1
         raw = w.readframes(w.getnframes())
     return np.frombuffer(raw, dtype=np.int16).copy()
+
+
+def snvsm_target_samples(row):
+    """Return the Stage-04 PCM length contract; reject incomplete SNVSM rows."""
+    raw = str(row.get("snvsm_target_samples", "") or "").strip()
+    is_snvsm = bool(raw) or any(str(row.get(field, "") or "").strip()
+                                for field in SNVSM_MARKERS)
+    if not raw:
+        if is_snvsm:
+            raise ValueError("snvsm_target_samples_missing")
+        return None
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("snvsm_target_samples_invalid") from exc
+    if value <= 0:
+        raise ValueError("snvsm_target_samples_invalid")
+    if is_snvsm:
+        try:
+            crf_set = [int(item) for item in row["snvsm_crf_set"].split(",")]
+            valid = (
+                row["snvsm_version"].strip() == EXPECTED_SNVSM_VERSION
+                and row["snvsm_audio"].strip() == EXPECTED_SNVSM_AUDIO
+                and row["snvsm_encoder"].strip() in ("libx264", "h264_nvenc")
+                and str(row["snvsm_preset"]).strip()
+                and row["snvsm_config_id"].strip()
+                == expected_snvsm_config_id(row, crf_set)
+                and int(row["snvsm_sample_rate"]) == 16000
+                and int(row["snvsm_channels"]) == 1
+                and row["snvsm_mode"].strip() in ("random", "all")
+                and len(crf_set) > 0
+                and len(set(crf_set)) == len(crf_set)
+                and int(row["crf"]) in crf_set
+                and int(row["snvsm_seed"]) >= 0
+                and str(row["snvsm_pair_key"]).strip()
+                and int(row["snvsm_video_frames"]) > 0
+                and Fraction(row["snvsm_video_fps"]) > 0
+                and float(row["snvsm_video_duration_s"]) > 0
+            )
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            valid = False
+        if not valid:
+            raise ValueError("snvsm_contract_invalid")
+    return value
+
+
+def is_valid_existing_feature(path, target_samples, expected, require_w2v=True):
+    """Resume only from a complete feature object matching the PCM contract."""
+    if not os.path.exists(path):
+        return False
+    try:
+        obj = torch.load(path, map_location="cpu", weights_only=False)
+        if not isinstance(obj, dict):
+            return False
+        mouth = obj.get("mouth")
+        prosody = obj.get("prosody")
+        w2v = obj.get("w2v")
+        wave = obj.get("wave")
+        mouth_size = int(expected["mouth_size"])
+        identity_ok = (
+            str(obj.get("clip_id", "")) == str(expected["clip_id"])
+            and int(obj.get("label", -1)) == int(expected["label"])
+            and str(obj.get("method", "")) == str(expected["method"])
+        )
+        if (not identity_ok
+                or not torch.is_tensor(mouth) or mouth.dtype != torch.uint8
+                or mouth.ndim != 3 or tuple(mouth.shape[1:]) != (mouth_size, mouth_size)
+                or mouth.numel() == 0
+                or not torch.is_tensor(prosody) or prosody.ndim != 2
+                or prosody.dtype != torch.float32
+                or prosody.shape[-1] != 4 or prosody.numel() == 0):
+            return False
+        if (require_w2v
+                and (not torch.is_tensor(w2v) or w2v.ndim != 2
+                     or w2v.dtype != torch.float16 or w2v.shape[-1] != 768
+                     or w2v.numel() == 0)):
+            return False
+        if (expected.get("require_wave")
+                and (not torch.is_tensor(wave) or wave.ndim != 1
+                     or wave.dtype != torch.int16 or wave.numel() == 0)):
+            return False
+        meta = obj.get("meta", {})
+        try:
+            source_ok = (os.path.normcase(os.path.abspath(meta.get("src", "")))
+                         == os.path.normcase(os.path.abspath(expected["src"])))
+            config_ok = (
+                meta.get("feature_schema_version") == FEATURE_SCHEMA_VERSION
+                and meta.get("feature_config_id") == expected["feature_config_id"]
+                and str(meta.get("snvsm_config_id", "") or "")
+                == str(expected.get("snvsm_config_id", "") or "")
+            )
+            audio_samples = int(meta.get("audio_samples", -1))
+            audio_ok = (audio_samples > 0 if target_samples is None else
+                        audio_samples == target_samples
+                        and int(meta.get("audio_target_samples", -1)) == target_samples)
+            wave_ok = (not expected.get("require_wave")
+                       or wave.numel() == audio_samples)
+            return source_ok and config_ok and audio_ok and wave_ok
+        except (TypeError, ValueError):
+            return False
+    except (OSError, RuntimeError, TypeError, ValueError, EOFError):
+        return False
 
 
 def prosody_features(wav_path, sig_i16):
@@ -218,7 +413,7 @@ def crop_from_boxes(mp4, boxes, target_fps, size):
 class W2V:
     def __init__(self, device):
         from transformers import Wav2Vec2Model, Wav2Vec2FeatureExtractor
-        name = "nguyenvulebinh/wav2vec2-base-vietnamese-250h"
+        name = W2V_MODEL_NAME
         self.fe = Wav2Vec2FeatureExtractor.from_pretrained(name)
         self.model = Wav2Vec2Model.from_pretrained(name).to(device).eval()
         self.device = device
@@ -245,6 +440,10 @@ def main():
     ap.add_argument("--no_w2v", action="store_true", help="bỏ wav2vec2 (nhanh, nhưng nhánh audio cần nó)")
     ap.add_argument("--save_wave", action="store_true", help="lưu cả waveform int16 (cho fine-tune sau)")
     ap.add_argument("--skip_existing", action="store_true", default=True)
+    ap.add_argument("--no_skip_existing", dest="skip_existing", action="store_false",
+                    help="buộc trích lại kể cả khi .pt đã tồn tại")
+    ap.add_argument("--allow_real_only", action="store_true",
+                    help="cho phép extract chỉ real (mặc định từ chối fake rỗng/thiếu)")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
 
@@ -252,8 +451,20 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
+    if not csv_has_rows(args.real_csv):
+        print(f"LỖI: real manifest trống/thiếu: {args.real_csv}")
+        sys.exit(1)
+    if not args.allow_real_only and not csv_has_rows(args.fake_labels):
+        print(f"LỖI: fake manifest trống/thiếu: {args.fake_labels}. "
+              "Từ chối extract real-only; chỉ dùng --allow_real_only khi thật sự chủ ý.")
+        sys.exit(1)
+
     if not os.path.isfile(args.face_model):
         print(f"Không tìm thấy {args.face_model} (chạy từ repo root)"); sys.exit(1)
+    extraction_config_id = feature_config_id(
+        args.fps, args.mouth_size, args.detect_every, args.conf,
+        file_sha256(args.face_model), args.no_w2v, args.save_wave,
+    )
     yolo = YOLO(args.face_model)
 
     w2v = None
@@ -279,13 +490,19 @@ def main():
             if key:
                 real_path_by_orig[key] = r.get("file_path", "")
             rows.append(r)
+    fake_count = 0
     if os.path.isfile(args.fake_labels):
         with open(args.fake_labels, newline="", encoding="utf-8") as fh:
             for r in csv.DictReader(fh):
                 r["_label"], r["_method"] = 1, r.get("method", "fake")
                 rows.append(r)
-    else:
-        print(f"CẢNH BÁO: {args.fake_labels} chưa có — chỉ trích real.")
+                fake_count += 1
+    if fake_count == 0 and not args.allow_real_only:
+        print(f"LỖI: fake manifest trống/thiếu: {args.fake_labels}. "
+              "Từ chối extract real-only; chỉ dùng --allow_real_only khi thật sự chủ ý.")
+        sys.exit(1)
+    if fake_count == 0:
+        print("CẢNH BÁO: extract real-only theo yêu cầu --allow_real_only.")
     if args.limit:
         rows = rows[:args.limit]
     print(f"Tổng {len(rows)} clip cần trích")
@@ -305,14 +522,54 @@ def main():
         cid = r.get("clip_id", f"clip{i:06d}")
         mp4 = r.get("file_path", "")
         out_pt = os.path.join(args.out_dir, cid + ".pt")
-        if args.skip_existing and os.path.exists(out_pt):
-            skipped += 1
-            continue
         if not mp4 or not os.path.isfile(mp4):
             idx_w.writerow({"clip_id": cid, "feature_path": "", "label": r["_label"],
                             "method": r["_method"], "speaker_id": r.get("speaker_id", ""),
                             "t_mouth": 0, "t_w2v": 0, "t_prosody": 0, "status": "missing_mp4"})
             failed += 1
+            continue
+
+        try:
+            target_samples = snvsm_target_samples(r)
+        except Exception as e:
+            idx_w.writerow({"clip_id": cid, "feature_path": "", "label": r["_label"],
+                            "method": r["_method"], "speaker_id": r.get("speaker_id", ""),
+                            "t_mouth": 0, "t_w2v": 0, "t_prosody": 0,
+                            "status": str(e)[:80]})
+            failed += 1
+            continue
+        expected_feature = {
+            "clip_id": cid,
+            "label": r["_label"],
+            "method": r["_method"],
+            "src": mp4,
+            "mouth_size": args.mouth_size,
+            "feature_config_id": extraction_config_id,
+            "snvsm_config_id": r.get("snvsm_config_id", ""),
+            "require_wave": args.save_wave,
+        }
+        if (args.skip_existing
+                and is_valid_existing_feature(
+                    out_pt, target_samples, expected_feature,
+                    require_w2v=not args.no_w2v
+                )):
+            skipped += 1
+            continue
+        partial_pt = out_pt + ".part"
+        stale_remove_failed = False
+        for stale_path in (out_pt, partial_pt):
+            try:
+                if os.path.exists(stale_path):
+                    os.remove(stale_path)
+            except OSError as exc:
+                idx_w.writerow({"clip_id": cid, "feature_path": "", "label": r["_label"],
+                                "method": r["_method"], "speaker_id": r.get("speaker_id", ""),
+                                "t_mouth": 0, "t_w2v": 0, "t_prosody": 0,
+                                "status": f"stale_feature_remove:{exc}"[:80]})
+                failed += 1
+                stale_remove_failed = True
+                break
+        if stale_remove_failed:
             continue
 
         try:
@@ -335,13 +592,19 @@ def main():
                                                args.detect_every, args.conf)
                 if r["_method"] == "real" and boxes is not None:
                     box_cache[r.get("orig_clip_id") or cid] = boxes   # cache cho anon ghép cặp
-            if not extract_wav(mp4, wav_tmp):
+            if not extract_wav(mp4, wav_tmp, target_samples):
                 raise RuntimeError("ffmpeg_wav_failed")
             sig = read_wav_int16(wav_tmp)
+            if target_samples is not None and len(sig) != target_samples:
+                raise RuntimeError(
+                    f"audio_sample_contract:{len(sig)}!={target_samples}"
+                )
             pros = prosody_features(wav_tmp, sig)
             feat_w2v = w2v(sig) if w2v is not None else None
-            if mouth is None:
+            if mouth is None or len(mouth) == 0:
                 raise RuntimeError("no_face_detected")
+            if pros is None or len(pros) == 0:
+                raise RuntimeError("prosody_failed")
 
             obj = {
                 "clip_id": cid,
@@ -352,15 +615,26 @@ def main():
                 "w2v": feat_w2v,                                       # float16 [T,768] | None
                 "wave": torch.from_numpy(sig) if args.save_wave else None,
                 "prosody": torch.from_numpy(pros) if pros is not None else None,
-                "meta": {"fps": args.fps, "hop_sec": HOP_SEC, "src": mp4},
+                "meta": {"fps": args.fps, "hop_sec": HOP_SEC, "src": mp4,
+                         "feature_schema_version": FEATURE_SCHEMA_VERSION,
+                         "feature_config_id": extraction_config_id,
+                         "snvsm_config_id": r.get("snvsm_config_id", ""),
+                         "audio_target_samples": target_samples,
+                         "audio_samples": len(sig)},
             }
-            torch.save(obj, out_pt)
+            torch.save(obj, partial_pt)
+            os.replace(partial_pt, out_pt)
             idx_w.writerow({"clip_id": cid, "feature_path": out_pt, "label": r["_label"],
                             "method": r["_method"], "speaker_id": r.get("speaker_id", ""),
                             "t_mouth": len(mouth), "t_w2v": 0 if feat_w2v is None else len(feat_w2v),
                             "t_prosody": 0 if pros is None else len(pros), "status": "ok"})
             done += 1
         except Exception as e:
+            try:
+                if os.path.exists(partial_pt):
+                    os.remove(partial_pt)
+            except OSError:
+                pass
             idx_w.writerow({"clip_id": cid, "feature_path": "", "label": r["_label"],
                             "method": r["_method"], "speaker_id": r.get("speaker_id", ""),
                             "t_mouth": 0, "t_w2v": 0, "t_prosody": 0, "status": str(e)[:80]})
@@ -377,6 +651,8 @@ def main():
         pass
     print(f"\nXong. ok={done} | skip(đã có)={skipped} | fail={failed}")
     print(f"  Feature -> {args.out_dir}/  | index -> {index_path}")
+    if failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

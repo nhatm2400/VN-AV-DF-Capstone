@@ -4,7 +4,7 @@
 
 **Ngày cập nhật:** 2026-07-21
 
-**Trạng thái:** kiến trúc đề xuất; chưa implement
+**Trạng thái:** kiến trúc V2a/V2b chưa implement; cơ chế generator/SNVSM V2 đã smoke-test, data contract và repaired pilot còn pending
 **Thay thế:** proposal AVSP-Net/VietTone-AVDF V1 trước pilot
 
 ## 1. Mục tiêu và phạm vi
@@ -38,7 +38,7 @@ Pilot và các diagnostic sau pilot cho thấy:
 - offset head chỉ bằng majority-zero baseline;
 - consistency similarity chủ yếu tách anonymization;
 - pitch/anonymization có trivial shortcut rất mạnh;
-- `temporal_desync` đang chứa artifact biên/độ dài;
+- dữ liệu `temporal_desync` V1 chứa artifact biên/độ dài (generator V2 đã sửa, pilot repaired chưa chạy);
 - loader không có padding mask và luôn cắt bốn giây đầu.
 
 Vì vậy V2 phải chuyển từ clip-level global fusion sang **local temporal evidence + reliability-aware multi-expert fusion**.
@@ -57,13 +57,13 @@ Vì vậy V2 phải chuyển từ clip-level global fusion sang **local temporal
 
 ### 4.1 V2a — Localized AVSP Core
 
-V2a sửa các lỗi được pilot phát hiện và ưu tiên chạy được trên phần cứng hiện tại. Nó tái sử dụng các feature `.pt` đang có:
+V2a sửa các lỗi được pilot phát hiện và ưu tiên chạy được trên phần cứng hiện tại. Nó giữ **cùng loại feature** với V1:
 
 - mouth ROI đầy đủ theo thời gian;
 - Wav2Vec feature;
 - prosody gồm F0, delta-F0, energy và voiced flag.
 
-V2a không cần extract lại chỉ để thêm frame difference, padding mask, random/sliding windows, local attention hoặc frame head. Temporal fake sau khi sửa generator phải được tái sinh và tái extract.
+Các thử nghiệm loader/model-only trên media V1 có thể tái dùng `.pt` V1. Tuy nhiên repaired pilot sạch dùng SNVSM V2 cho cả real và mọi fake, nên phải normalize lại 2.700 media và extract mới toàn bộ 2.700 `.pt` vào feature store versioned. Không được ghép temporal/SNVSM V2 với feature V1. Frame difference, padding mask, random/sliding windows, local attention và frame head vẫn có thể tính từ feature store mới mà không cần thêm loại raw feature.
 
 ### 4.2 V2b — Generalization Extensions
 
@@ -243,6 +243,14 @@ Fusion feature tại mỗi thời điểm:
 ```text
 [A_t, V_t, M_t, P_t, |A_t - V_t|, A_t ⊙ V_t, lag_scores_t]
 ```
+
+Với temporal circular-wrap, manifest phải cung cấp riêng `audio_valid_*` và
+`visual_valid_*`. Mask phải đi qua local attention, lag correlation, temporal
+heads, pooling và clip evidence; không chỉ mask một loss. Để số timestep hợp lệ
+hoặc phía biên bị mask không trở thành shortcut nhãn/dấu shift, train/eval dùng
+cửa sổ đồng bộ độ dài cố định nằm trong miền hợp lệ, hoặc áp edge masking/crop
+đối xứng tương đương cho real và mọi fake. Clip head không nhận mask count/shape
+như feature phân lớp.
 
 ## 9. Multi-scale temporal evidence
 
@@ -551,9 +559,13 @@ Quy tắc:
 
 ### Phase 0 — Data repair
 
-1. Sửa `temporal_desync` để giữ duration/frame count và không boundary artifact.
-2. Chuẩn hóa localization schema thành cột có cấu trúc.
-3. Regenerate temporal pilot và audit lại.
+1. ⚠️ Cơ chế `temporal_desync` đã sửa và smoke: sample-exact shift, giữ duration/frame count, không silence/truncation; circular-wrap đã annotate. SNVSM ghép CRF theo real nguồn, ghi audio/visual contract; Stage 04 trim AAC padding và Stage 05 fail-fast khi thiếu method hoặc lệch audio/video/CRF. Data repair chưa đóng vì structured schema/mask semantics chưa khóa và shortcut mask-shape chưa được gate; việc model thực sự tiêu thụ mask thuộc Phase 1/2.
+2. ⏳ Chuẩn hóa localization/valid-range thành cột có cấu trúc; hiện smoke mới lưu trong `param`.
+3. ⏳ Repair/regenerate `frame_reverse`, `pitch_flatten`, `anonymization`; cả ba generator V1 còn `-shortest`, audit 15 source phân tầng (5/tier) đã xác nhận timing lệch ở cả tier1/2/3 nhưng chưa ước lượng tỷ lệ toàn bộ.
+4. ⏳ Trên smoke đã repair, chạy baseline chỉ dùng metadata/timing/codec; nếu baseline còn tách nhãn tốt thì chưa được extract/train model.
+5. ⏳ Tạo master composition đã qua timing audit, normalize SNVSM V2 cho đủ 2.700 clip pilot và chạy Stage 05; chạy lại metadata-only baseline trên toàn labels 2.700 trước khi extract mới toàn bộ feature và audit lại.
+
+Bằng chứng smoke: [TEMPORAL_DESYNC_PHASE0_SMOKE.md](../reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md).
 
 ### Phase 1 — V2a data loader
 

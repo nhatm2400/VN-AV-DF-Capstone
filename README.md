@@ -9,15 +9,17 @@ VN-AV-DF-Capstone xây dựng dữ liệu và mô hình phát hiện deepfake â
 - [Đề xuất AVSP-Net V2](docs/architecture/MODEL_PROPOSAL.md): kiến trúc V2a/V2b, loss, code layout, output contract và roadmap.
 - [Báo cáo pilot gốc](docs/reports/PILOT_REPORT.md): toàn bộ quá trình chạy pilot V1.
 - [Đánh giá V1 và kế hoạch V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md): diễn giải kết quả, blocking issues và thứ tự trước full.
+- [Phase 0 temporal smoke](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md): cơ chế sửa generator và bằng chứng test/smoke.
 
 ## Trạng thái ngắn
 
 - Curation: 6.888 clip nguồn → 3.001 clip real sạch.
-- Pseudo-fake: 4 method × 3.001 clip; SNVSM đã đồng bộ codec real/fake.
+- Pseudo-fake V1: 4 method × 3.001 clip; temporal V1 được giữ làm lịch sử nhưng không dùng cho run mới.
 - Split: real/fake ghép cặp cùng split; không trùng `speaker_id`/`source_video` theo metadata.
 - Pilot AVSP-Net V1: 2.700 clip, test AUC 0,809.
+- Temporal V2: generator + SNVSM H.264/AAC-16k-mono normalization đã implement; CRF ghép theo real nguồn, Stage 04 trim AAC padding, Stage 05 gate đủ method/audio/video/CRF. Synthetic 30/30, real smoke 18/18 và policy smoke r5 30/30 media đạt; r5 cố ý bị chặn ở paired timing vì ba method V1 chưa repair.
 - Full feature/model: chưa chạy.
-- Quyết định hiện tại: **NO-GO full V1**; phải sửa `temporal_desync`, triển khai V2a và chạy lại pilot diagnostic.
+- Quyết định hiện tại: **NO-GO full**; phải khóa schema/valid-range/mask wrap đối xứng trước, rồi audit/repair timing `-shortest` của ba method V1 không-temporal và chạy metadata-shortcut smoke; sau đó normalize + Stage 05 + metadata gate toàn pilot rồi mới extract 2.700 clip.
 
 ## Cấu trúc chính
 
@@ -31,7 +33,8 @@ VN-AV-DF-Capstone xây dựng dữ liệu và mô hình phát hiện deepfake â
 │   │   └── MODEL_PROPOSAL.md    # AVSP-Net V2a/V2b
 │   ├── reports/
 │   │   ├── PILOT_REPORT.md
-│   │   └── PILOT_V1_REVIEW_AND_V2_PLAN.md
+│   │   ├── PILOT_V1_REVIEW_AND_V2_PLAN.md
+│   │   └── TEMPORAL_DESYNC_PHASE0_SMOKE.md
 │   └── README.md                # Chỉ mục tài liệu
 ├── src/
 │   ├── pipeline/                # Pipeline 01 → 05
@@ -62,12 +65,12 @@ Pipeline được chạy từ root theo thứ tự:
 01_collect
 -> 02_curate
 -> 03_fake + 05_snvsm_compress
+-> 05_build_labels (contract gate)
 -> 04_extract_features
--> 05_build_labels
 -> train/eval
 ```
 
-Stage 04/05 phải dùng manifest SNVSM. Không dùng `--limit` để tạo pilot ghép cặp; phải tạo manifest pilot riêng. Các lệnh và data contract cụ thể nằm trong [PROJECT.md](PROJECT.md).
+Stage 04/05 phải dùng manifest SNVSM và Stage 05 phải pass trước khi launch extraction dài. Không dùng `--limit` để tạo pilot ghép cặp; phải tạo manifest pilot riêng. Các lệnh và data contract cụ thể nằm trong [PROJECT.md](PROJECT.md).
 
 ## Quy ước experiment
 

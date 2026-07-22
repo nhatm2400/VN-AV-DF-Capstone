@@ -27,7 +27,9 @@ Tuy nhiên, AVSP-Net V1 chưa đủ điều kiện để chạy full như mô h�
 6. AUC cao của pitch và anonymization phần lớn đến từ các dấu vết đơn giản.
 7. Hệ thống output hiện chưa bất biến và chưa sinh đầy đủ biểu đồ, prediction hay metadata tái lập.
 
-Hướng phù hợp là sửa `temporal_desync`, nâng lên V2a trên pilot, chạy baseline/ablation nhiều seed, sau đó mới đóng băng feature contract và chạy full. V2b là giai đoạn mở rộng dữ liệu và encoder để hướng đến deepfake thực tế.
+Hướng phù hợp là khóa schema/valid-range/mask, sửa ba generator không-temporal còn lại, chạy metadata-shortcut gate, rồi tạo repaired pilot mới qua SNVSM V2. Sau đó mới implement V2a, chạy baseline/ablation nhiều seed và LOMO trước khi đóng băng contract để chạy full. V2b là giai đoạn mở rộng dữ liệu/encoder và external OOD để hướng đến deepfake thực tế.
+
+**Cập nhật 2026-07-21:** generator temporal V2 đã chuyển sang sample-exact circular shift. SNVSM ép H.264 + AAC 16 kHz mono, ghép CRF theo real nguồn và ghi audio/visual contract; Stage 04 trim AAC padding theo `snvsm_target_samples`, kiểm đủ tensor và trả lỗi nếu còn clip fail; Stage 05 fail-fast khi fake rỗng/media thiếu, thiếu method hoặc lệch audio/video/CRF. Synthetic 30/30, real 18/18 và policy smoke r5 30/30 media đạt. Tuy nhiên paired gate r5 cố ý reject media V1 vì 12 fake lệch audio và 17 fake lệch visual contract. Manifest temporal đã tách khỏi V1 và builder loại temporal cũ, nhưng ba generator V1 không-temporal vẫn có artifact `-shortest`, nên repaired pilot còn bị chặn; xem [báo cáo Phase 0](TEMPORAL_DESYNC_PHASE0_SMOKE.md).
 
 ## 2. Thuật ngữ sử dụng
 
@@ -273,7 +275,7 @@ Nên thay bằng local aligned-vs-shifted objective trên real và các cặp sh
 | Pooling không thể bắt anomaly cục bộ | Quá mạnh; attentive pooling có thể học trọng số nhưng thiếu local supervision. |
 | Bốn giây làm mất reverse | Đúng một phần; 8,60% mất hoàn toàn và 13,50% bị cắt ít nhất một phần. Không phải nguyên nhân duy nhất. |
 | Cần LOMO, trivial baseline, localization | Đúng và nên làm trước full. |
-| Thêm frame difference bắt buộc re-extract | Sai; mouth sequence đầy đủ đã nằm trong `.pt`. |
+| Thêm frame difference tự nó bắt buộc re-extract | Sai; có thể tính từ mouth sequence trong cùng feature store. Tuy nhiên repaired pilot vẫn phải extract mới đủ 2.700 vì media đã qua SNVSM V2. |
 
 Ngoài ra, `arXiv:2506.08493` không phải DiMoDif. DiMoDif đúng là `arXiv:2411.10193`.
 
@@ -283,7 +285,7 @@ Kiến trúc chi tiết, loss, code layout và roadmap nằm tại [MODEL_PROPOS
 
 ### V2a — sửa bài toán pilot
 
-V2a tái sử dụng feature hiện tại và tập trung vào:
+V2a tái sử dụng **loại feature** hiện tại; repaired pilot dùng feature store mới, không tái dùng binary `.pt` V1. Trọng tâm:
 
 - full-clip synchronized windows;
 - padding masks;
@@ -327,16 +329,16 @@ experiments/<scope>_<model>_<date>_<git-sha>_<config-hash>/
 
 ## 14. Thứ tự thực hiện và gate
 
-1. Sửa và xác minh `temporal_desync`.
-2. Regenerate temporal pilot và feature tương ứng.
-3. Thêm multi-window và padding mask.
-4. Implement V2a.
-5. Chạy trivial baselines và loss/branch ablation.
-6. Chạy tối thiểu ba seed.
-7. Chạy LOMO như unseen-pseudo-method test.
-8. Tạo final holdout mới và external OOD set.
-9. Chỉ khi V2a qua gate mới khóa feature contract và chạy full.
-10. Sau đó mới mở rộng V2b và dữ liệu fake thực tế.
+1. ⚠️ Đã sửa cơ chế và smoke-test `temporal_desync`, tách/guard manifest V1, thêm builder master V2 và contract trim AAC; phần cơ chế đạt nhưng Phase 0 chưa đóng vì mask/structured schema và repaired pilot chưa có.
+2. Khóa schema structured valid-range, padding/wrap mask và semantics cửa sổ đối xứng; viết test trước khi regenerate media.
+3. Audit/repair timing contract của `frame_reverse`, `pitch_flatten`, `anonymization` V1.
+4. Trên smoke đã repair, chạy baseline chỉ dùng metadata/timing/codec; còn tách nhãn tốt thì quay lại sửa data.
+5. Tạo master 540 real + 2.160 fake, normalize SNVSM V2, qua Stage 05; chạy lại metadata-only baseline trên toàn labels 2.700 rồi mới extract feature vào path versioned.
+6. Implement loader multi-window/padding mask và model V2a.
+7. Chạy trivial/unimodal baselines cùng loss/branch ablation.
+8. Chạy tối thiểu ba seed và LOMO như unseen-pseudo-method test.
+9. Chọn threshold hoàn toàn trên validation và áp các gate đã khóa trước khi train.
+10. Chỉ khi V2a qua gate mới đóng băng feature/output contract và chạy full V2a; V2b, external OOD và final holdout nằm ở giai đoạn sau.
 
 Gate đề xuất:
 
@@ -344,9 +346,10 @@ Gate đề xuất:
 - temporal-desync AUC ≥ 0,80 sau khi generator sạch artifact;
 - FPR real ≤ 10% tại threshold chọn hoàn toàn trên validation;
 - V2 thắng trivial và best-unimodal baseline;
-- báo cáo macro AUC và worst-method AUC làm headline;
-- có frame AUPRC và segment AP cho localization;
-- có generator-disjoint/external OOD report riêng.
+- worst-method AUC ≥ 0,65 và cận dưới CI 95% > 0,50;
+- LOMO macro AUC ≥ 0,60 và không left-out method nào có AUC ≤ 0,50;
+- frame AUPRC cao hơn prevalence baseline ít nhất 0,05 và segment AP@IoU=0,5 ≥ 0,20;
+- external OOD là report bắt buộc của V2b/final, không dùng final holdout để chọn V2a hay threshold.
 
 ## 15. Quyết định cuối
 
@@ -355,11 +358,14 @@ AVSP-Net V1 có giá trị như baseline và phép kiểm tra pipeline. Nó khô
 Quy trình tiếp theo:
 
 ```text
-repair temporal data
--> V2a pilot
--> baselines + ablations + 3 seeds
--> freeze feature/output contract
+lock structured schema + valid-range/mask semantics
+-> repair frame_reverse + pitch_flatten + anonymization
+-> stratified smoke + metadata shortcut gate
+-> master/SNVSM/Stage05 + full-pilot metadata gate + new 2,700-feature store
+-> V2a loader/model
+-> baselines + ablations + 3 seeds + LOMO + validation-only threshold
+-> pass explicit gates and freeze feature/output contract
 -> full V2a baseline
 -> add real deepfake data and V2b experts
--> external OOD evaluation
+-> external OOD evaluation + sealed final holdout
 ```

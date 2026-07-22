@@ -53,6 +53,7 @@ class AVSPDataset(Dataset):
         self.real_blur_aug_p = real_blur_aug_p
         self.blur_sigma = blur_sigma
         self.rows = []
+        missing = []
         with open(labels_csv, newline="", encoding="utf-8") as fh:
             for r in csv.DictReader(fh):
                 if r.get("split") != split:
@@ -61,6 +62,13 @@ class AVSPDataset(Dataset):
                 if os.path.isfile(pt):
                     r["_pt"] = pt
                     self.rows.append(r)
+                else:
+                    missing.append(r.get("clip_id", ""))
+        if missing:
+            raise RuntimeError(
+                f"Thiếu feature cho {len(missing)} sample split='{split}'; "
+                f"ví dụ {missing[:3]}. Từ chối drop âm thầm."
+            )
         if not self.rows:
             raise RuntimeError(
                 f"Không có sample split='{split}' trong {labels_csv} có feature tại {features_dir}. "
@@ -78,16 +86,30 @@ class AVSPDataset(Dataset):
     def __getitem__(self, i):
         r = self.rows[i]
         obj = torch.load(r["_pt"], map_location="cpu", weights_only=False)
+        if (not isinstance(obj, dict)
+                or str(obj.get("clip_id", "")) != str(r.get("clip_id", ""))
+                or int(obj.get("label", -1)) != int(r["label"])
+                or str(obj.get("method", "")) != str(r.get("method", ""))):
+            raise RuntimeError(f"Feature identity không khớp labels: {r['clip_id']}")
 
         # audio (w2v)
-        if "audio" in self.branches and obj.get("w2v") is not None:
-            w2v = _pad_trunc(obj["w2v"].float(), T_AUDIO)
+        if "audio" in self.branches:
+            value = obj.get("w2v")
+            if (not torch.is_tensor(value) or value.ndim != 2
+                    or value.shape[-1] != 768 or value.numel() == 0):
+                raise RuntimeError(f"Feature {r['clip_id']} thiếu nhánh audio/W2V")
+            w2v = _pad_trunc(value.float(), T_AUDIO)
         else:
             w2v = torch.zeros(T_AUDIO, 768)
 
         # visual (mouth ROI)
-        if "visual" in self.branches and obj.get("mouth") is not None:
-            mouth = _pad_trunc(obj["mouth"].float() / 255.0, T_MOUTH)
+        if "visual" in self.branches:
+            value = obj.get("mouth")
+            if (not torch.is_tensor(value) or value.ndim != 3
+                    or tuple(value.shape[1:]) != (MOUTH_SIZE, MOUTH_SIZE)
+                    or value.numel() == 0):
+                raise RuntimeError(f"Feature {r['clip_id']} thiếu nhánh mouth ROI")
+            mouth = _pad_trunc(value.float() / 255.0, T_MOUTH)
             # blur đối xứng: làm mờ ROI của một phần REAL -> "mờ" hết là chỉ báo của fake
             if int(r["label"]) == 0 and self.real_blur_aug_p > 0 \
                     and random.random() < self.real_blur_aug_p:
@@ -97,8 +119,12 @@ class AVSPDataset(Dataset):
             mouth = torch.zeros(T_MOUTH, MOUTH_SIZE, MOUTH_SIZE)
 
         # prosody
-        if "prosody" in self.branches and obj.get("prosody") is not None:
-            pros = _pad_trunc(obj["prosody"].float(), T_PROSODY)
+        if "prosody" in self.branches:
+            value = obj.get("prosody")
+            if (not torch.is_tensor(value) or value.ndim != 2
+                    or value.shape[-1] != 4 or value.numel() == 0):
+                raise RuntimeError(f"Feature {r['clip_id']} thiếu nhánh prosody")
+            pros = _pad_trunc(value.float(), T_PROSODY)
         else:
             pros = torch.zeros(T_PROSODY, 4)
 

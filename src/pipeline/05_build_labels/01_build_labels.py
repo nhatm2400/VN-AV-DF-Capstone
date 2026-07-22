@@ -7,9 +7,9 @@ Input:
   - REAL: data/02_curate/all_clean.csv  (label=0, có speaker_id từ 04_curate)
   - FAKE: data/03_fake/labels.csv       (label=1, schema chung 4 method 03_fake)
 
-Output: data/05_labels/labels.csv — schema:
+Output: data/05_labels/labels.csv — schema chính:
   clip_id, file_path, label, method, param, source_clip, source_video,
-  speaker_id, tier, split
+  speaker_id, tier, split; nếu input là SNVSM V2 thì giữ thêm provenance SNVSM.
 
 Quy tắc chia split (chống leakage — QUAN TRỌNG NHẤT của cả project):
   1. Đơn vị chia là CONNECTED COMPONENT của đồ thị (speaker_id ∪ source_video):
@@ -35,9 +35,12 @@ Ví dụ:
 import os
 import sys
 import csv
+import json
+import hashlib
 import random
 import argparse
 from collections import defaultdict, Counter
+from fractions import Fraction
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -45,8 +48,46 @@ except Exception:
     pass
 
 OUT_FIELDS = ["clip_id", "file_path", "label", "method", "param",
-              "source_clip", "source_video", "speaker_id", "tier", "split"]
+              "source_clip", "source_video", "speaker_id", "tier", "crf",
+              "orig_clip_id", "snvsm_version", "snvsm_config_id",
+              "snvsm_encoder", "snvsm_preset", "snvsm_audio",
+              "snvsm_sample_rate", "snvsm_channels", "snvsm_target_samples",
+              "snvsm_mode", "snvsm_crf_set", "snvsm_seed", "snvsm_pair_key",
+              "snvsm_video_frames", "snvsm_video_fps",
+              "snvsm_video_duration_s",
+              "split"]
 SPLITS = ["train", "val", "test"]
+EXPECTED_SNVSM_VERSION = "snvsm_v2_h264_aac16k_mono_exactdur"
+EXPECTED_SNVSM_AUDIO = "aac_128k_16khz_mono"
+EXPECTED_FAKE_METHODS = {
+    "temporal_desync", "frame_reverse", "pitch_flatten", "anonymization"
+}
+SNVSM_CONTRACT_FIELDS = (
+    "snvsm_version", "snvsm_config_id", "snvsm_encoder", "snvsm_preset",
+    "snvsm_audio", "snvsm_sample_rate", "snvsm_channels",
+    "snvsm_target_samples", "snvsm_mode", "snvsm_crf_set", "snvsm_seed",
+    "snvsm_pair_key", "snvsm_video_frames", "snvsm_video_fps",
+    "snvsm_video_duration_s",
+)
+
+
+def expected_snvsm_config_id(row, crf_set):
+    """Rebuild the Stage-03 normalization hash instead of trusting provenance."""
+    config = {
+        "normalization_version": EXPECTED_SNVSM_VERSION,
+        "video_encoder": row["snvsm_encoder"].strip(),
+        "video_preset": row["snvsm_preset"].strip(),
+        "pixel_format": "yuv420p",
+        "audio_codec": "aac",
+        "audio_bitrate": "128k",
+        "audio_sample_rate": 16000,
+        "audio_channels": 1,
+        "crfs": crf_set,
+        "mode": row["snvsm_mode"].strip(),
+        "seed": int(row["snvsm_seed"]),
+    }
+    canonical = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:10]
 
 
 def read_csv(path):
@@ -54,6 +95,51 @@ def read_csv(path):
         return []
     with open(path, newline="", encoding="utf-8") as fh:
         return list(csv.DictReader(fh))
+
+
+def validate_required_inputs(real_rows, fake_rows, allow_real_only=False):
+    """Fail closed unless the caller explicitly requests a real-only manifest."""
+    if not real_rows:
+        raise ValueError("Không đọc được real")
+    if not fake_rows and not allow_real_only:
+        raise ValueError("Fake manifest trống/thiếu; từ chối tạo labels real-only")
+
+
+def validate_file_paths(rows):
+    """Missing media is a contract failure, never a row-filtering operation."""
+    missing = [row.get("clip_id", "") for row in rows
+               if not os.path.isfile(str(row.get("file_path", "") or ""))]
+    if missing:
+        raise ValueError(
+            f"Thiếu file media ở {len(missing)} dòng; ví dụ {missing[:3]}"
+        )
+    return len(rows)
+
+
+def write_rows_atomic(path, rows, overwrite=False):
+    """Publish labels only after every contract/leakage check has passed."""
+    if os.path.exists(path) and not overwrite:
+        raise ValueError(
+            f"Output đã tồn tại, từ chối ghi đè: {path}. "
+            "Dùng path versioned mới hoặc --overwrite khi thật sự chủ ý."
+        )
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    partial = path + ".part"
+    try:
+        if os.path.exists(partial):
+            os.remove(partial)
+        with open(partial, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=OUT_FIELDS)
+            writer.writeheader()
+            writer.writerows(rows)
+        os.replace(partial, path)
+    except Exception:
+        try:
+            if os.path.exists(partial):
+                os.remove(partial)
+        except OSError:
+            pass
+        raise
 
 
 def _spk_node(row):
@@ -69,6 +155,204 @@ def _vid_node(row):
 def primary_node(row):
     """Node đại diện 1 clip: speaker nếu có, fallback video, fallback clip_id."""
     return _spk_node(row) or _vid_node(row) or f"clip_{row.get('clip_id', '')}"
+
+
+def validate_snvsm_contract(real_rows, fake_rows):
+    """Nếu một phía là SNVSM V2, bắt buộc hai phía dùng cùng normalization config."""
+    rows = real_rows + fake_rows
+    if not any(str(row.get(field, "") or "").strip()
+               for row in rows for field in SNVSM_CONTRACT_FIELDS):
+        return None
+    clip_ids = [str(row.get("clip_id", "") or "").strip() for row in rows]
+    if any(not clip_id for clip_id in clip_ids) or len(set(clip_ids)) != len(clip_ids):
+        raise ValueError("SNVSM clip_id trống hoặc trùng")
+    fields = ("snvsm_version", "snvsm_config_id", "snvsm_encoder",
+              "snvsm_preset", "snvsm_audio", "snvsm_sample_rate",
+              "snvsm_channels", "snvsm_mode", "snvsm_crf_set",
+              "snvsm_seed")
+    signatures = []
+    for name, side in (("real", real_rows), ("fake", fake_rows)):
+        missing = [row.get("clip_id", "") for row in side
+                   if any(not str(row.get(field, "") or "").strip()
+                          for field in fields)]
+        if missing:
+            raise ValueError(
+                f"{name} thiếu provenance SNVSM ở {len(missing)} dòng; "
+                f"ví dụ {missing[:3]}"
+            )
+        invalid = []
+        for row in side:
+            try:
+                crf_set = [int(value) for value in row["snvsm_crf_set"].split(",")]
+                valid = (
+                    row["snvsm_version"].strip() == EXPECTED_SNVSM_VERSION
+                    and row["snvsm_audio"].strip() == EXPECTED_SNVSM_AUDIO
+                    and row["snvsm_encoder"].strip()
+                    in ("libx264", "h264_nvenc")
+                    and str(row["snvsm_preset"]).strip()
+                    and row["snvsm_config_id"].strip()
+                    == expected_snvsm_config_id(row, crf_set)
+                    and int(row["snvsm_sample_rate"]) == 16000
+                    and int(row["snvsm_channels"]) == 1
+                    and row["snvsm_mode"].strip() in ("random", "all")
+                    and len(crf_set) > 0
+                    and len(set(crf_set)) == len(crf_set)
+                    and int(row["crf"]) in crf_set
+                    and int(row["snvsm_seed"]) >= 0
+                    and int(row["snvsm_target_samples"]) > 0
+                    and str(row.get("snvsm_pair_key", "") or "").strip()
+                    and int(row["snvsm_video_frames"]) > 0
+                    and Fraction(row["snvsm_video_fps"]) > 0
+                    and float(row["snvsm_video_duration_s"]) > 0
+                )
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                valid = False
+            if not valid:
+                invalid.append(row.get("clip_id", ""))
+        if invalid:
+            raise ValueError(
+                f"{name} có provenance/contract SNVSM invalid ở "
+                f"{len(invalid)} dòng; ví dụ {invalid[:3]}"
+            )
+        side_signatures = {
+            tuple(str(row[field]).strip() for field in fields) for row in side
+        }
+        if len(side_signatures) != 1:
+            raise ValueError(f"{name} có nhiều cấu hình SNVSM: {side_signatures}")
+        signatures.append(next(iter(side_signatures)))
+    if signatures[0] != signatures[1]:
+        raise ValueError(
+            f"SNVSM real/fake không cùng cấu hình: {signatures[0]} != {signatures[1]}"
+        )
+    return dict(zip(fields, signatures[0]))
+
+
+def validate_snvsm_pair_targets(real_rows, fake_rows):
+    """Every fake must preserve its paired real's PCM, visual and CRF contracts."""
+    target_by_real = {}
+    video_by_real = {}
+    crfs_by_real = defaultdict(set)
+    crf_count_by_real = Counter()
+    for row in real_rows:
+        target = int(row["snvsm_target_samples"])
+        source = row["snvsm_pair_key"].strip()
+        if source != str(row.get("orig_clip_id", "") or "").strip():
+            raise ValueError(f"SNVSM real pair_key sai lineage: {row.get('clip_id', '')}")
+        video = (int(row["snvsm_video_frames"]),
+                 Fraction(row["snvsm_video_fps"]),
+                 float(row["snvsm_video_duration_s"]))
+        previous = target_by_real.get(source)
+        if previous is not None and previous != target:
+            raise ValueError(f"Real source {source} có hai snvsm_target_samples")
+        previous_video = video_by_real.get(source)
+        if (previous_video is not None
+                and (previous_video[:2] != video[:2]
+                     or abs(previous_video[2] - video[2]) > 1e-3)):
+            raise ValueError(f"Real source {source} có hai video contract")
+        target_by_real[source] = target
+        video_by_real[source] = video
+        crfs_by_real[source].add(int(row["crf"]))
+        crf_count_by_real[source] += 1
+
+    missing = []
+    mismatched = []
+    video_mismatched = []
+    crfs_by_fake = defaultdict(set)
+    crf_count_by_fake = Counter()
+    methods_by_source = defaultdict(set)
+    for row in fake_rows:
+        source = str(row.get("source_clip", "") or "").strip()
+        if str(row.get("snvsm_pair_key", "") or "").strip() != source:
+            missing.append(row.get("clip_id", ""))
+            continue
+        expected = target_by_real.get(source)
+        if expected is None:
+            missing.append(row.get("clip_id", ""))
+            continue
+        actual = int(row["snvsm_target_samples"])
+        if actual != expected:
+            mismatched.append((row.get("clip_id", ""), actual, expected))
+        actual_video = (int(row["snvsm_video_frames"]),
+                        Fraction(row["snvsm_video_fps"]),
+                        float(row["snvsm_video_duration_s"]))
+        expected_video = video_by_real[source]
+        if (actual_video[:2] != expected_video[:2]
+                or abs(actual_video[2] - expected_video[2]) > 1e-3):
+            video_mismatched.append(
+                (row.get("clip_id", ""), actual_video, expected_video)
+            )
+        crfs_by_fake[(source, row.get("method", ""))].add(int(row["crf"]))
+        crf_count_by_fake[(source, row.get("method", ""))] += 1
+        methods_by_source[source].add(row.get("method", ""))
+    if missing:
+        raise ValueError(
+            f"SNVSM fake thiếu real ghép cặp ở {len(missing)} dòng; ví dụ {missing[:3]}"
+        )
+    if mismatched:
+        raise ValueError(
+            "SNVSM target lệch real-fake ở "
+            f"{len(mismatched)} dòng; ví dụ {mismatched[:3]}"
+        )
+    if video_mismatched:
+        raise ValueError(
+            "SNVSM video contract lệch real-fake ở "
+            f"{len(video_mismatched)} dòng; ví dụ {video_mismatched[:3]}"
+        )
+    coverage_mismatched = [
+        (source, sorted(methods_by_source.get(source, set())))
+        for source in target_by_real
+        if methods_by_source.get(source, set()) != EXPECTED_FAKE_METHODS
+    ]
+    unexpected_sources = sorted(set(methods_by_source) - set(target_by_real))
+    if coverage_mismatched or unexpected_sources:
+        raise ValueError(
+            "SNVSM thiếu/thừa method theo source; "
+            f"ví dụ {coverage_mismatched[:3]}, source lạ {unexpected_sources[:3]}"
+        )
+    duplicate_real_crfs = [
+        source for source, count in crf_count_by_real.items()
+        if count != len(crfs_by_real[source])
+    ]
+    duplicate_fake_crfs = [
+        key for key, count in crf_count_by_fake.items()
+        if count != len(crfs_by_fake[key])
+    ]
+    if duplicate_real_crfs or duplicate_fake_crfs:
+        raise ValueError(
+            "SNVSM trùng CRF trong source/method; "
+            f"real={duplicate_real_crfs[:3]}, fake={duplicate_fake_crfs[:3]}"
+        )
+    mode = real_rows[0]["snvsm_mode"].strip()
+    if mode == "random":
+        bad_real = [source for source, count in crf_count_by_real.items()
+                    if count != 1]
+        bad_fake = [key for key, count in crf_count_by_fake.items()
+                    if count != 1]
+        if bad_real or bad_fake:
+            raise ValueError(
+                "SNVSM mode=random phải có đúng 1 CRF/source-method; "
+                f"real={bad_real[:3]}, fake={bad_fake[:3]}"
+            )
+    if mode == "all":
+        declared = {int(value) for value in real_rows[0]["snvsm_crf_set"].split(",")}
+        incomplete_real = [
+            source for source, values in crfs_by_real.items() if values != declared
+        ]
+        if incomplete_real:
+            raise ValueError(
+                f"SNVSM mode=all thiếu CRF real ở source {incomplete_real[:3]}"
+            )
+    crf_mismatched = [
+        (source, method, sorted(values), sorted(crfs_by_real[source]))
+        for (source, method), values in crfs_by_fake.items()
+        if values != crfs_by_real[source]
+    ]
+    if crf_mismatched:
+        raise ValueError(
+            "SNVSM CRF policy lệch real-fake ở "
+            f"{len(crf_mismatched)} nhóm; ví dụ {crf_mismatched[:3]}"
+        )
+    return len(fake_rows)
 
 
 class UnionFind:
@@ -103,7 +387,15 @@ def main():
     ap.add_argument("--out", default="data/05_labels/labels.csv")
     ap.add_argument("--ratios", default="0.70,0.15,0.15", help="train,val,test (tính trên clip REAL)")
     ap.add_argument("--seed", type=int, default=42)
-    ap.add_argument("--check_files", action="store_true", help="verify file_path tồn tại (chậm hơn)")
+    ap.add_argument("--check_files", dest="check_files", action="store_true",
+                    help="verify file_path tồn tại (mặc định bật)")
+    ap.add_argument("--no_check_files", dest="check_files", action="store_false",
+                    help="bỏ kiểm file_path; chỉ dùng cho audit manifest offline")
+    ap.add_argument("--allow_real_only", action="store_true",
+                    help="cho phép tạo labels chỉ có real (mặc định từ chối)")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="cho phép thay output đã tồn tại; mặc định bắt buộc path mới")
+    ap.set_defaults(check_files=True)
     args = ap.parse_args()
 
     ratios = [float(x) for x in args.ratios.split(",")]
@@ -111,11 +403,18 @@ def main():
 
     real_rows = read_csv(args.real_csv)
     fake_rows = read_csv(args.fake_labels)
-    if not real_rows:
-        print(f"LỖI: không đọc được real từ {args.real_csv}")
-        sys.exit(1)
+    validate_required_inputs(real_rows, fake_rows, args.allow_real_only)
+    if args.check_files:
+        validate_file_paths(real_rows + fake_rows)
     if not fake_rows:
-        print(f"CẢNH BÁO: chưa có fake ({args.fake_labels} trống/thiếu) — labels chỉ có real.")
+        print(f"CẢNH BÁO: tạo labels real-only theo yêu cầu --allow_real_only.")
+    snvsm_contract = validate_snvsm_contract(real_rows, fake_rows) if fake_rows else None
+    if snvsm_contract:
+        paired = validate_snvsm_pair_targets(real_rows, fake_rows)
+        print(f"SNVSM contract: {snvsm_contract['snvsm_version']} | "
+              f"config={snvsm_contract['snvsm_config_id']} | "
+              f"{snvsm_contract['snvsm_encoder']}/{snvsm_contract['snvsm_preset']} | "
+              f"{snvsm_contract['snvsm_audio']} | paired_target={paired}")
 
     # ---------- 1) Gom connected component (speaker_id ∪ source_video) trên REAL ----------
     uf = UnionFind()
@@ -155,53 +454,32 @@ def main():
     for r in real_rows:
         sp = split_of_group[uf.key(r)]
         cid = r.get("clip_id", "")
-        split_of_clip[cid] = sp
-        out_rows.append({
-            "clip_id": cid,
-            "file_path": r.get("file_path", ""),
-            "label": 0,
-            "method": "real",
-            "param": "",
-            "source_clip": "",
-            "source_video": r.get("source_video", ""),
-            "speaker_id": r.get("speaker_id", ""),
-            "tier": r.get("tier", ""),
-            "split": sp,
-        })
+        for lookup_id in (cid, r.get("orig_clip_id", "")):
+            if lookup_id:
+                previous = split_of_clip.get(lookup_id)
+                if previous is not None and previous != sp:
+                    raise ValueError(f"Real lookup ID {lookup_id} nằm ở hai split")
+                split_of_clip[lookup_id] = sp
+        row = {field: r.get(field, "") for field in OUT_FIELDS}
+        row.update({"clip_id": cid, "label": 0, "method": "real",
+                    "param": "", "source_clip": "", "split": sp})
+        out_rows.append(row)
 
     # ---------- 4) FAKE đi theo split của source_clip ----------
-    orphan = 0
     for r in fake_rows:
         src = r.get("source_clip", "")
         sp = split_of_clip.get(src)
-        if sp is None:                              # real gốc không nằm trong tập sạch
-            sp = split_of_group.get(uf.key(r))      # thử theo component (speaker/video)
-            if sp is None:
-                orphan += 1
-                continue                            # bỏ fake mồ côi (an toàn hơn là đoán)
+        if sp is None:
+            raise ValueError(
+                f"Fake mồ côi, không tìm thấy real nguồn: "
+                f"{r.get('clip_id', '')} -> {src}"
+            )
         row = {f: r.get(f, "") for f in OUT_FIELDS[:-1]}
         row["label"] = 1
         row["split"] = sp
         out_rows.append(row)
 
-    # ---------- 5) (tùy chọn) verify file tồn tại ----------
-    if args.check_files:
-        before = len(out_rows)
-        out_rows = [r for r in out_rows if os.path.isfile(r["file_path"])]
-        if len(out_rows) < before:
-            print(f"CẢNH BÁO: loại {before - len(out_rows)} dòng có file_path không tồn tại")
-
-    # ---------- 6) Ghi ----------
-    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    with open(args.out, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=OUT_FIELDS)
-        w.writeheader()
-        w.writerows(out_rows)
-
-    # ---------- 7) Thống kê + VERIFY chống leakage ----------
-    print(f"\nĐã ghi {len(out_rows)} dòng -> {args.out}")
-    if orphan:
-        print(f"  (bỏ {orphan} fake mồ côi — source_clip không có trong tập real sạch)")
+    # ---------- 5) Thống kê + VERIFY chống leakage ----------
 
     stat = defaultdict(Counter)
     spk_in_split = defaultdict(set)                  # speaker_id  -> {split}
@@ -233,6 +511,10 @@ def main():
                   f"{list(vid_leaks.items())[:3]}")
         sys.exit(1)
     print("\n✅ Verify: không speaker_id NÀO và không source_video NÀO nằm ở 2 split.")
+
+    # ---------- 6) Chỉ publish sau khi tất cả gate đã đạt ----------
+    write_rows_atomic(args.out, out_rows, overwrite=args.overwrite)
+    print(f"Đã ghi atomic {len(out_rows)} dòng -> {args.out}")
 
 
 if __name__ == "__main__":

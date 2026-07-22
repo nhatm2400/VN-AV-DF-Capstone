@@ -21,8 +21,9 @@ phẳng vùng HỮU THANH (PSOLA chỉ đụng voiced), vùng vô thanh giữ ng
 
 Chống học-tủ:
   - VIDEO copy nguyên -> khác biệt nằm ở AUDIO, không phải hình.
-  - Audio xuất 16kHz mono — trùng đúng tiền xử lý của wav2vec2 (model resample cả
-    real lẫn fake về 16k mono) -> không tạo "vân" sample-rate phân biệt real/fake.
+  - Raw fake xuất 16kHz mono, nên BẮT BUỘC đưa mọi real/fake qua SNVSM V2 cùng
+    AAC 16kHz mono; nếu không, sample-format là shortcut. Generator V1 còn dùng
+    -shortest và phải repair timing trước repaired pilot.
 
 Phụ thuộc: praat-parselmouth  ->  pip install praat-parselmouth
 Cần ffmpeg/ffprobe trong PATH.

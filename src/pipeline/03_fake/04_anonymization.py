@@ -19,6 +19,8 @@ Detector: yolov8n-face.pt sẵn có ở root (ultralytics).
 
 ⚠️ CẢNH BÁO LEAKAGE: blur CHỈ ở fake -> model học tắt "mờ = fake". BẮT BUỘC bước
 train áp blur ĐỐI XỨNG lên một phần REAL (augmentation), hoặc trộn cùng SNVSM.
+Generator V1 còn dùng `-shortest`; smoke đã thấy video ngắn hơn real ghép cặp
+40 ms, nên phải repair timing trước repaired pilot.
 
 Phụ thuộc: ultralytics, opencv-python (đọc frame mẫu + detect). Cần ffmpeg trong PATH.
 

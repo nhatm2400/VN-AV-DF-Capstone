@@ -17,8 +17,8 @@ Chống học-tủ (rất quan trọng):
   - Vị trí + độ dài cửa sổ NGẪU NHIÊN -> tránh model học "đảo đúng giữa clip".
   - Video buộc phải re-encode (concat + reverse không copy được). Điều này tạo
     artifact nén CHỈ trên fake -> nếu không xử lý sẽ leak codec. Bước nén SNVSM
-    4 mức CRF ở sau áp ĐỐI XỨNG real+fake sẽ đồng bộ codec, xóa nốt chênh lệch
-    này (giống cách 01 xử lý chênh lệch do re-encode audio).
+    V2 áp ĐỐI XỨNG real+fake để giảm shortcut codec. Tuy nhiên generator V1 còn
+    dùng -shortest và smoke đã thấy lệch duration; phải repair trước pilot mới.
 
 Chỉ dùng thư viện chuẩn + ffmpeg/ffprobe trong PATH.
 

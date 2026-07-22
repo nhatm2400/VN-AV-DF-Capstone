@@ -1,8 +1,19 @@
 # Báo cáo toàn bộ quá trình Pilot AVSP-Net
 
+> **BÁO CÁO LỊCH SỬ V1 — KẾT LUẬN GO BÊN DƯỚI ĐÃ BỊ THAY THẾ.** Sau diagnostic
+> ngày 21/07/2026, quyết định hiện tại là **NO-GO full** cho đến khi ba generator
+> không-temporal hết timing artifact `-shortest`, data contract temporal V2, mask và
+> repaired pilot đạt gate. Xem
+> [đánh giá V1/V2](PILOT_V1_REVIEW_AND_V2_PLAN.md) và
+> [smoke Phase 0](TEMPORAL_DESYNC_PHASE0_SMOKE.md). Số liệu/checksum V1 trong file
+> này vẫn được giữ nguyên. Hành vi source sinh V1 thuộc snapshot/commit `467f606`;
+> các link source tương đối hiện trỏ code V2 mới và không tái hiện generator V1.
+
 > Snapshot được kiểm chứng ngày **20/07/2026** tại repository `VN-AV-DF-Capstone`.
 >
 > Trạng thái: **PILOT PASS CÓ ĐIỀU KIỆN** — pipeline dữ liệu/feature đủ an toàn để chạy full extraction; kết quả model chưa đủ để tuyên bố mô hình cuối cùng hoạt động tốt trên mọi phương pháp giả mạo.
+>
+> **Lưu ý:** dòng trạng thái ngay trên là kết luận lịch sử ngày 20/07 và đã bị banner đầu file thay thế; không dùng nó để quyết định run hiện tại.
 
 ## 1. Tóm tắt điều hành
 
@@ -24,7 +35,7 @@ Kết quả ngắn gọn:
 - Điểm yếu lớn nhất là `frame_reverse`: AUC **0,5350**, recall (tỷ lệ fake phát hiện được) **0,1975**, gần mức ngẫu nhiên.
 - `anonymization` đạt AUC **0,9604**, nhưng điểm cao này chưa đủ chứng minh model không dựa vào kiểu blur.
 
-Quyết định sau pilot: **có thể chạy full feature extraction**, nhưng phải tiếp tục ablation (thí nghiệm tắt từng nhánh) và điều tra `frame_reverse` trước khi đưa ra claim cuối cùng về AVSP-Net.
+Quyết định tại thời điểm pilot ngày 20/07 (đã bị thay thế): **có thể chạy full feature extraction**, nhưng phải tiếp tục ablation (thí nghiệm tắt từng nhánh) và điều tra `frame_reverse` trước khi đưa ra claim cuối cùng về AVSP-Net.
 
 ### 1.1. Từ điển thuật ngữ
 
@@ -876,4 +887,4 @@ Pilot đã hoàn thành mục tiêu kỹ thuật chính:
 
 Điểm cần giữ thái độ thận trọng là pilot **không chứng minh mọi method đã được giải quyết**. `frame_reverse` vẫn gần random, `temporal_desync` recall còn trung bình, blur shortcut chưa bị loại bằng phản chứng và ablation chưa chạy. Vì vậy kết luận đúng là:
 
-> **GO cho full feature extraction; GO có điều kiện cho nghiên cứu tiếp; chưa GO cho claim mô hình cuối cùng.**
+> **Kết luận lịch sử ngày 20/07, đã bị thay thế: GO cho full feature extraction; GO có điều kiện cho nghiên cứu tiếp; chưa GO cho claim mô hình cuối cùng.**
