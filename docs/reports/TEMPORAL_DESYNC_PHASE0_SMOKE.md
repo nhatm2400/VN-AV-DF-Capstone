@@ -4,7 +4,7 @@
 
 **Checkpoint Phase 0 cơ chế:** `1c592a4`; phần structured timeline là thay đổi của Bước 2 sau checkpoint này
 
-**Trạng thái:** cơ chế generator/SNVSM V2, guard manifest, structured timeline schema và contract-test đã đạt; **ba generator không-temporal chưa repair, chưa normalize/extract repaired pilot 2.700 clip, chưa train V2a**
+**Trạng thái:** cơ chế của cả bốn generator V2, SNVSM, structured timeline và synthetic contract-test đã đạt; **chưa chạy stratified real-data smoke/metadata gate, chưa normalize/extract repaired pilot 2.700 clip, chưa train V2a**
 
 ## 1. Mục tiêu
 
@@ -79,11 +79,24 @@ Stage 04 từ chối fake manifest rỗng theo mặc định và chỉ resume `.
 
 ### 2.3 Master composition không còn temporal V1
 
-[`06_build_fake_manifest_v2.py`](../../src/pipeline/03_fake/06_build_fake_manifest_v2.py) đọc manifest V1 nhưng loại toàn bộ `temporal_desync` cũ, rồi ghép đúng một temporal V2 với ba method không-temporal cho mỗi source. Builder fail khi thiếu/trùng method, trùng ID, metadata lineage lệch, media mất, timeline contract thiếu/sai hoặc output đè input; output được ghi atomic tại `data/03_fake/manifests/v2/fake_all.csv`. Vì ba manifest V1 không-temporal chưa có structured timeline, code Bước 2 **cố ý reject chúng** cho đến khi Bước 3 repair và regenerate.
+[`06_build_fake_manifest_v2.py`](../../src/pipeline/03_fake/06_build_fake_manifest_v2.py) chỉ ghép bốn manifest V2 riêng. Builder fail khi generator version sai, thiếu/trùng method, trùng ID, metadata lineage lệch, media mất, timeline contract thiếu/sai hoặc output đè input; output được ghi atomic tại `data/03_fake/manifests/v2/fake_all.csv`. Manifest V1 không còn là input của builder repaired.
+
+### 2.4 Repair ba generator không-temporal
+
+Code V2 của [`02_frame_reverse.py`](../../src/pipeline/03_fake/02_frame_reverse.py), [`03_pitch_flatten.py`](../../src/pipeline/03_fake/03_pitch_flatten.py) và [`04_anonymization.py`](../../src/pipeline/03_fake/04_anonymization.py) đã bỏ `-shortest`:
+
+- `frame_reverse` chọn và đảo theo **chỉ số frame**, ép đúng FPS + tổng số frame source;
+- `pitch_flatten` giữ video bằng stream-copy, mux audio ALAC 16 kHz mono đã trim/pad đúng sample target source;
+- `anonymization` xử lý đủ toàn bộ video, ưu tiên audio stream-copy và fallback ALAC;
+- cả ba ghi file `.part.mp4`, probe lại rồi chỉ atomic-replace khi số frame, FPS, video duration và audio target khớp real nguồn;
+- cả ba dùng output/manifest V2 riêng, ID mới và ghi `av_timeline_v1`; resume chỉ chấp nhận đúng generator version + contract;
+- utility dùng chung nằm tại [`fake_media_contract.py`](../../src/pipeline/fake_media_contract.py).
+
+Đây mới là **code repair + synthetic smoke**. Chưa có kết luận về tỷ lệ pass trên data thật cho đến Bước 4 stratified smoke.
 
 ## 3. Test tự động
 
-File test: [`tests/test_temporal_desync.py`](../../tests/test_temporal_desync.py).
+File test: [`tests/test_temporal_desync.py`](../../tests/test_temporal_desync.py) và [`tests/test_non_temporal_generators.py`](../../tests/test_non_temporal_generators.py).
 
 Lệnh:
 
@@ -98,7 +111,7 @@ Matrix synthetic đã chạy:
 - tổng cộng 30 trường hợp temporal;
 - thêm test SNVSM real/fake qua đúng decode Stage 04, input audio 44,1 kHz stereo vs 16 kHz mono, guard V1, resume-idempotency và builder master V2.
 
-Kết quả cuối sau Bước 2: `12` test pass, `1` real-data test skip mặc định (`13` test được discover). Test real được bật riêng bằng biến môi trường và đã pass ở mục 4 tại checkpoint cơ chế; thuật toán dịch media không đổi trong Bước 2.
+Kết quả cuối sau Bước 3: `16` test pass, `1` real-data test skip mặc định (`17` test được discover). Test real temporal được bật riêng bằng biến môi trường và đã pass ở mục 4 tại checkpoint cơ chế.
 
 Các invariant được kiểm tra:
 
@@ -119,6 +132,8 @@ Các invariant được kiểm tra:
 - structured timeline đúng semantics cho real và đủ bốn method; fixed-common-window luôn nằm trong giao miền audio/visual hợp lệ và có độ dài cố định;
 - SNVSM CLI tự thêm contract `native` hoàn chỉnh cho real, còn fake thiếu/sai contract bị fail-closed;
 - Stage 04 gắn `timeline_contract_id` vào feature để chặn resume nhầm provenance.
+- ba generator không-temporal giữ đúng paired media contract trên synthetic 25 FPS; `frame_reverse` còn được test thêm ở 30000/1001 FPS;
+- builder chỉ nhận đúng generator version V2 của đủ bốn method và reject param V1.
 
 ## 4. Integration smoke trên dữ liệu thật
 
@@ -249,14 +264,19 @@ Các CSV smoke chứa absolute path của workspace lúc chạy và chỉ là b�
 
 | Artifact | SHA-256 |
 |---|---|
+| `fake_media_contract.py` | `D4D04C14957BA378CADF5F43AEA12E293985B5B03766ADFB07D599DA3F17144A` |
 | `timeline_contract.py` | `D6C2D644A2DBDB39A7DB2AC82EA0C1190BDC2D9421DA0BC16071C07F624C04F3` |
 | `01_temporal_desync.py` | `7D6E0836455659801BCF12C9FCB32B6031944AE8D9E9B3E86B271EDFD00C49CD` |
+| `02_frame_reverse.py` | `2DC2CB19BAD65F1A900CB3A679A99838DCD3E79757929FC970E8D34AE15F29AF` |
+| `03_pitch_flatten.py` | `02F696F7165F964A844A34DF6FF671683BB36F588B3E76C496F1D96B1350E7EE` |
+| `04_anonymization.py` | `E4A1E27FAE61BDB12A19F64B1D5FE800D5EA012E7837F393E04E6252854A3F3B` |
 | `05_snvsm_compress.py` | `ECE7E3E15F26E0592D64B1AD4165E6BEC6529C10BB3923307C68588891039E8D` |
-| `06_build_fake_manifest_v2.py` | `C7C84CEF72E94D476D557F1E035921969A8C26F865E3646FFB2DDA639E73D4DF` |
+| `06_build_fake_manifest_v2.py` | `0BAA76BC3B25AB6D87658352C0E891C1BF5D7CD5F34ADB7666F58D3A908D82B3` |
 | `04_extract_features/01_extract_features.py` | `49B5419146000C2A5DA8FFBA5103A33D0E6B59A7DFFE82812120716ECE16BD00` |
 | `01_build_labels.py` | `F20942D33F0F9E2144B06448C7CC8226D10BFE81E87F60A2B3E7E7BEC8805DC7` |
 | `train/dataset.py` | `8E1BCCEA1F108E8771C214F68AA113DDA7ABB3A410923D96FC66F6455B9756DF` |
-| `tests/test_temporal_desync.py` | `D71F70C7F019409506512F2D5DBFCDEC706EA44A8601C907420E1154CF71CD3F` |
+| `tests/test_temporal_desync.py` | `E81AF770339F1A9A6E3D2012F12B38181204E0C12B06DEBFF3C981E344C961B6` |
+| `tests/test_non_temporal_generators.py` | `19BCAC485CD63A1514C734140D4A029572F6408C7761774165EEC52154F0FB57` |
 | `real_integration_audit.json` | `912A344FF354F46844A38D2BA12B8BD3900351C19A0B6D42EAFDEA615AA509DA` |
 | `temporal_v2.csv` | `C35965A0C628F77065AAF6EC8A24181EB419DD7E4A44C2DD1C4BA919E4C4307F` |
 | `fake_all.csv` | `B493E9D2DCFC8BF53438E812638AC39A69C0E268465C2EADEA58EE1F164B8A68` |
@@ -291,8 +311,8 @@ Chưa xác minh:
 - 540 temporal clip của repaired pilot;
 - SNVSM V2 và feature extraction mới trên đủ 2.700 clip repaired pilot;
 - metadata-only baseline trên toàn pilot;
-- audit/repair frame-duration của `frame_reverse`, `pitch_flatten`, `anonymization` V1;
+- stratified real-data smoke và metadata-only baseline cho code V2 của `frame_reverse`, `pitch_flatten`, `anonymization`;
 - V2a loader/model có thực sự tiêu thụ structured timeline và fixed-common-window đối xứng ở mọi nhánh;
 - metric model sau repair.
 
-Vì vậy trạng thái vẫn là **NO-GO full extraction/full training**. Structured schema/valid-range và fixed-common-window semantics đã khóa ở Bước 2. Bước tiếp theo là audit/sửa timing contract của `frame_reverse`, `pitch_flatten`, `anonymization`, regenerate smoke nhỏ rồi chạy metadata-shortcut gate. Chỉ khi gate dữ liệu đạt mới tạo repaired pilot: regenerate các method bị ảnh hưởng, SNVSM lại 540 real + 2.160 fake, qua Stage 05 và metadata-only gate trên toàn labels, rồi mới extract 2.700 feature vào path versioned trước khi train.
+Vì vậy trạng thái vẫn là **NO-GO full extraction/full training**. Structured schema và code repair bốn generator đã hoàn tất đến mức synthetic contract. Bước tiếp theo là chạy stratified smoke trên dữ liệu thật cho ba method không-temporal, compose đủ bốn V2 rồi chạy metadata-shortcut gate. Chỉ khi gate dữ liệu đạt mới tạo repaired pilot: regenerate các method bị ảnh hưởng, SNVSM lại 540 real + 2.160 fake, qua Stage 05 và metadata-only gate trên toàn labels, rồi mới extract 2.700 feature vào path versioned trước khi train.

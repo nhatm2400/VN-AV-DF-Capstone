@@ -17,8 +17,9 @@ Chống học-tủ (rất quan trọng):
   - Vị trí + độ dài cửa sổ NGẪU NHIÊN -> tránh model học "đảo đúng giữa clip".
   - Video buộc phải re-encode (concat + reverse không copy được). Điều này tạo
     artifact nén CHỈ trên fake -> nếu không xử lý sẽ leak codec. Bước nén SNVSM
-    V2 áp ĐỐI XỨNG real+fake để giảm shortcut codec. Tuy nhiên generator V1 còn
-    dùng -shortest và smoke đã thấy lệch duration; phải repair trước pilot mới.
+    V2 áp ĐỐI XỨNG real+fake để giảm shortcut codec.
+  - V2 đảo theo chỉ số frame, bỏ -shortest và chỉ publish nếu frame/FPS/duration
+    video cùng audio target vẫn khớp source.
 
 Chỉ dùng thư viện chuẩn + ffmpeg/ffprobe trong PATH.
 
@@ -34,56 +35,95 @@ Ví dụ:
 import os
 import sys
 import csv
-import json
 import random
 import argparse
 import subprocess
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from src.pipeline.fake_media_contract import (
+    is_valid_repaired_output,
+    probe_media,
+    publish_validated,
+    remove_if_exists,
+)
+from src.pipeline.timeline_contract import (
+    TIMELINE_FIELDS,
+    build_timeline_contract,
+    validate_timeline_contract,
+)
 
 try:                                  # in được tiếng Việt trên console Windows (cp1252)
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
     pass
 
-# Schema nhãn DÙNG CHUNG với 01/03/04 -> cùng append vào 1 labels.csv.
+GENERATOR_VERSION = "frame_reverse_v2_exact_timeline_v1"
+DEFAULT_OUT_DIR = "data/03_fake/frame_reverse_v2"
+DEFAULT_LABELS = "data/03_fake/manifests/v2/frame_reverse.csv"
 LABEL_FIELDS = ["clip_id", "file_path", "label", "method", "param",
-                "source_clip", "source_video", "speaker_id", "tier"]
+                "source_clip", "source_video", "speaker_id", "tier",
+                *TIMELINE_FIELDS]
 
 
-def ffprobe_dur(path):
-    """Trả duration (giây, float) hoặc None."""
-    try:
-        out = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "json", path],
-            capture_output=True, text=True
-        ).stdout
-        dur = float(json.loads(out)["format"]["duration"])
-        return dur if dur > 0 else None
-    except Exception:
-        return None
+def assert_manifest_compatible(path):
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return {}
+    with open(path, newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    by_id = {}
+    for row in rows:
+        clip_id = row.get("clip_id", "")
+        if (not clip_id or clip_id in by_id
+                or row.get("method") != "frame_reverse"
+                or f"generator={GENERATOR_VERSION}" not in row.get("param", "")):
+            raise ValueError(f"Manifest frame_reverse V2 không tương thích: {path}")
+        contract = {
+            field: row.get(field, "") for field in TIMELINE_FIELDS
+        }
+        validate_timeline_contract(contract, "frame_reverse")
+        by_id[clip_id] = row
+    return by_id
 
 
-def make_reverse(in_path, out_path, t0, t1):
+def make_reverse(in_path, out_path, start_frame, end_frame, source_media=None):
     """
-    Đảo ngược video trong [t0, t1], giữ phần trước/sau xuôi, audio copy nguyên.
-    Cắt video thành 3 đoạn: [0,t0] xuôi + [t0,t1] reverse + [t1,end] xuôi -> concat.
+    Đảo ngược video theo frame [start_frame, end_frame), audio copy nguyên.
+    Output chỉ được publish nếu media contract vẫn khớp source.
     """
+    source_media = source_media or probe_media(in_path)
+    if source_media is None:
+        return False
+    total = source_media["video_frames"]
+    if not 0 < start_frame < end_frame < total:
+        return False
     vf = (
-        f"[0:v]trim=start=0:end={t0:.4f},setpts=PTS-STARTPTS[a];"
-        f"[0:v]trim=start={t0:.4f}:end={t1:.4f},setpts=PTS-STARTPTS,reverse[b];"
-        f"[0:v]trim=start={t1:.4f},setpts=PTS-STARTPTS[c];"
+        "[0:v]split=3[pre][mid][post];"
+        f"[pre]trim=start_frame=0:end_frame={start_frame},setpts=PTS-STARTPTS[a];"
+        f"[mid]trim=start_frame={start_frame}:end_frame={end_frame},"
+        f"reverse,setpts=PTS-STARTPTS[b];"
+        f"[post]trim=start_frame={end_frame}:end_frame={total},setpts=PTS-STARTPTS[c];"
         f"[a][b][c]concat=n=3:v=1:a=0[v]"
     )
+    partial_path = out_path + ".part.mp4"
+    remove_if_exists(partial_path)
     cmd = ["ffmpeg", "-y",
            "-i", in_path,
            "-filter_complex", vf,
-           "-map", "[v]", "-map", "0:a",
+           "-map", "[v]", "-map", "0:a:0",
            "-c:v", "libx264", "-crf", "18", "-preset", "veryfast",
            "-pix_fmt", "yuv420p",
            "-c:a", "copy",
-           "-shortest", "-loglevel", "error", out_path]
-    subprocess.run(cmd, capture_output=True)
-    return os.path.exists(out_path) and os.path.getsize(out_path) > 0
+           "-r", str(source_media["video_fps"]),
+           "-frames:v", str(total),
+           "-loglevel", "error", partial_path]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0:
+        remove_if_exists(partial_path)
+        return False
+    return publish_validated(partial_path, out_path, source_media)
 
 
 def main():
@@ -92,8 +132,8 @@ def main():
                     help="CSV clip real (cần cột file_path) — mặc định tập sạch từ 04_curate")
     ap.add_argument("--path_col", default="file_path")
     ap.add_argument("--id_col", default="clip_id")
-    ap.add_argument("--out_dir", default="data/03_fake")
-    ap.add_argument("--labels", default="data/03_fake/labels.csv")
+    ap.add_argument("--out_dir", default=DEFAULT_OUT_DIR)
+    ap.add_argument("--labels", default=DEFAULT_LABELS)
     ap.add_argument("--min_sec", type=float, default=0.3, help="độ dài tối thiểu cửa sổ đảo (s)")
     ap.add_argument("--max_sec", type=float, default=1.0, help="độ dài tối đa cửa sổ đảo (s)")
     ap.add_argument("--n_per_clip", type=int, default=1, help="số fake sinh mỗi clip")
@@ -103,6 +143,7 @@ def main():
 
     random.seed(args.seed)
     os.makedirs(args.out_dir, exist_ok=True)
+    existing_rows = assert_manifest_compatible(args.labels)
 
     with open(args.input_csv, newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
@@ -117,7 +158,7 @@ def main():
     if new_file:
         writer.writeheader()
 
-    made = skipped = failed = 0
+    made = resumed = repaired = skipped = failed = 0
     for i, r in enumerate(rows):
         src_path = r.get(args.path_col, "")
         src_id = r.get(args.id_col, f"clip{i:06d}")
@@ -125,44 +166,78 @@ def main():
             skipped += 1
             continue
 
-        dur = ffprobe_dur(src_path)
-        if dur is None:
+        media = probe_media(src_path)
+        if media is None:
             skipped += 1
             continue
+        common_duration = min(media["audio_duration"], media["video_duration"])
 
         for k in range(args.n_per_clip):
             d = random.uniform(args.min_sec, args.max_sec)
-            if dur <= d + 0.4:               # không đủ chỗ chừa 2 đầu -> bỏ
+            if common_duration <= d + 0.4:   # không đủ chỗ chừa 2 đầu -> bỏ
                 skipped += 1
                 continue
-            t0 = random.uniform(0.1, dur - d - 0.1)
-            t1 = t0 + d
-            fake_id = f"{src_id}_rev{int(round(d*1000))}ms" + (f"_{k}" if args.n_per_clip > 1 else "")
+            fps = media["video_fps"]
+            start_frame = max(1, round(random.uniform(
+                0.1, common_duration - d - 0.1
+            ) * float(fps)))
+            length_frames = max(2, round(d * float(fps)))
+            end_frame = min(
+                start_frame + length_frames,
+                int(common_duration * float(fps)),
+                media["video_frames"] - 1,
+            )
+            t0 = start_frame / float(fps)
+            t1 = end_frame / float(fps)
+            fake_id = f"{src_id}_revv2f{start_frame}-{end_frame}" + (f"_{k}" if args.n_per_clip > 1 else "")
             out_path = os.path.abspath(os.path.join(args.out_dir, fake_id + ".mp4"))
+            expected_param = (f"reverse_frames=[{start_frame},{end_frame});"
+                              f"generator={GENERATOR_VERSION}")
 
-            if make_reverse(src_path, out_path, t0, t1):
-                writer.writerow({
+            existing = existing_rows.get(fake_id)
+            if existing:
+                recorded_path = os.path.abspath(existing.get("file_path", ""))
+                if (os.path.normcase(recorded_path) != os.path.normcase(out_path)
+                        or existing.get("param", "") != expected_param):
+                    raise ValueError(f"Resume contract sai cho {fake_id}")
+                if is_valid_repaired_output(out_path, media):
+                    resumed += 1
+                    continue
+            if make_reverse(src_path, out_path, start_frame, end_frame, media):
+                if existing:
+                    repaired += 1
+                    continue
+                output_row = {
                     "clip_id": fake_id,
                     "file_path": out_path,
                     "label": 1,
                     "method": "frame_reverse",
-                    "param": f"reverse=[{t0:.2f},{t1:.2f}]s({d:.2f}s)",
+                    "param": expected_param,
                     "source_clip": src_id,
                     "source_video": r.get("source_video", ""),
                     "speaker_id": r.get("speaker_id", ""),
                     "tier": r.get("tier", ""),
-                })
+                }
+                output_row.update(build_timeline_contract(
+                    media["audio_duration"], media["video_duration"],
+                    manipulation_scope="local", manipulation=(t0, t1),
+                ))
+                writer.writerow(output_row)
                 made += 1
             else:
                 failed += 1
 
         if (i + 1) % 200 == 0:
-            print(f"  {i+1}/{len(rows)}  made={made} skip={skipped} fail={failed}")
+            print(f"  {i+1}/{len(rows)}  made={made} resume={resumed} "
+                  f"repair={repaired} skip={skipped} fail={failed}")
 
     lf.close()
-    print(f"\nXong. Fake tạo được: {made} | bỏ qua: {skipped} | lỗi: {failed}")
+    print(f"\nXong. Fake tạo được: {made} | resume: {resumed} | "
+          f"sửa file: {repaired} | bỏ qua: {skipped} | lỗi: {failed}")
     print(f"  Video -> {args.out_dir}/  | nhãn (append) -> {args.labels}")
     print("Lưu ý: video re-encode -> nén SNVSM 4 mức CRF ở bước sau sẽ đồng bộ codec real+fake.")
+    if skipped or failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

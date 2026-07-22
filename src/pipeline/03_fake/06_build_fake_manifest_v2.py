@@ -1,4 +1,4 @@
-"""Tạo master composition không mang temporal V1; không chứng nhận timing media."""
+"""Tạo master composition chỉ từ bốn generator V2 có timeline contract."""
 
 import argparse
 import csv
@@ -22,8 +22,16 @@ TEMPORAL_PARAM_KEYS = (
 )
 NON_TEMPORAL_METHODS = ("frame_reverse", "pitch_flatten", "anonymization")
 METHOD_ORDER = ("temporal_desync", *NON_TEMPORAL_METHODS)
-DEFAULT_LEGACY = "data/03_fake/labels.csv"
+GENERATOR_VERSIONS = {
+    "temporal_desync": GENERATOR_VERSION,
+    "frame_reverse": "frame_reverse_v2_exact_timeline_v1",
+    "pitch_flatten": "pitch_flatten_v2_exact_timeline_v1",
+    "anonymization": "anonymization_v2_exact_timeline_v1",
+}
 DEFAULT_TEMPORAL = "data/03_fake/manifests/v2/temporal_desync.csv"
+DEFAULT_FRAME_REVERSE = "data/03_fake/manifests/v2/frame_reverse.csv"
+DEFAULT_PITCH_FLATTEN = "data/03_fake/manifests/v2/pitch_flatten.csv"
+DEFAULT_ANONYMIZATION = "data/03_fake/manifests/v2/anonymization.csv"
 DEFAULT_OUTPUT = "data/03_fake/manifests/v2/fake_all.csv"
 
 
@@ -33,8 +41,8 @@ def read_manifest(path):
         return list(reader.fieldnames or []), list(reader)
 
 
-def compose_rows(legacy_rows, temporal_rows, check_files=True):
-    """Giữ ba method V1 không-temporal và thay toàn bộ temporal bằng V2."""
+def compose_rows(non_temporal_rows, temporal_rows, check_files=True):
+    """Ghép đúng một output V2 của mỗi method cho từng source."""
     if not temporal_rows:
         raise ValueError("Manifest temporal V2 rỗng")
 
@@ -55,29 +63,32 @@ def compose_rows(legacy_rows, temporal_rows, check_files=True):
         temporal_by_source[source] = row
         all_ids.add(clip_id)
 
-    legacy_by_key = {}
-    for row in legacy_rows:
+    repaired_by_key = {}
+    for row in non_temporal_rows:
         method = row.get("method", "")
-        if method == "temporal_desync":
-            continue
         if method not in NON_TEMPORAL_METHODS:
             raise ValueError(f"Method không thuộc contract V2: {method!r}")
+        clip_id = row.get("clip_id", "")
+        marker = f"generator={GENERATOR_VERSIONS[method]}"
+        if marker not in row.get("param", ""):
+            raise ValueError(f"{method} row không thuộc generator V2: {clip_id}")
+        validate_timeline_contract(row, method)
         source = row.get("source_clip", "")
         if source not in temporal_by_source:
             continue
         key = (source, method)
-        if key in legacy_by_key:
-            raise ValueError(f"Trùng method/source trong legacy manifest: {key}")
-        legacy_by_key[key] = row
+        if key in repaired_by_key:
+            raise ValueError(f"Trùng method/source trong manifest V2: {key}")
+        repaired_by_key[key] = row
 
     output = []
     for source, temporal in temporal_by_source.items():
         group = {"temporal_desync": temporal}
         for method in NON_TEMPORAL_METHODS:
             key = (source, method)
-            if key not in legacy_by_key:
+            if key not in repaired_by_key:
                 raise ValueError(f"Thiếu {method} cho source {source}")
-            group[method] = legacy_by_key[key]
+            group[method] = repaired_by_key[key]
 
         reference_meta = {
             key: temporal.get(key, "")
@@ -108,8 +119,10 @@ def compose_rows(legacy_rows, temporal_rows, check_files=True):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--legacy_labels", default=DEFAULT_LEGACY)
     parser.add_argument("--temporal_v2", default=DEFAULT_TEMPORAL)
+    parser.add_argument("--frame_reverse_v2", default=DEFAULT_FRAME_REVERSE)
+    parser.add_argument("--pitch_flatten_v2", default=DEFAULT_PITCH_FLATTEN)
+    parser.add_argument("--anonymization_v2", default=DEFAULT_ANONYMIZATION)
     parser.add_argument("--out", default=DEFAULT_OUTPUT)
     parser.add_argument("--check_files", action="store_true", default=True)
     parser.add_argument("--no_check_files", dest="check_files", action="store_false")
@@ -118,9 +131,10 @@ def main():
 
     output_abs = os.path.normcase(os.path.abspath(args.out))
     protected_inputs = {
-        os.path.normcase(os.path.abspath(DEFAULT_LEGACY)),
-        os.path.normcase(os.path.abspath(args.legacy_labels)),
         os.path.normcase(os.path.abspath(args.temporal_v2)),
+        os.path.normcase(os.path.abspath(args.frame_reverse_v2)),
+        os.path.normcase(os.path.abspath(args.pitch_flatten_v2)),
+        os.path.normcase(os.path.abspath(args.anonymization_v2)),
     }
     if output_abs in protected_inputs:
         raise ValueError(f"Từ chối ghi đè manifest đầu vào/V1: {args.out}")
@@ -129,11 +143,23 @@ def main():
             f"Output đã tồn tại: {args.out}. Dùng path run mới hoặc --overwrite có chủ đích."
         )
 
-    legacy_fields, legacy_rows = read_manifest(args.legacy_labels)
     temporal_fields, temporal_rows = read_manifest(args.temporal_v2)
-    rows = compose_rows(legacy_rows, temporal_rows, args.check_files)
+    input_manifests = (
+        args.frame_reverse_v2,
+        args.pitch_flatten_v2,
+        args.anonymization_v2,
+    )
+    non_temporal_fields = []
+    non_temporal_rows = []
+    for path in input_manifests:
+        fields, manifest_rows = read_manifest(path)
+        for field in fields:
+            if field not in non_temporal_fields:
+                non_temporal_fields.append(field)
+        non_temporal_rows.extend(manifest_rows)
+    rows = compose_rows(non_temporal_rows, temporal_rows, args.check_files)
 
-    fields = list(legacy_fields)
+    fields = list(non_temporal_fields)
     for field in temporal_fields:
         if field not in fields:
             fields.append(field)

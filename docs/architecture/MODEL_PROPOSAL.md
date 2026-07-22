@@ -576,8 +576,8 @@ Quy tắc:
 
 1. ⚠️ Cơ chế `temporal_desync` đã sửa và smoke: sample-exact shift, giữ duration/frame count, không silence/truncation. SNVSM ghép CRF theo real nguồn; Stage 04 trim AAC padding và Stage 05 fail-fast khi thiếu method hoặc lệch audio/video/CRF.
 2. ✅ Structured schema `av_timeline_v1`, valid-range/localization fields và `fixed_common_window_v1` đã implement + contract-test. Việc loader/model thực sự tiêu thụ mask thuộc Phase 1/2; shortcut mask-shape vẫn phải qua metadata gate.
-3. ⏳ Repair/regenerate `frame_reverse`, `pitch_flatten`, `anonymization`; cả ba generator V1 còn `-shortest`, audit 15 source phân tầng (5/tier) đã xác nhận timing lệch ở cả tier1/2/3 nhưng chưa ước lượng tỷ lệ toàn bộ.
-4. ⏳ Trên smoke đã repair, chạy baseline chỉ dùng metadata/timing/codec; nếu baseline còn tách nhãn tốt thì chưa được extract/train model.
+3. ✅ Code V2 của `frame_reverse`, `pitch_flatten`, `anonymization` đã bỏ `-shortest`, dùng output atomic, structured timeline và paired media validator; synthetic smoke 25/29,97 FPS đạt. Chưa regenerate data thật ở bước này.
+4. ⏳ Chạy stratified real-data smoke cho ba generator đã repair, rồi baseline chỉ dùng metadata/timing/codec; nếu baseline còn tách nhãn tốt thì chưa được extract/train model.
 5. ⏳ Tạo master composition đã qua timing audit, normalize SNVSM V2 cho đủ 2.700 clip pilot và chạy Stage 05; chạy lại metadata-only baseline trên toàn labels 2.700 trước khi extract mới toàn bộ feature và audit lại.
 
 Bằng chứng smoke: [TEMPORAL_DESYNC_PHASE0_SMOKE.md](../reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md).

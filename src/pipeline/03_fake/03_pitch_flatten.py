@@ -22,8 +22,9 @@ phẳng vùng HỮU THANH (PSOLA chỉ đụng voiced), vùng vô thanh giữ ng
 Chống học-tủ:
   - VIDEO copy nguyên -> khác biệt nằm ở AUDIO, không phải hình.
   - Raw fake xuất 16kHz mono, nên BẮT BUỘC đưa mọi real/fake qua SNVSM V2 cùng
-    AAC 16kHz mono; nếu không, sample-format là shortcut. Generator V1 còn dùng
-    -shortest và phải repair timing trước repaired pilot.
+    AAC 16kHz mono; nếu không, sample-format là shortcut.
+  - V2 mux ALAC 16 kHz mono theo đúng sample target, bỏ -shortest và chỉ publish
+    nếu frame/FPS/duration video cùng audio target vẫn khớp source.
 
 Phụ thuộc: praat-parselmouth  ->  pip install praat-parselmouth
 Cần ffmpeg/ffprobe trong PATH.
@@ -43,6 +44,22 @@ import tempfile
 import argparse
 import subprocess
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from src.pipeline.fake_media_contract import (
+    is_valid_repaired_output,
+    probe_media,
+    publish_validated,
+    remove_if_exists,
+)
+from src.pipeline.timeline_contract import (
+    TIMELINE_FIELDS,
+    build_timeline_contract,
+    validate_timeline_contract,
+)
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
@@ -57,9 +74,12 @@ except Exception:
     print("Thiếu praat-parselmouth. Cài: pip install praat-parselmouth")
     sys.exit(1)
 
-# Schema nhãn DÙNG CHUNG với 01/02/04.
+GENERATOR_VERSION = "pitch_flatten_v2_exact_timeline_v1"
+DEFAULT_OUT_DIR = "data/03_fake/pitch_flatten_v2"
+DEFAULT_LABELS = "data/03_fake/manifests/v2/pitch_flatten.csv"
 LABEL_FIELDS = ["clip_id", "file_path", "label", "method", "param",
-                "source_clip", "source_video", "speaker_id", "tier"]
+                "source_clip", "source_video", "speaker_id", "tier",
+                *TIMELINE_FIELDS]
 
 # Dải F0 tiếng Việt: nam ~75–200, nữ ~150–400, kèm excursion thanh hỏi/ngã -> 75–500.
 F0_FLOOR = 75.0
@@ -99,14 +119,45 @@ def flatten_f0(wav_in, wav_out, target="mean"):
     return f0 if os.path.exists(wav_out) else None
 
 
-def mux(in_video, flat_wav, out_path):
-    """Ghép VIDEO copy nguyên + AUDIO đã làm phẳng F0."""
+def assert_manifest_compatible(path):
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        return {}
+    with open(path, newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    by_id = {}
+    for row in rows:
+        clip_id = row.get("clip_id", "")
+        if (not clip_id or clip_id in by_id
+                or row.get("method") != "pitch_flatten"
+                or f"generator={GENERATOR_VERSION}" not in row.get("param", "")):
+            raise ValueError(f"Manifest pitch_flatten V2 không tương thích: {path}")
+        validate_timeline_contract(row, "pitch_flatten")
+        by_id[clip_id] = row
+    return by_id
+
+
+def mux(in_video, flat_wav, out_path, source_media=None):
+    """Ghép video copy + ALAC phẳng F0 với đúng sample target của source."""
+    source_media = source_media or probe_media(in_video)
+    if source_media is None:
+        return False
+    partial_path = out_path + ".part.mp4"
+    remove_if_exists(partial_path)
+    audio_filter = (
+        f"[1:a]aresample=16000,apad,"
+        f"atrim=end_sample={source_media['audio_target_samples']},"
+        "asetpts=PTS-STARTPTS[a]"
+    )
     cmd = ["ffmpeg", "-y", "-i", in_video, "-i", flat_wav,
-           "-map", "0:v", "-map", "1:a",
-           "-c:v", "copy", "-c:a", "aac",
-           "-shortest", "-loglevel", "error", out_path]
-    subprocess.run(cmd, capture_output=True)
-    return os.path.exists(out_path) and os.path.getsize(out_path) > 0
+           "-filter_complex", audio_filter,
+           "-map", "0:v:0", "-map", "[a]",
+           "-c:v", "copy", "-c:a", "alac",
+           "-loglevel", "error", partial_path]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0:
+        remove_if_exists(partial_path)
+        return False
+    return publish_validated(partial_path, out_path, source_media)
 
 
 def main():
@@ -115,8 +166,8 @@ def main():
                     help="CSV clip real (cần cột file_path) — mặc định tập sạch từ 04_curate")
     ap.add_argument("--path_col", default="file_path")
     ap.add_argument("--id_col", default="clip_id")
-    ap.add_argument("--out_dir", default="data/03_fake")
-    ap.add_argument("--labels", default="data/03_fake/labels.csv")
+    ap.add_argument("--out_dir", default=DEFAULT_OUT_DIR)
+    ap.add_argument("--labels", default=DEFAULT_LABELS)
     ap.add_argument("--target", choices=["mean", "median"], default="mean",
                     help="làm phẳng F0 về trung bình hay trung vị của phát ngôn")
     ap.add_argument("--seed", type=int, default=42)
@@ -125,6 +176,7 @@ def main():
 
     random.seed(args.seed)
     os.makedirs(args.out_dir, exist_ok=True)
+    existing_rows = assert_manifest_compatible(args.labels)
 
     with open(args.input_csv, newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
@@ -139,12 +191,17 @@ def main():
     if new_file:
         writer.writeheader()
 
-    made = skipped = failed = 0
+    made = resumed = repaired = skipped = failed = 0
     tmpdir = tempfile.mkdtemp(prefix="pitchflat_")
     for i, r in enumerate(rows):
         src_path = r.get(args.path_col, "")
         src_id = r.get(args.id_col, f"clip{i:06d}")
         if not src_path or not os.path.isfile(src_path):
+            skipped += 1
+            continue
+
+        media = probe_media(src_path)
+        if media is None:
             skipped += 1
             continue
 
@@ -163,26 +220,46 @@ def main():
             skipped += 1
             continue
 
-        fake_id = f"{src_id}_flat{int(round(f0))}hz"
+        fake_id = f"{src_id}_flatv2{args.target}{int(round(f0))}hz"
         out_path = os.path.abspath(os.path.join(args.out_dir, fake_id + ".mp4"))
-        if mux(src_path, wav_out, out_path):
-            writer.writerow({
+        expected_param = (f"flatten_{args.target}_F0={f0:.0f}Hz;"
+                          f"generator={GENERATOR_VERSION}")
+        existing = existing_rows.get(fake_id)
+        if existing:
+            recorded_path = os.path.abspath(existing.get("file_path", ""))
+            if (os.path.normcase(recorded_path) != os.path.normcase(out_path)
+                    or existing.get("param", "") != expected_param):
+                raise ValueError(f"Resume contract sai cho {fake_id}")
+            if is_valid_repaired_output(out_path, media):
+                resumed += 1
+                continue
+        if mux(src_path, wav_out, out_path, media):
+            if existing:
+                repaired += 1
+                continue
+            output_row = {
                 "clip_id": fake_id,
                 "file_path": out_path,
                 "label": 1,
                 "method": "pitch_flatten",
-                "param": f"flatten_{args.target}_F0={f0:.0f}Hz",
+                "param": expected_param,
                 "source_clip": src_id,
                 "source_video": r.get("source_video", ""),
                 "speaker_id": r.get("speaker_id", ""),
                 "tier": r.get("tier", ""),
-            })
+            }
+            output_row.update(build_timeline_contract(
+                media["audio_duration"], media["video_duration"],
+                manipulation_scope="global",
+            ))
+            writer.writerow(output_row)
             made += 1
         else:
             failed += 1
 
         if (i + 1) % 200 == 0:
-            print(f"  {i+1}/{len(rows)}  made={made} skip={skipped} fail={failed}")
+            print(f"  {i+1}/{len(rows)}  made={made} resume={resumed} "
+                  f"repair={repaired} skip={skipped} fail={failed}")
 
     lf.close()
     for f in ("in.wav", "out.wav"):
@@ -195,9 +272,12 @@ def main():
     except OSError:
         pass
 
-    print(f"\nXong. Fake tạo được: {made} | bỏ qua: {skipped} | lỗi: {failed}")
+    print(f"\nXong. Fake tạo được: {made} | resume: {resumed} | "
+          f"sửa file: {repaired} | bỏ qua: {skipped} | lỗi: {failed}")
     print(f"  Video -> {args.out_dir}/  | nhãn (append) -> {args.labels}")
     print("Lưu ý: đây là fake AUDIO thuần — cần model có nhánh prosody/F0 mới phát hiện được.")
+    if skipped or failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -411,7 +411,7 @@ class TemporalDesyncContractTest(unittest.TestCase):
         ))
         self.assertFalse(Path(str(output) + ".part.mp4").exists())
 
-    def test_fake_manifest_replaces_v1_temporal(self):
+    def test_fake_manifest_requires_repaired_non_temporal_rows(self):
         self.assertEqual(FAKE_MANIFEST.GENERATOR_VERSION,
                          TEMPORAL.GENERATOR_VERSION)
         media = str(self._make_source("25/1"))
@@ -423,14 +423,15 @@ class TemporalDesyncContractTest(unittest.TestCase):
             "speaker_id": "speaker_one",
             "tier": "tier1",
         }
-        full_real = TIMELINE.build_timeline_contract(4.0, 4.0)
-        legacy = []
-        for method in ("temporal_desync", *FAKE_MANIFEST.NON_TEMPORAL_METHODS):
+        repaired = []
+        for method in FAKE_MANIFEST.NON_TEMPORAL_METHODS:
             row = {
                 **common,
-                "clip_id": f"old_{method}",
+                "clip_id": f"v2_{method}",
                 "method": method,
-                "param": "shift=7f" if method == "temporal_desync" else "legacy",
+                "param": (
+                    f"generator={FAKE_MANIFEST.GENERATOR_VERSIONS[method]}"
+                ),
             }
             if method == "frame_reverse":
                 row.update(TIMELINE.build_timeline_contract(
@@ -441,9 +442,7 @@ class TemporalDesyncContractTest(unittest.TestCase):
                 row.update(TIMELINE.build_timeline_contract(
                     4.0, 4.0, manipulation_scope="global",
                 ))
-            else:
-                row.update(full_real)
-            legacy.append(row)
+            repaired.append(row)
         temporal = [{
             **common,
             "clip_id": "new_temporal",
@@ -456,12 +455,12 @@ class TemporalDesyncContractTest(unittest.TestCase):
                 manipulation_scope="global", manipulation=(0.28, 3.72),
             ),
         }]
-        rows = FAKE_MANIFEST.compose_rows(legacy, temporal, check_files=True)
+        rows = FAKE_MANIFEST.compose_rows(repaired, temporal, check_files=True)
         self.assertEqual(len(rows), 4)
         self.assertEqual({row["method"] for row in rows},
                          set(FAKE_MANIFEST.METHOD_ORDER))
         self.assertIn("new_temporal", {row["clip_id"] for row in rows})
-        self.assertNotIn("old_temporal_desync", {row["clip_id"] for row in rows})
+        self.assertTrue(all("generator=" in row["param"] for row in rows))
 
     def test_snvsm_reencodes_audio_symmetrically(self):
         config = SNVSM.normalization_config("libx264", "ultrafast")
