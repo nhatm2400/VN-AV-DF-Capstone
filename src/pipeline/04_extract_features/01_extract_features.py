@@ -44,6 +44,17 @@ import tempfile
 import subprocess
 from fractions import Fraction
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from src.pipeline.timeline_contract import (
+    TIMELINE_FIELDS,
+    TIMELINE_SCHEMA_VERSION,
+    timeline_contract_id,
+    validate_timeline_against_media,
+)
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
@@ -77,10 +88,10 @@ SNVSM_MARKERS = ("snvsm_version", "snvsm_config_id", "snvsm_encoder",
                  "snvsm_channels", "snvsm_target_samples", "snvsm_mode",
                  "snvsm_crf_set", "snvsm_seed", "snvsm_pair_key",
                  "snvsm_video_frames", "snvsm_video_fps",
-                 "snvsm_video_duration_s")
+                 "snvsm_video_duration_s", *TIMELINE_FIELDS)
 EXPECTED_SNVSM_VERSION = "snvsm_v2_h264_aac16k_mono_exactdur"
 EXPECTED_SNVSM_AUDIO = "aac_128k_16khz_mono"
-FEATURE_SCHEMA_VERSION = "avsp_feature_v2_contract"
+FEATURE_SCHEMA_VERSION = "avsp_feature_v3_timeline_contract"
 W2V_MODEL_NAME = "nguyenvulebinh/wav2vec2-base-vietnamese-250h"
 
 
@@ -95,6 +106,7 @@ def expected_snvsm_config_id(row, crf_set):
         "audio_bitrate": "128k",
         "audio_sample_rate": 16000,
         "audio_channels": 1,
+        "timeline_schema_version": TIMELINE_SCHEMA_VERSION,
         "crfs": crf_set,
         "mode": row["snvsm_mode"].strip(),
         "seed": int(row["snvsm_seed"]),
@@ -176,7 +188,7 @@ def read_wav_int16(path):
     return np.frombuffer(raw, dtype=np.int16).copy()
 
 
-def snvsm_target_samples(row):
+def snvsm_target_samples(row, method=None):
     """Return the Stage-04 PCM length contract; reject incomplete SNVSM rows."""
     raw = str(row.get("snvsm_target_samples", "") or "").strip()
     is_snvsm = bool(raw) or any(str(row.get(field, "") or "").strip()
@@ -212,6 +224,11 @@ def snvsm_target_samples(row):
                 and int(row["snvsm_video_frames"]) > 0
                 and Fraction(row["snvsm_video_fps"]) > 0
                 and float(row["snvsm_video_duration_s"]) > 0
+            )
+            validate_timeline_against_media(
+                row, value / 16000,
+                float(row["snvsm_video_duration_s"]),
+                method or row.get("method", "") or "real",
             )
         except (KeyError, TypeError, ValueError, ZeroDivisionError):
             valid = False
@@ -264,6 +281,8 @@ def is_valid_existing_feature(path, target_samples, expected, require_w2v=True):
                 and meta.get("feature_config_id") == expected["feature_config_id"]
                 and str(meta.get("snvsm_config_id", "") or "")
                 == str(expected.get("snvsm_config_id", "") or "")
+                and str(meta.get("timeline_contract_id", "") or "")
+                == str(expected.get("timeline_contract_id", "") or "")
             )
             audio_samples = int(meta.get("audio_samples", -1))
             audio_ok = (audio_samples > 0 if target_samples is None else
@@ -530,7 +549,7 @@ def main():
             continue
 
         try:
-            target_samples = snvsm_target_samples(r)
+            target_samples = snvsm_target_samples(r, r["_method"])
         except Exception as e:
             idx_w.writerow({"clip_id": cid, "feature_path": "", "label": r["_label"],
                             "method": r["_method"], "speaker_id": r.get("speaker_id", ""),
@@ -546,6 +565,10 @@ def main():
             "mouth_size": args.mouth_size,
             "feature_config_id": extraction_config_id,
             "snvsm_config_id": r.get("snvsm_config_id", ""),
+            "timeline_contract_id": (
+                timeline_contract_id(r, r["_method"])
+                if target_samples is not None else ""
+            ),
             "require_wave": args.save_wave,
         }
         if (args.skip_existing
@@ -619,6 +642,11 @@ def main():
                          "feature_schema_version": FEATURE_SCHEMA_VERSION,
                          "feature_config_id": extraction_config_id,
                          "snvsm_config_id": r.get("snvsm_config_id", ""),
+                         "timeline_contract_id": expected_feature["timeline_contract_id"],
+                         "timeline": (
+                             {field: r.get(field, "") for field in TIMELINE_FIELDS}
+                             if target_samples is not None else None
+                         ),
                          "audio_target_samples": target_samples,
                          "audio_samples": len(sig)},
             }

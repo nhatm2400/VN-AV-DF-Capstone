@@ -60,6 +60,17 @@ import argparse
 import subprocess
 from fractions import Fraction
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from src.pipeline.timeline_contract import (
+    TIMELINE_FIELDS,
+    TIMELINE_SCHEMA_VERSION,
+    build_timeline_contract,
+    validate_timeline_against_media,
+)
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
@@ -85,6 +96,7 @@ def normalization_config(encoder, preset, crfs=None, mode="random", seed=42):
         "audio_bitrate": "128k",
         "audio_sample_rate": AUDIO_SAMPLE_RATE,
         "audio_channels": AUDIO_CHANNELS,
+        "timeline_schema_version": TIMELINE_SCHEMA_VERSION,
         "crfs": crfs,
         "mode": mode,
         "seed": int(seed),
@@ -346,7 +358,7 @@ def main():
                   "snvsm_target_samples", "snvsm_mode",
                   "snvsm_crf_set", "snvsm_seed", "snvsm_pair_key",
                   "snvsm_video_frames", "snvsm_video_fps",
-                  "snvsm_video_duration_s"):
+                  "snvsm_video_duration_s", *TIMELINE_FIELDS):
         if extra not in out_fields:
             out_fields.append(extra)
 
@@ -365,6 +377,28 @@ def main():
         target_samples = audio_target_samples(src_path)
         expected_video = video_contract(src_path)
         if target_samples is None or expected_video is None:
+            skipped += 1
+            continue
+
+        audio_duration = target_samples / AUDIO_SAMPLE_RATE
+        visual_duration = expected_video["duration"]
+        method = str(r.get("method", "") or "").strip()
+        try:
+            if method in ("temporal_desync", "frame_reverse",
+                          "pitch_flatten", "anonymization"):
+                timeline = validate_timeline_against_media(
+                    r, audio_duration, visual_duration, method
+                )
+            else:
+                timeline = build_timeline_contract(
+                    audio_duration, visual_duration,
+                    manipulation_scope="none",
+                )
+                timeline = validate_timeline_against_media(
+                    timeline, audio_duration, visual_duration, "real"
+                )
+        except ValueError as exc:
+            print(f"  ! {src_id}: timeline_contract:{exc}")
             skipped += 1
             continue
 
@@ -405,6 +439,7 @@ def main():
                 row["snvsm_video_frames"] = expected_video["frames"]
                 row["snvsm_video_fps"] = expected_video["fps"]
                 row["snvsm_video_duration_s"] = f"{expected_video['duration']:.9f}"
+                row.update(timeline)
                 writer.writerow(row)               # manifest luôn ghi đủ (kể cả clip resume)
                 if exists:
                     resumed += 1

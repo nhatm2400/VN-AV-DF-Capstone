@@ -1,8 +1,10 @@
 # Báo cáo Phase 0 — sửa và smoke-test `temporal_desync`
 
-**Ngày kiểm tra:** 2026-07-21
-**Git base khi kiểm tra:** `73e6b95` (worktree có thay đổi Phase 0 chưa commit)
-**Trạng thái:** cơ chế generator/SNVSM V2, guard manifest và smoke-test đã đạt; **chưa normalize/extract repaired pilot 2.700 clip, chưa train V2a**
+**Ngày kiểm tra:** 2026-07-21; cập nhật contract ngày 2026-07-22
+
+**Checkpoint Phase 0 cơ chế:** `1c592a4`; phần structured timeline là thay đổi của Bước 2 sau checkpoint này
+
+**Trạng thái:** cơ chế generator/SNVSM V2, guard manifest, structured timeline schema và contract-test đã đạt; **ba generator không-temporal chưa repair, chưa normalize/extract repaired pilot 2.700 clip, chưa train V2a**
 
 ## 1. Mục tiêu
 
@@ -36,18 +38,25 @@ shift_samples = round(abs(shift_sec) * audio_sample_rate)
 - encode qua `.part.mp4`, kiểm tra codec/audio sample cùng video packet-count/time-base/duration-tick so với source rồi atomic-replace; resume sửa file corrupt mà không nhân đôi manifest;
 - video packet/frame và audio timeline khai báo được giữ nguyên; decode kiểu Stage 04 cho phép sai khác tối đa một AAC-frame tương đương do source AAC/resample.
 
-Xoay vòng không chèn silence và không cắt dữ liệu, nhưng tạo một điểm nối wrap. Vì không thể dịch toàn bộ audio hữu hạn mà đồng thời giữ nguyên toàn bộ video/duration và không có vùng biên, generator ghi rõ:
+Xoay vòng không chèn silence và không cắt dữ liệu, nhưng tạo một điểm nối wrap. Vì không thể dịch toàn bộ audio hữu hạn mà đồng thời giữ nguyên toàn bộ video/duration và không có vùng biên, generator ghi contract vào **các cột CSV có cấu trúc**, không nhét trong chuỗi `param`:
 
 ```text
-boundary=circular_wrap
-audio_valid_start=<giây>
-audio_valid_end=<giây>
-visual_valid_start=<giây>
-visual_valid_end=<giây>
-generator=temporal_v2_circular_avmask_v1
+timeline_schema_version=av_timeline_v1
+timeline_mask_policy=fixed_common_window_v1
+timeline_boundary=circular_wrap
+timeline_duration_s=<giây>
+audio_valid_start_s=<giây>
+audio_valid_end_s=<giây>
+visual_valid_start_s=<giây>
+visual_valid_end_s=<giây>
+manipulation_scope=global
+manipulation_start_s=<giây>
+manipulation_end_s=<giây>
 ```
 
-trong `param`. `audio_valid_*` là miền hợp lệ trên audio output; `visual_valid_*` là miền visual tương ứng sau bù lag. V2a phải loại wrap khỏi attention, lag feature, temporal head, pooling và clip evidence, không chỉ một loss. Để mask length/side không thành shortcut nhãn hoặc dấu shift, phải dùng cửa sổ đồng bộ độ dài cố định trong miền hợp lệ hoặc áp edge mask/crop đối xứng cho real và mọi fake.
+`audio_valid_*` là miền hợp lệ trên audio output; `visual_valid_*` là miền visual tương ứng sau bù lag. `fixed_common_window_v1` chọn một cửa sổ đồng bộ có độ dài cố định nằm hoàn toàn trong giao của hai miền hợp lệ; như vậy số lượng/vị trí phần tử mask thô không được đưa thẳng cho model thành shortcut nhãn hay dấu shift. Module dùng chung [`timeline_contract.py`](../../src/pipeline/timeline_contract.py) kiểm version, boundary, miền hợp lệ, vùng thao tác và semantics theo method. V2a vẫn phải thực sự tiêu thụ contract này ở attention, lag feature, temporal head, pooling và clip evidence; Bước 2 mới khóa schema/parser/validator, chưa implement toàn bộ loader/model mask.
+
+`param` giờ chỉ giữ mô tả con người đọc được như `shift=...;generator=...`; nguồn sự thật cho timeline là các cột cấu trúc. Mỗi feature `.pt` mới lưu `timeline_contract_id` cùng bản contract canonical để resume không tái sử dụng feature từ timeline khác.
 
 ID mới dùng hậu tố `desyncv2r2p...` hoặc `desyncv2r2m...`. Mặc định media nằm ở `data/03_fake/temporal_v2/`, manifest ở `data/03_fake/manifests/v2/temporal_desync.csv`; code từ chối append nếu manifest có temporal V1/schema cũ. Resume kiểm tra schema, ID duy nhất và probe media ALAC hoàn chỉnh thay vì chỉ tin file khác rỗng.
 
@@ -62,7 +71,7 @@ audio: AAC 128 kbps, 16 kHz mono, timestamp bắt đầu từ 0
 
 cho cả real và fake. Nhánh “audio copy nếu được” đã bỏ vì nó giữ dấu vân codec phụ thuộc method. Cách này kiểm soát/giảm shortcut codec; chưa có bằng chứng rằng nó xóa mọi forensic trace từ lịch sử transcode trước đó.
 
-SNVSM V2 dùng ID `<clip_id>_snvsmv2_<config-id>_crf<N>`. Config hash hiện bao gồm encoder/preset/audio cùng toàn bộ CRF policy (`crf_set`, `mode`, `seed`); manifest giữ các field này, `snvsm_pair_key`, sample target và visual contract (`frames`, nominal FPS, duration). Stage 04/05 tự tính lại hash từ provenance thay vì chỉ tin chuỗi `snvsm_config_id`. Ở mode random, CRF được chọn từ khóa real nguồn (`source_clip`) nên real và cả bốn fake ghép cặp nhận cùng mức nén, thay vì random độc lập theo fake ID.
+SNVSM V2 dùng ID `<clip_id>_snvsmv2_<config-id>_crf<N>`. Config hash hiện bao gồm encoder/preset/audio, toàn bộ CRF policy (`crf_set`, `mode`, `seed`) và `timeline_schema_version`; manifest giữ các field này, `snvsm_pair_key`, sample target, visual contract (`frames`, nominal FPS, duration) cùng structured timeline. Real nhận contract `native`/`none` phủ toàn media; fake bắt buộc đã có contract hợp lệ và được đối chiếu với media probe. Stage 04/05 tự tính lại hash từ provenance thay vì chỉ tin chuỗi `snvsm_config_id`. Ở mode random, CRF được chọn từ khóa real nguồn (`source_clip`) nên real và cả bốn fake ghép cặp nhận cùng mức nén, thay vì random độc lập theo fake ID.
 
 Audio được resample 16 kHz mono và timeline container được trim/pad về target của input. Do AAC mã hóa theo frame, decode PCM vẫn có thể lộ trailing padding dù `duration_ts` đúng; vì vậy Stage 04 bắt buộc trim waveform theo `snvsm_target_samples` trước prosody/Wav2Vec. Resume probe H.264 + AAC + format + container target, decode để bảo đảm có ít nhất target PCM, đồng thời đếm frame và đối chiếu nominal FPS/duration video với input. Encode đi qua file `.part.mp4` rồi atomic-replace; nếu bất kỳ row skip/fail thì CLI trả exit khác 0. Cây `data/03_fake/snvsm/` V1 được guard không cho V2 ghi vào.
 
@@ -70,7 +79,7 @@ Stage 04 từ chối fake manifest rỗng theo mặc định và chỉ resume `.
 
 ### 2.3 Master composition không còn temporal V1
 
-[`06_build_fake_manifest_v2.py`](../../src/pipeline/03_fake/06_build_fake_manifest_v2.py) đọc manifest V1 nhưng loại toàn bộ `temporal_desync` cũ, rồi ghép đúng một temporal V2 với ba method không-temporal cho mỗi source. Builder fail khi thiếu/trùng method, trùng ID, metadata lineage lệch, media mất hoặc output đè input; output được ghi atomic tại `data/03_fake/manifests/v2/fake_all.csv`.
+[`06_build_fake_manifest_v2.py`](../../src/pipeline/03_fake/06_build_fake_manifest_v2.py) đọc manifest V1 nhưng loại toàn bộ `temporal_desync` cũ, rồi ghép đúng một temporal V2 với ba method không-temporal cho mỗi source. Builder fail khi thiếu/trùng method, trùng ID, metadata lineage lệch, media mất, timeline contract thiếu/sai hoặc output đè input; output được ghi atomic tại `data/03_fake/manifests/v2/fake_all.csv`. Vì ba manifest V1 không-temporal chưa có structured timeline, code Bước 2 **cố ý reject chúng** cho đến khi Bước 3 repair và regenerate.
 
 ## 3. Test tự động
 
@@ -89,7 +98,7 @@ Matrix synthetic đã chạy:
 - tổng cộng 30 trường hợp temporal;
 - thêm test SNVSM real/fake qua đúng decode Stage 04, input audio 44,1 kHz stereo vs 16 kHz mono, guard V1, resume-idempotency và builder master V2.
 
-Kết quả cuối: `10` test pass, `1` real-data test skip mặc định (`11` test được discover). Test real được bật riêng bằng biến môi trường và cũng đã pass ở mục 4.
+Kết quả cuối sau Bước 2: `12` test pass, `1` real-data test skip mặc định (`13` test được discover). Test real được bật riêng bằng biến môi trường và đã pass ở mục 4 tại checkpoint cơ chế; thuật toán dịch media không đổi trong Bước 2.
 
 Các invariant được kiểm tra:
 
@@ -107,6 +116,9 @@ Các invariant được kiểm tra:
 - SNVSM reject output bị cắt video dù audio còn đủ, config hash đổi khi CRF-set/mode/seed đổi, và Stage 05 reject CRF khác real;
 - manifest V2 không trộn temporal V1, resume không tạo dòng trùng.
 - temporal output corrupt bị regenerate qua file tạm; validator không chấp nhận output mất/thêm video packet dù duration vẫn gần đúng.
+- structured timeline đúng semantics cho real và đủ bốn method; fixed-common-window luôn nằm trong giao miền audio/visual hợp lệ và có độ dài cố định;
+- SNVSM CLI tự thêm contract `native` hoàn chỉnh cho real, còn fake thiếu/sai contract bị fail-closed;
+- Stage 04 gắn `timeline_contract_id` vào feature để chặn resume nhầm provenance.
 
 ## 4. Integration smoke trên dữ liệu thật
 
@@ -152,9 +164,9 @@ D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/03_fake/01_temporal_desync.py 
   --limit 6 --seed 42
 ```
 
-Kết quả: `6/6` tạo thành công, `0` skip, `0` fail; ID dùng `desyncv2r2...`, đủ bốn trường valid-range và generator version mới.
+Kết quả lịch sử: `6/6` tạo thành công, `0` skip, `0` fail; ID dùng `desyncv2r2...`. Manifest này có bốn valid-range sơ khai trong `param`; code Bước 2 hiện yêu cầu các cột `av_timeline_v1` nên không tái sử dụng trực tiếp artifact r4.
 
-Builder hiện tại:
+Builder tại thời điểm tạo smoke r4:
 
 ```powershell
 D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/03_fake/06_build_fake_manifest_v2.py `
@@ -177,13 +189,13 @@ SNVSM chạy trên 6 real + 24 fake vào `data/03_fake/phase0_smoke_v2r4/snvsm/`
 
 Audit bổ sung phát hiện raw AAC decode có trailing padding ở `29/30` file, dư `64–1008` sample tùy clip/method. Đây là lý do không được diễn giải `duration_ts` đúng thành PCM decode-exact. Sau khi Stage 04 trim theo manifest, `30/30` waveform có độ dài đúng `snvsm_target_samples`; không dòng SNVSM nào thiếu/invalid target. Đo lại sáu cặp temporal cho kết quả lag error lớn nhất `0 ms`, valid-range correlation nhỏ nhất `0,996682`, chênh decoded length giữa real/fake lớn nhất `0` sample.
 
-Stage 05 ban đầu tạo `data/05_labels/labels_phase0_smoke_v2r4.csv` gồm 6 real + 24 fake, gate config SNVSM giống nhau và giữ provenance trên cả 30 dòng. Verify không có `speaker_id`/`source_video` xuyên split; sáu real cùng component nên toàn bộ 30 dòng ở train và đây chỉ là wiring smoke. Artifact labels r4 được giữ làm lịch sử trước các gate mới. Code hiện tại sẽ reject manifest r4 ngay vì thiếu CRF/visual-policy provenance; audit trực tiếp còn cho thấy 12/24 fake (`frame_reverse` và `pitch_flatten`) có target khác real. Không dùng artifact này cho pilot.
+Stage 05 ban đầu tạo `data/05_labels/labels_phase0_smoke_v2r4.csv` gồm 6 real + 24 fake, gate config SNVSM giống nhau và giữ provenance trên cả 30 dòng. Verify không có `speaker_id`/`source_video` xuyên split; sáu real cùng component nên toàn bộ 30 dòng ở train và đây chỉ là wiring smoke. Artifact labels r4 được giữ làm lịch sử trước các gate mới. Code hiện tại reject manifest r4 vì thiếu CRF/visual-policy provenance và structured timeline; audit trực tiếp còn cho thấy 12/24 fake (`frame_reverse` và `pitch_flatten`) có target khác real. Không dùng artifact này cho pilot.
 
 Audit này đồng thời phát hiện blocker kế tiếp trong **ba generator V1 không-temporal**: trên đúng 6 source smoke, video `frame_reverse` và `anonymization` đều ngắn hơn real ghép cặp 40 ms; `pitch_flatten` lệch 0–160 ms. Code V1 của cả ba còn dùng `-shortest`. Đây là số đo 6 source, chưa được ngoại suy thành tỷ lệ toàn bộ 3.001 source. SNVSM chuẩn hóa audio format nhưng không thể khôi phục frame video đã bị cắt; phải audit/repair contract frame-duration của ba method hoặc chứng minh loader fixed-window đối xứng loại hoàn toàn shortcut này trước repaired pilot.
 
-### 5.1 Policy/visual-contract smoke r5 bằng code hiện tại
+### 5.1 Policy/visual-contract smoke r5 tại checkpoint `1c592a4`
 
-Một smoke tách biệt normalize lại cùng 6 real + 24 fake r4 vào `data/03_fake/phase0_policy_smoke_v2r5/snvsm/` để kiểm đúng code hiện tại. Kết quả cuối:
+Một smoke tách biệt đã normalize lại cùng 6 real + 24 fake r4 vào `data/03_fake/phase0_policy_smoke_v2r5/snvsm/` để kiểm code ở checkpoint cơ chế. Kết quả lúc đó:
 
 - 6 real + 24 fake, đủ `6` clip cho mỗi method, không skip/fail;
 - một config duy nhất `46c7f60176`, mode `random`, CRF-set `23,30,35,40`, seed `42`;
@@ -194,6 +206,8 @@ Một smoke tách biệt normalize lại cùng 6 real + 24 fake r4 vào `data/03
 - test riêng video chỉ còn khoảng 1 giây nhưng giữ full audio bị validator reject.
 
 Smoke này cố ý dùng lại ba media V1 để kiểm gate, **không phải repaired data**. Paired audit tìm thấy `12/24` fake lệch audio target (toàn bộ reverse + pitch) và `17/24` lệch visual contract (6 reverse + 5 pitch + 6 anonymization). Vì vậy lệnh Stage 05 trên r5 dừng với exit `1` trước khi ghi labels; `data/05_labels/labels_phase0_policy_smoke_v2r5.csv` không tồn tại. Đây là hành vi đúng: partial/method-drop, CRF lệch, audio lệch hoặc video lệch không thể âm thầm đi vào pilot.
+
+Sau Bước 2, r5 là **artifact lịch sử**: các manifest này chưa có `av_timeline_v1` và config hash chưa bao gồm timeline schema. Stage 05 hiện tại reject chúng ngay ở provenance/structured-contract gate trước paired timing gate và vẫn không sinh output. Do đó các số `30/30` ở trên chỉ chứng minh validator media/PCM/CRF của checkpoint `1c592a4`, không phải tuyên bố rằng r5 tương thích với code hiện tại.
 
 ### 5.2 Audit timing phân tầng cho ba method không-temporal
 
@@ -229,19 +243,20 @@ Exact source selection để tái lập:
 
 ### 5.3 Provenance của snapshot smoke
 
-Raw media/manifests dưới `data/` bị gitignore theo quy tắc repo. Bảng dưới tách rõ: r4 là artifact lịch sử trước hardening; source/test và hai manifest policy-smoke r5 phản ánh code/contract hiện tại. Vì vậy `labels_phase0_smoke_v2r4.csv` không tái tạo được bằng code hiện tại nếu vẫn dùng ba media V1 lỗi, còn r5 chủ động không có labels vì paired gate đã dừng đúng.
+Raw media/manifests dưới `data/` bị gitignore theo quy tắc repo. Bảng dưới tách rõ source/test của Bước 2 với r4/r5 là artifact lịch sử. `labels_phase0_smoke_v2r4.csv` không tái tạo được bằng code hiện tại nếu vẫn dùng ba media V1 lỗi; r5 cũng không còn qua structured-contract gate và chủ động không có labels.
 
 Các CSV smoke chứa absolute path của workspace lúc chạy và chỉ là bằng chứng cục bộ; không dùng chúng làm input cho repaired pilot.
 
 | Artifact | SHA-256 |
 |---|---|
-| `01_temporal_desync.py` | `C852D6BCF195BB9F428CFBF9810D789546347BE10FAC49BB8B47F6048CEBBEB3` |
-| `05_snvsm_compress.py` | `906EFBCECCAEB5EA99377C48791F9B0DC30EE55C60BB7663B9199F4E908A7A27` |
-| `06_build_fake_manifest_v2.py` | `1ABFC763D05B5E60E3956DDA19A48312087330F153C5FCBAC3D42DDDE47E40AF` |
-| `04_extract_features/01_extract_features.py` | `51D85B009B0BEF424F5B9A9FFD5202B614B2BF2FFC73F04273151665F2E64705` |
-| `01_build_labels.py` | `2B975BAF5C18ED2E49AD32B635948CD03423CF551D63AB6946FF3E670BFCDEED` |
+| `timeline_contract.py` | `D6C2D644A2DBDB39A7DB2AC82EA0C1190BDC2D9421DA0BC16071C07F624C04F3` |
+| `01_temporal_desync.py` | `7D6E0836455659801BCF12C9FCB32B6031944AE8D9E9B3E86B271EDFD00C49CD` |
+| `05_snvsm_compress.py` | `ECE7E3E15F26E0592D64B1AD4165E6BEC6529C10BB3923307C68588891039E8D` |
+| `06_build_fake_manifest_v2.py` | `C7C84CEF72E94D476D557F1E035921969A8C26F865E3646FFB2DDA639E73D4DF` |
+| `04_extract_features/01_extract_features.py` | `49B5419146000C2A5DA8FFBA5103A33D0E6B59A7DFFE82812120716ECE16BD00` |
+| `01_build_labels.py` | `F20942D33F0F9E2144B06448C7CC8226D10BFE81E87F60A2B3E7E7BEC8805DC7` |
 | `train/dataset.py` | `8E1BCCEA1F108E8771C214F68AA113DDA7ABB3A410923D96FC66F6455B9756DF` |
-| `tests/test_temporal_desync.py` | `2A915D8F40A6A8CE934C7DB981AE374FD73286190DAAB9A47FD60362C939D1ED` |
+| `tests/test_temporal_desync.py` | `D71F70C7F019409506512F2D5DBFCDEC706EA44A8601C907420E1154CF71CD3F` |
 | `real_integration_audit.json` | `912A344FF354F46844A38D2BA12B8BD3900351C19A0B6D42EAFDEA615AA509DA` |
 | `temporal_v2.csv` | `C35965A0C628F77065AAF6EC8A24181EB419DD7E4A44C2DD1C4BA919E4C4307F` |
 | `fake_all.csv` | `B493E9D2DCFC8BF53438E812638AC39A69C0E268465C2EADEA58EE1F164B8A68` |
@@ -277,7 +292,7 @@ Chưa xác minh:
 - SNVSM V2 và feature extraction mới trên đủ 2.700 clip repaired pilot;
 - metadata-only baseline trên toàn pilot;
 - audit/repair frame-duration của `frame_reverse`, `pitch_flatten`, `anonymization` V1;
-- schema cột cấu trúc và V2a loader có thực sự dùng `audio_valid_*`/`visual_valid_*` đối xứng ở mọi nhánh;
+- V2a loader/model có thực sự tiêu thụ structured timeline và fixed-common-window đối xứng ở mọi nhánh;
 - metric model sau repair.
 
-Vì vậy trạng thái vẫn là **NO-GO full extraction/full training**. Bước tiếp theo là khóa structured schema/valid-range/mask V2a và test semantics trước; sau đó audit/sửa timing contract của ba method không-temporal rồi chạy metadata-shortcut gate trên smoke đã repair. Chỉ khi gate dữ liệu đạt mới tạo repaired pilot: regenerate các method bị ảnh hưởng, SNVSM lại 540 real + 2.160 fake, qua Stage 05 và metadata-only gate trên toàn labels, rồi mới extract 2.700 feature vào path versioned trước khi train.
+Vì vậy trạng thái vẫn là **NO-GO full extraction/full training**. Structured schema/valid-range và fixed-common-window semantics đã khóa ở Bước 2. Bước tiếp theo là audit/sửa timing contract của `frame_reverse`, `pitch_flatten`, `anonymization`, regenerate smoke nhỏ rồi chạy metadata-shortcut gate. Chỉ khi gate dữ liệu đạt mới tạo repaired pilot: regenerate các method bị ảnh hưởng, SNVSM lại 540 real + 2.160 fake, qua Stage 05 và metadata-only gate trên toàn labels, rồi mới extract 2.700 feature vào path versioned trước khi train.

@@ -27,9 +27,9 @@ Tuy nhiên, AVSP-Net V1 chưa đủ điều kiện để chạy full như mô h�
 6. AUC cao của pitch và anonymization phần lớn đến từ các dấu vết đơn giản.
 7. Hệ thống output hiện chưa bất biến và chưa sinh đầy đủ biểu đồ, prediction hay metadata tái lập.
 
-Hướng phù hợp là khóa schema/valid-range/mask, sửa ba generator không-temporal còn lại, chạy metadata-shortcut gate, rồi tạo repaired pilot mới qua SNVSM V2. Sau đó mới implement V2a, chạy baseline/ablation nhiều seed và LOMO trước khi đóng băng contract để chạy full. V2b là giai đoạn mở rộng dữ liệu/encoder và external OOD để hướng đến deepfake thực tế.
+Schema/valid-range/fixed-common-window đã được khóa ở Bước 2. Hướng tiếp theo là sửa ba generator không-temporal còn lại, chạy metadata-shortcut gate, rồi tạo repaired pilot mới qua SNVSM V2. Sau đó mới implement V2a, chạy baseline/ablation nhiều seed và LOMO trước khi đóng băng contract để chạy full. V2b là giai đoạn mở rộng dữ liệu/encoder và external OOD để hướng đến deepfake thực tế.
 
-**Cập nhật 2026-07-21:** generator temporal V2 đã chuyển sang sample-exact circular shift. SNVSM ép H.264 + AAC 16 kHz mono, ghép CRF theo real nguồn và ghi audio/visual contract; Stage 04 trim AAC padding theo `snvsm_target_samples`, kiểm đủ tensor và trả lỗi nếu còn clip fail; Stage 05 fail-fast khi fake rỗng/media thiếu, thiếu method hoặc lệch audio/video/CRF. Synthetic 30/30, real 18/18 và policy smoke r5 30/30 media đạt. Tuy nhiên paired gate r5 cố ý reject media V1 vì 12 fake lệch audio và 17 fake lệch visual contract. Manifest temporal đã tách khỏi V1 và builder loại temporal cũ, nhưng ba generator V1 không-temporal vẫn có artifact `-shortest`, nên repaired pilot còn bị chặn; xem [báo cáo Phase 0](TEMPORAL_DESYNC_PHASE0_SMOKE.md).
+**Cập nhật 2026-07-22:** generator temporal V2 đã chuyển sang sample-exact circular shift. SNVSM ép H.264 + AAC 16 kHz mono, ghép CRF theo real nguồn và ghi audio/visual contract; Stage 04 trim AAC padding theo `snvsm_target_samples`, kiểm đủ tensor và trả lỗi nếu còn clip fail; Stage 05 fail-fast khi fake rỗng/media thiếu, thiếu method hoặc lệch audio/video/CRF. Synthetic 30/30, real 18/18 và policy smoke r5 30/30 media đạt ở checkpoint cơ chế. Schema `av_timeline_v1` và policy `fixed_common_window_v1` hiện đã được propagate qua generator/SNVSM/labels/feature provenance; vì r5 là artifact cũ thiếu schema, code hiện tại cố ý reject nó. Ba generator V1 không-temporal vẫn có artifact `-shortest`, nên repaired pilot còn bị chặn; xem [báo cáo Phase 0](TEMPORAL_DESYNC_PHASE0_SMOKE.md).
 
 ## 2. Thuật ngữ sử dụng
 
@@ -329,8 +329,8 @@ experiments/<scope>_<model>_<date>_<git-sha>_<config-hash>/
 
 ## 14. Thứ tự thực hiện và gate
 
-1. ⚠️ Đã sửa cơ chế và smoke-test `temporal_desync`, tách/guard manifest V1, thêm builder master V2 và contract trim AAC; phần cơ chế đạt nhưng Phase 0 chưa đóng vì mask/structured schema và repaired pilot chưa có.
-2. Khóa schema structured valid-range, padding/wrap mask và semantics cửa sổ đối xứng; viết test trước khi regenerate media.
+1. ⚠️ Đã sửa cơ chế và smoke-test `temporal_desync`, tách/guard manifest V1, thêm builder master V2 và contract trim AAC; phần cơ chế đạt nhưng Phase 0 chưa đóng vì ba generator không-temporal và repaired pilot chưa repair.
+2. ✅ Đã khóa schema `av_timeline_v1`, structured valid-range/localization và `fixed_common_window_v1`; contract test chạy trước khi regenerate media.
 3. Audit/repair timing contract của `frame_reverse`, `pitch_flatten`, `anonymization` V1.
 4. Trên smoke đã repair, chạy baseline chỉ dùng metadata/timing/codec; còn tách nhãn tốt thì quay lại sửa data.
 5. Tạo master 540 real + 2.160 fake, normalize SNVSM V2, qua Stage 05; chạy lại metadata-only baseline trên toàn labels 2.700 rồi mới extract feature vào path versioned.
@@ -358,8 +358,8 @@ AVSP-Net V1 có giá trị như baseline và phép kiểm tra pipeline. Nó khô
 Quy trình tiếp theo:
 
 ```text
-lock structured schema + valid-range/mask semantics
--> repair frame_reverse + pitch_flatten + anonymization
+structured schema + valid-range/mask semantics [đã khóa]
+-> repair frame_reverse + pitch_flatten + anonymization [bước kế tiếp]
 -> stratified smoke + metadata shortcut gate
 -> master/SNVSM/Stage05 + full-pilot metadata gate + new 2,700-feature store
 -> V2a loader/model

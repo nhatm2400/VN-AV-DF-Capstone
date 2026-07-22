@@ -42,6 +42,16 @@ import argparse
 from collections import defaultdict, Counter
 from fractions import Fraction
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from src.pipeline.timeline_contract import (
+    TIMELINE_FIELDS,
+    TIMELINE_SCHEMA_VERSION,
+    validate_timeline_against_media,
+)
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
@@ -55,6 +65,7 @@ OUT_FIELDS = ["clip_id", "file_path", "label", "method", "param",
               "snvsm_mode", "snvsm_crf_set", "snvsm_seed", "snvsm_pair_key",
               "snvsm_video_frames", "snvsm_video_fps",
               "snvsm_video_duration_s",
+              *TIMELINE_FIELDS,
               "split"]
 SPLITS = ["train", "val", "test"]
 EXPECTED_SNVSM_VERSION = "snvsm_v2_h264_aac16k_mono_exactdur"
@@ -68,6 +79,7 @@ SNVSM_CONTRACT_FIELDS = (
     "snvsm_target_samples", "snvsm_mode", "snvsm_crf_set", "snvsm_seed",
     "snvsm_pair_key", "snvsm_video_frames", "snvsm_video_fps",
     "snvsm_video_duration_s",
+    *TIMELINE_FIELDS,
 )
 
 
@@ -82,6 +94,7 @@ def expected_snvsm_config_id(row, crf_set):
         "audio_bitrate": "128k",
         "audio_sample_rate": 16000,
         "audio_channels": 1,
+        "timeline_schema_version": TIMELINE_SCHEMA_VERSION,
         "crfs": crf_set,
         "mode": row["snvsm_mode"].strip(),
         "seed": int(row["snvsm_seed"]),
@@ -204,6 +217,12 @@ def validate_snvsm_contract(real_rows, fake_rows):
                     and int(row["snvsm_video_frames"]) > 0
                     and Fraction(row["snvsm_video_fps"]) > 0
                     and float(row["snvsm_video_duration_s"]) > 0
+                )
+                validate_timeline_against_media(
+                    row,
+                    int(row["snvsm_target_samples"]) / 16000,
+                    float(row["snvsm_video_duration_s"]),
+                    "real" if name == "real" else row.get("method", ""),
                 )
             except (KeyError, TypeError, ValueError, ZeroDivisionError):
                 valid = False

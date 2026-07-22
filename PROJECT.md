@@ -6,7 +6,7 @@ Dự án phát hiện **Deepfake âm thanh-hình ảnh tiếng Việt** (Vietnam
 
 Mô hình hiện đã chạy pilot: **AVSP-Net V1** — mouth ROI + Wav2Vec + prosody, hợp nhất bằng Cross-Attention. Kiến trúc mục tiêu mới là **AVSP-Net V2**, gồm V2a (local temporal core, giữ cùng loại feature nhưng repaired pilot dùng store mới) và V2b (mở rộng để tổng quát hóa sang deepfake thực tế), xem [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
 
-Trạng thái hiện tại: **dữ liệu + curation đã xong** (6.888 clip → 3.001 clip sạch); **03_fake V1 đã sinh đủ 12.004 fake (4 method), `data/05_labels/labels.csv` đã build + split speaker/video-disjoint verified**; **PILOT V1 đã chạy xong** (2.700 clip, test AUC **0.809** — xem [PILOT](#pilot-đã-chạy-2026-07-21--de-risk-trước-full-run)); **temporal generator V2 + SNVSM normalization + manifest guards đã implement và smoke đạt**; **chưa tạo repaired pilot V2a 2.700 clip, chưa trích feature FULL, chưa train mô hình chính**. Trạng thái quyết định vẫn là **NO-GO full**: phải khóa schema/valid-range/mask V2a trước, rồi audit/repair timing artifact `-shortest` của ba generator V1 không-temporal và chạy metadata-shortcut smoke trước khi tạo lại pilot diagnostic. Xem [báo cáo Phase 0](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) và [đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
+Trạng thái hiện tại: **dữ liệu + curation đã xong** (6.888 clip → 3.001 clip sạch); **03_fake V1 đã sinh đủ 12.004 fake (4 method), `data/05_labels/labels.csv` đã build + split speaker/video-disjoint verified**; **PILOT V1 đã chạy xong** (2.700 clip, test AUC **0.809** — xem [PILOT](#pilot-đã-chạy-2026-07-21--de-risk-trước-full-run)); **temporal generator V2 + SNVSM normalization + manifest guards đã implement và smoke đạt**; **structured timeline schema + fixed-common-window policy đã khóa/test**; **chưa tạo repaired pilot V2a 2.700 clip, chưa trích feature FULL, chưa train mô hình chính**. Trạng thái quyết định vẫn là **NO-GO full**: bước kế tiếp là audit/repair timing artifact `-shortest` của ba generator V1 không-temporal và chạy metadata-shortcut smoke trước khi tạo lại pilot diagnostic. Xem [báo cáo Phase 0](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) và [đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
 
 ---
 
@@ -323,7 +323,7 @@ python src/eval/evaluate.py --ckpt experiments/pilot_v1_20260720-214741_467f606_
 
 ⚠️ **Điểm yếu đã biết và trạng thái xử lý:**
 1. **`frame_reverse` AUC 0.535 ≈ chance** — kiến trúc thiếu nhạy thứ tự thời gian vẫn là giả thuyết chính: đảo ngược cửa sổ 0.3–1s trong clip ~4s là tín hiệu visual-motion cục bộ+ngắn, còn cross-attention thiên về khớp nội dung. Tuy nhiên audit sau pilot đã phát hiện timing artifact do `-shortest`, nên **chưa thể loại trừ lỗi data/shortcut** cho đến khi regenerate sạch và chạy lại. Hướng model vẫn là thêm frame-delta, motion-consistency loss và head cục bộ nhạy temporal-order.
-2. **Temporal V1 có artifact blocking** — positive shift tạo khoảng trống đầu audio; negative shift có thể làm ngắn video/mouth do `-itsoffset` + `-shortest`. **Cơ chế generator V2 đã sửa và smoke đạt**, nhưng schema/mask V2a và repaired pilot chưa chạy, nên vẫn chưa được full.
+2. **Temporal V1 có artifact blocking** — positive shift tạo khoảng trống đầu audio; negative shift có thể làm ngắn video/mouth do `-itsoffset` + `-shortest`. **Cơ chế generator V2 đã sửa và smoke đạt; structured timeline schema/fixed-common-window đã khóa**, nhưng loader/model V2a chưa tiêu thụ mask và repaired pilot chưa chạy, nên vẫn chưa được full.
 3. **Offset head không học được shift** — accuracy bằng majority-zero baseline; consistency loss còn áp giả định sai cho fake vẫn đồng bộ.
 4. **FPR real 0.173** — 17% real bị gắn fake; cần chọn threshold trên validation và kiểm tra calibration.
 5. **Loader chỉ lấy 4 giây đầu và không có padding mask** — gây mất local anomaly và có thể tạo duration shortcut.
@@ -338,11 +338,12 @@ Chi tiết bằng chứng và thứ tự xử lý: [PILOT_V1_REVIEW_AND_V2_PLAN.
 - Synthetic: 5 FPS × 6 shift = 30/30 đạt.
 - Dữ liệu thật: 3 tier × 6 shift = 18/18 đạt; lag error lớn nhất 0,0625 ms.
 - CLI smoke r4: 6 temporal → master 24 fake đủ bốn method → SNVSM 6 real + 24 fake cùng config hash và duy nhất AAC 16 kHz mono. Container timeline đạt 30/30; raw AAC decode có padding ở 29/30, nhưng contract trim mới của Stage 04 đưa cả 30/30 về đúng `snvsm_target_samples`. Sáu lag sau SNVSM sai số tối đa 0 ms. Artifact Stage 05 30 dòng được tạo trước paired-target gate và chỉ được giữ làm lịch sử.
-- Policy smoke r5 bằng code hiện tại: 6 real + 24 fake đủ method, `0/24` fake lệch CRF nguồn, `30/30` media/PCM contract đạt. Gate Stage 05 sau đó cố ý reject media V1: 12 fake lệch audio target và 17 fake lệch visual contract; không sinh labels. Đây xác nhận guard chặn đúng dữ liệu cũ, chưa phải repaired pilot.
+- Policy smoke r5 tại checkpoint `1c592a4`: 6 real + 24 fake đủ method, `0/24` fake lệch CRF nguồn, `30/30` media/PCM contract đạt. Gate Stage 05 sau đó cố ý reject media V1: 12 fake lệch audio target và 17 fake lệch visual contract; không sinh labels. Sau Bước 2, r5 còn bị code hiện tại reject sớm hơn vì thiếu `av_timeline_v1`; đây là artifact lịch sử, chưa phải repaired pilot.
+- Bước 2 structured timeline: schema `av_timeline_v1`, policy `fixed_common_window_v1`, semantics theo method, propagation qua SNVSM/Stage 05/Stage 04 và `timeline_contract_id` trong feature đã có contract-test. Kết quả suite: 12 pass + 1 real-data skip mặc định.
 - Guard fail-closed: Stage 05 mặc định kiểm file và dừng nếu fake rỗng/mồ côi, media thiếu, coverage/CRF/audio/video lệch; Stage 04 từ chối fake rỗng, chỉ resume feature khớp identity/source/config + exact tensor contract, ghi `.pt` atomic và trả exit lỗi nếu còn clip fail; dataloader không drop labels thiếu/sai feature/nhánh.
 - Pilot V1 vẫn bất biến, checksum khớp 8/8.
 
-Chi tiết: [TEMPORAL_DESYNC_PHASE0_SMOKE.md](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md). Chưa được xem đây là pilot V2a. Trước hết phải khóa schema/valid-range/mask, rồi audit/repair timing của ba method V1 còn lại và kiểm shortcut bằng metadata trên smoke. Sau đó, vì SNVSM V2 đổi media của cả real và mọi fake, repaired pilot phải normalize lại **540 real + 2.160 fake**, qua Stage 05 và metadata gate toàn bộ labels, rồi mới extract **2.700 feature** vào store versioned; không trộn với `.pt` V1.
+Chi tiết: [TEMPORAL_DESYNC_PHASE0_SMOKE.md](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md). Chưa được xem đây là pilot V2a. Schema/valid-range/fixed-common-window đã khóa; bước kế tiếp là audit/repair timing của ba method V1 còn lại và kiểm shortcut bằng metadata trên smoke. Sau đó, vì SNVSM V2 đổi media của cả real và mọi fake, repaired pilot phải normalize lại **540 real + 2.160 fake**, qua Stage 05 và metadata gate toàn bộ labels, rồi mới extract **2.700 feature** vào store versioned; không trộn với `.pt` V1.
 
 ### Quy ước experiment bất biến
 
@@ -408,7 +409,8 @@ Cần bổ sung ít nhất **4 metrics** vào báo cáo (xem docs). **Cosine sim
 | [docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) | Bằng chứng sửa generator temporal và smoke Phase 0 |
 | [PoC/src/fusion_model.py](PoC/src/fusion_model.py) | Định nghĩa PAMF_Fusion (Cross-Attention) |
 | [PoC/src/feature_extractor.py](PoC/src/feature_extractor.py) | Wav2Vec2 + MobileNetV2 extractor |
-| [src/pipeline/03_fake/01_temporal_desync.py](src/pipeline/03_fake/01_temporal_desync.py) | Generator temporal V2 sample-exact, manifest riêng và valid-range |
+| [src/pipeline/timeline_contract.py](src/pipeline/timeline_contract.py) | Schema/validator timeline dùng chung và fixed-common-window policy |
+| [src/pipeline/03_fake/01_temporal_desync.py](src/pipeline/03_fake/01_temporal_desync.py) | Generator temporal V2 sample-exact, manifest riêng và structured valid-range |
 | [src/pipeline/03_fake/06_build_fake_manifest_v2.py](src/pipeline/03_fake/06_build_fake_manifest_v2.py) | Loại temporal V1 và audit composition 4 method/source; chưa chứng nhận timing media |
 | [src/model/avsp_net.py](src/model/avsp_net.py) | AVSP-Net (cross-attn + prosody + 2 head) + compute_losses |
 | [src/pipeline/05_build_labels/01_build_labels.py](src/pipeline/05_build_labels/01_build_labels.py) | Data contract + split speaker-disjoint + verify leakage |

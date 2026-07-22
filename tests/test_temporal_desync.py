@@ -27,6 +27,12 @@ def _load_module(name, relative_path):
     return module
 
 
+TIMELINE = _load_module(
+    "timeline_contract",
+    "src/pipeline/timeline_contract.py",
+)
+
+
 TEMPORAL = _load_module(
     "temporal_desync",
     "src/pipeline/03_fake/01_temporal_desync.py",
@@ -280,12 +286,13 @@ class TemporalDesyncContractTest(unittest.TestCase):
                     self.assertEqual(details["boundary"], "circular_wrap")
                     shift_sec = abs(shift) / float(media["fps"])
                     duration = media["audio_duration"]
+                    video_duration = media["video_duration"]
                     if shift > 0:
                         expected_ranges = (shift_sec, duration, 0.0,
-                                           duration - shift_sec)
+                                           video_duration - shift_sec)
                     else:
                         expected_ranges = (0.0, duration - shift_sec,
-                                           shift_sec, duration)
+                                           shift_sec, video_duration)
                     actual_ranges = (
                         details["audio_valid_start"],
                         details["audio_valid_end"],
@@ -294,7 +301,48 @@ class TemporalDesyncContractTest(unittest.TestCase):
                     )
                     for actual, expected in zip(actual_ranges, expected_ranges):
                         self.assertAlmostEqual(actual, expected, places=6)
+                    contract = TIMELINE.validate_timeline_against_media(
+                        details["timeline"], media["audio_duration"],
+                        media["video_duration"], "temporal_desync"
+                    )
+                    start, end = TIMELINE.fixed_common_window(
+                        contract, 0.5, position=0.5, method="temporal_desync"
+                    )
+                    self.assertAlmostEqual(end - start, 0.5, places=9)
                     self._assert_case(source, fake, shift)
+
+    def test_structured_timeline_contract_and_fixed_windows(self):
+        real = TIMELINE.build_timeline_contract(4.0, 4.0)
+        temporal = TIMELINE.build_timeline_contract(
+            4.0, 4.0,
+            boundary=TIMELINE.BOUNDARY_CIRCULAR_WRAP,
+            audio_valid=(0.28, 4.0), visual_valid=(0.0, 3.72),
+            manipulation_scope="global", manipulation=(0.28, 3.72),
+        )
+        TIMELINE.validate_timeline_contract(real, "real")
+        TIMELINE.validate_timeline_contract(temporal, "temporal_desync")
+        real_window = TIMELINE.fixed_common_window(real, 2.0, 0.25, "real")
+        fake_window = TIMELINE.fixed_common_window(
+            temporal, 2.0, 0.25, "temporal_desync"
+        )
+        self.assertAlmostEqual(real_window[1] - real_window[0], 2.0)
+        self.assertAlmostEqual(fake_window[1] - fake_window[0], 2.0)
+        self.assertNotEqual(
+            TIMELINE.timeline_contract_id(real, "real"),
+            TIMELINE.timeline_contract_id(temporal, "temporal_desync"),
+        )
+        missing = dict(temporal)
+        missing.pop("audio_valid_start_s")
+        with self.assertRaisesRegex(ValueError, "Thiếu timeline contract"):
+            TIMELINE.validate_timeline_contract(missing, "temporal_desync")
+        wrong_scope = dict(temporal)
+        wrong_scope["manipulation_scope"] = "local"
+        with self.assertRaisesRegex(ValueError, "semantics sai"):
+            TIMELINE.validate_timeline_contract(wrong_scope, "temporal_desync")
+        with self.assertRaisesRegex(ValueError, "ngắn hơn window"):
+            TIMELINE.fixed_common_window(
+                temporal, 3.5, 0.5, "temporal_desync"
+            )
 
     def test_v2_manifest_cannot_mix_with_temporal_v1(self):
         self.assertNotEqual(
@@ -375,23 +423,37 @@ class TemporalDesyncContractTest(unittest.TestCase):
             "speaker_id": "speaker_one",
             "tier": "tier1",
         }
+        full_real = TIMELINE.build_timeline_contract(4.0, 4.0)
         legacy = []
         for method in ("temporal_desync", *FAKE_MANIFEST.NON_TEMPORAL_METHODS):
-            legacy.append({
+            row = {
                 **common,
                 "clip_id": f"old_{method}",
                 "method": method,
                 "param": "shift=7f" if method == "temporal_desync" else "legacy",
-            })
+            }
+            if method == "frame_reverse":
+                row.update(TIMELINE.build_timeline_contract(
+                    4.0, 4.0, manipulation_scope="local",
+                    manipulation=(1.0, 2.0),
+                ))
+            elif method in ("pitch_flatten", "anonymization"):
+                row.update(TIMELINE.build_timeline_contract(
+                    4.0, 4.0, manipulation_scope="global",
+                ))
+            else:
+                row.update(full_real)
+            legacy.append(row)
         temporal = [{
             **common,
             "clip_id": "new_temporal",
             "method": "temporal_desync",
-            "param": (
-                "boundary=circular_wrap;audio_valid_start=0.28;"
-                "audio_valid_end=4.0;visual_valid_start=0.0;"
-                "visual_valid_end=3.72;"
-                f"generator={TEMPORAL.GENERATOR_VERSION}"
+            "param": f"shift=7f;generator={TEMPORAL.GENERATOR_VERSION}",
+            **TIMELINE.build_timeline_contract(
+                4.0, 4.0,
+                boundary=TIMELINE.BOUNDARY_CIRCULAR_WRAP,
+                audio_valid=(0.28, 4.0), visual_valid=(0.0, 3.72),
+                manipulation_scope="global", manipulation=(0.28, 3.72),
             ),
         }]
         rows = FAKE_MANIFEST.compose_rows(legacy, temporal, check_files=True)
@@ -490,6 +552,44 @@ class TemporalDesyncContractTest(unittest.TestCase):
             str(truncated), target_samples, expected_video
         ))
 
+    def test_snvsm_manifest_adds_structured_real_timeline(self):
+        source = self._make_source("25/1")
+        input_csv = self.tmp_path / "snvsm_real_input.csv"
+        output_csv = self.tmp_path / "snvsm_real_output.csv"
+        output_dir = self.tmp_path / "snvsm_real_media"
+        fields = ["clip_id", "file_path", "source_video", "speaker_id", "tier"]
+        with input_csv.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            writer.writerow({
+                "clip_id": "real_source",
+                "file_path": str(source),
+                "source_video": "video",
+                "speaker_id": "speaker",
+                "tier": "tier1",
+            })
+        _run([
+            sys.executable,
+            str(ROOT / "src/pipeline/03_fake/05_snvsm_compress.py"),
+            "--input_csv", str(input_csv),
+            "--out_dir", str(output_dir),
+            "--out_manifest", str(output_csv),
+            "--crfs", "23",
+            "--preset", "ultrafast",
+        ])
+        with output_csv.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        target = int(row["snvsm_target_samples"])
+        TIMELINE.validate_timeline_against_media(
+            row, target / 16000,
+            float(row["snvsm_video_duration_s"]), "real"
+        )
+        self.assertEqual(row["timeline_schema_version"],
+                         TIMELINE.TIMELINE_SCHEMA_VERSION)
+        self.assertEqual(row["manipulation_scope"], "none")
+
     def test_stage05_rejects_mismatched_snvsm_config(self):
         with self.assertRaisesRegex(ValueError, "Fake manifest trống"):
             BUILD_LABELS.validate_required_inputs([{"clip_id": "real"}], [])
@@ -533,10 +633,27 @@ class TemporalDesyncContractTest(unittest.TestCase):
             "snvsm_video_duration_s": "4.000000000",
             "crf": "23",
         }
-        real = [{"clip_id": "real", "orig_clip_id": "source", **signature}]
+        real = [{"clip_id": "real", "orig_clip_id": "source", **signature,
+                 **TIMELINE.build_timeline_contract(4.0, 4.0)}]
+        timeline_by_method = {
+            "temporal_desync": TIMELINE.build_timeline_contract(
+                4.0, 4.0, boundary=TIMELINE.BOUNDARY_CIRCULAR_WRAP,
+                audio_valid=(0.28, 4.0), visual_valid=(0.0, 3.72),
+                manipulation_scope="global", manipulation=(0.28, 3.72),
+            ),
+            "frame_reverse": TIMELINE.build_timeline_contract(
+                4.0, 4.0, manipulation_scope="local", manipulation=(1.0, 2.0)
+            ),
+            "pitch_flatten": TIMELINE.build_timeline_contract(
+                4.0, 4.0, manipulation_scope="global"
+            ),
+            "anonymization": TIMELINE.build_timeline_contract(
+                4.0, 4.0, manipulation_scope="global"
+            ),
+        }
         fake = [
             {"clip_id": f"fake_{method}", "source_clip": "source",
-             "method": method, **signature}
+             "method": method, **signature, **timeline_by_method[method]}
             for method in sorted(BUILD_LABELS.EXPECTED_FAKE_METHODS)
         ]
         contract = BUILD_LABELS.validate_snvsm_contract(real, fake)
@@ -689,6 +806,7 @@ class TemporalDesyncContractTest(unittest.TestCase):
             "snvsm_video_fps": "30000/1001",
             "snvsm_video_duration_s": "3.336667",
             "crf": "30",
+            **TIMELINE.build_timeline_contract(1.0, 3.336667),
         }
         self.assertEqual(
             EXTRACT_FEATURES.snvsm_target_samples(valid_row), 16000

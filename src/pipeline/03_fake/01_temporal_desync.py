@@ -14,7 +14,7 @@ Chống học-tủ (rất quan trọng):
   - Audio được XOAY VÒNG theo đúng số sample thay vì chỉ sửa timestamp bằng
     -itsoffset. Cả hai hướng giữ nguyên duration/frame count, không chèn silence
     và không dùng -shortest. Phần wrap ở biên được ghi rõ theo cả tọa độ audio
-    và visual trong param để V2a tạo mask đúng miền thời gian.
+    và visual bằng structured timeline fields để V2a tạo mask đúng miền thời gian.
   - Audio trung gian dùng ALAC lossless. Bước SNVSM sau đó mới encode AAC giống
     nhau cho cả real/fake, tránh fake temporal bị thêm một lần nén AAC riêng.
   - Độ lệch + hướng (audio sớm/muộn) chọn NGẪU NHIÊN -> tránh model học "đúng
@@ -45,27 +45,32 @@ import argparse
 import subprocess
 from fractions import Fraction
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from src.pipeline.timeline_contract import (
+    BOUNDARY_CIRCULAR_WRAP,
+    TIMELINE_FIELDS,
+    build_timeline_contract,
+    validate_timeline_contract,
+)
+
 try:                                  # in được tiếng Việt trên console Windows (cp1252)
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
     pass
 
 SHIFTS = [3, 7, 15]   # frames — theo pipeline
-GENERATOR_VERSION = "temporal_v2_circular_avmask_v1"
+GENERATOR_VERSION = "temporal_v2_structured_timeline_v1"
 DEFAULT_OUT_DIR = "data/03_fake/temporal_v2"
 DEFAULT_LABELS = "data/03_fake/manifests/v2/temporal_desync.csv"
 REQUIRED_PARAM_KEYS = (
-    "boundary=circular_wrap",
-    "audio_valid_start=",
-    "audio_valid_end=",
-    "visual_valid_start=",
-    "visual_valid_end=",
     f"generator={GENERATOR_VERSION}",
 )
-# Giữ schema V1 để builder ghép được, nhưng temporal V2 luôn ghi manifest riêng.
-# "param" chứa độ lệch, miền valid và version generator.
 LABEL_FIELDS = ["clip_id", "file_path", "label", "method", "param",
-                "source_clip", "source_video", "speaker_id", "tier"]
+                "source_clip", "source_video", "speaker_id", "tier",
+                *TIMELINE_FIELDS]
 
 
 def _round_fraction(value):
@@ -100,6 +105,7 @@ def assert_manifest_compatible(path):
                     "Từ chối trộn temporal V2 vào manifest có temporal V1/schema cũ: "
                     f"{path}. Hãy dùng manifest V2 mới, ví dụ {DEFAULT_LABELS}."
                 )
+            validate_timeline_contract(row, "temporal_desync")
     return rows_by_id
 
 
@@ -239,6 +245,24 @@ def make_desync(in_path, out_path, shift_frames, media=None):
         valid_start = 0.0
         valid_end = media["audio_duration"] - float(abs(signed_shift))
 
+    visual_valid = (
+        (0.0, media["video_duration"] - float(signed_shift))
+        if shift_frames > 0
+        else (float(abs(signed_shift)), media["video_duration"])
+    )
+    common_start = max(valid_start, visual_valid[0])
+    common_end = min(valid_end, visual_valid[1])
+    if common_end <= common_start:
+        return False, {"error": "shift_leaves_no_common_valid_range"}
+    timeline = build_timeline_contract(
+        media["audio_duration"], media["video_duration"],
+        boundary=BOUNDARY_CIRCULAR_WRAP,
+        audio_valid=(valid_start, valid_end),
+        visual_valid=visual_valid,
+        manipulation_scope="global",
+        manipulation=(common_start, common_end),
+    )
+
     partial_path = out_path + ".part.mp4"
     try:
         if os.path.exists(partial_path):
@@ -275,10 +299,10 @@ def make_desync(in_path, out_path, shift_frames, media=None):
         "shift_samples": shift_samples if shift_frames > 0 else -shift_samples,
         "audio_valid_start": valid_start,
         "audio_valid_end": valid_end,
-        "visual_valid_start": 0.0 if shift_frames > 0 else float(abs(signed_shift)),
-        "visual_valid_end": (media["audio_duration"] - float(signed_shift)
-                             if shift_frames > 0 else media["audio_duration"]),
-        "boundary": "circular_wrap",
+        "visual_valid_start": visual_valid[0],
+        "visual_valid_end": visual_valid[1],
+        "boundary": BOUNDARY_CIRCULAR_WRAP,
+        "timeline": timeline,
     }
 
 
@@ -366,24 +390,22 @@ def main():
                 if existing:
                     repaired += 1
                 else:
-                    writer.writerow({
+                    output_row = {
                         "clip_id": fake_id,
                         "file_path": out_path,
                         "label": 1,
                         "method": "temporal_desync",
                         "param": (
-                            f"shift={signed_frames}f;boundary={details['boundary']};"
-                            f"audio_valid_start={details['audio_valid_start']:.6f};"
-                            f"audio_valid_end={details['audio_valid_end']:.6f};"
-                            f"visual_valid_start={details['visual_valid_start']:.6f};"
-                            f"visual_valid_end={details['visual_valid_end']:.6f};"
+                            f"shift={signed_frames}f;"
                             f"generator={GENERATOR_VERSION}"
                         ),
                         "source_clip": src_id,
                         "source_video": r.get("source_video", ""),
                         "speaker_id": r.get("speaker_id", ""),
                         "tier": r.get("tier", ""),
-                    })
+                    }
+                    output_row.update(details["timeline"])
+                    writer.writerow(output_row)
                     made += 1
             else:
                 print(f"  ! {fake_id}: {details.get('error', 'unknown_error')}")

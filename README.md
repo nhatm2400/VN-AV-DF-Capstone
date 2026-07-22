@@ -17,9 +17,9 @@ VN-AV-DF-Capstone xây dựng dữ liệu và mô hình phát hiện deepfake â
 - Pseudo-fake V1: 4 method × 3.001 clip; temporal V1 được giữ làm lịch sử nhưng không dùng cho run mới.
 - Split: real/fake ghép cặp cùng split; không trùng `speaker_id`/`source_video` theo metadata.
 - Pilot AVSP-Net V1: 2.700 clip, test AUC 0,809.
-- Temporal V2: generator + SNVSM H.264/AAC-16k-mono normalization đã implement; CRF ghép theo real nguồn, Stage 04 trim AAC padding, Stage 05 gate đủ method/audio/video/CRF. Synthetic 30/30, real smoke 18/18 và policy smoke r5 30/30 media đạt; r5 cố ý bị chặn ở paired timing vì ba method V1 chưa repair.
+- Temporal V2: generator + SNVSM H.264/AAC-16k-mono normalization đã implement; CRF ghép theo real nguồn, Stage 04 trim AAC padding, Stage 05 gate đủ method/audio/video/CRF. Synthetic 30/30, real smoke 18/18 và policy smoke r5 lịch sử đạt 30/30 media; r5 bị chặn ở paired timing tại checkpoint cơ chế và hiện còn bị reject vì thiếu structured timeline.
 - Full feature/model: chưa chạy.
-- Quyết định hiện tại: **NO-GO full**; phải khóa schema/valid-range/mask wrap đối xứng trước, rồi audit/repair timing `-shortest` của ba method V1 không-temporal và chạy metadata-shortcut smoke; sau đó normalize + Stage 05 + metadata gate toàn pilot rồi mới extract 2.700 clip.
+- Quyết định hiện tại: **NO-GO full**; structured schema/valid-range cùng fixed-common-window policy đã khóa và test. Bước kế tiếp là audit/repair timing `-shortest` của ba method V1 không-temporal và chạy metadata-shortcut smoke; sau đó normalize + Stage 05 + metadata gate toàn pilot rồi mới extract 2.700 clip.
 
 ## Cấu trúc chính
 

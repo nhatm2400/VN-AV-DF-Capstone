@@ -5,18 +5,19 @@ import csv
 import os
 import sys
 
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
+
+from src.pipeline.timeline_contract import validate_timeline_contract
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
     pass
 
-GENERATOR_VERSION = "temporal_v2_circular_avmask_v1"
+GENERATOR_VERSION = "temporal_v2_structured_timeline_v1"
 TEMPORAL_PARAM_KEYS = (
-    "boundary=circular_wrap",
-    "audio_valid_start=",
-    "audio_valid_end=",
-    "visual_valid_start=",
-    "visual_valid_end=",
     f"generator={GENERATOR_VERSION}",
 )
 NON_TEMPORAL_METHODS = ("frame_reverse", "pitch_flatten", "anonymization")
@@ -46,6 +47,7 @@ def compose_rows(legacy_rows, temporal_rows, check_files=True):
                 or any(key not in row.get("param", "")
                        for key in TEMPORAL_PARAM_KEYS)):
             raise ValueError(f"Temporal row không thuộc generator V2: {clip_id}")
+        validate_timeline_contract(row, "temporal_desync")
         if not source or source in temporal_by_source:
             raise ValueError(f"Mỗi source phải có đúng một temporal V2: {source!r}")
         if not clip_id or clip_id in all_ids:
@@ -89,6 +91,7 @@ def compose_rows(legacy_rows, temporal_rows, check_files=True):
             all_ids.add(clip_id)
             if str(row.get("label", "")) not in ("1", "1.0"):
                 raise ValueError(f"Fake row phải có label=1: {clip_id}")
+            validate_timeline_contract(row, method)
             for key, expected in reference_meta.items():
                 actual = row.get(key, "")
                 if not expected or actual != expected:
