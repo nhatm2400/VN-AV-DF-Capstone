@@ -16,6 +16,8 @@ cho tập FAKE (hoặc không gate cho tập nào). Gate một phía sẽ bơm t
 ("sync thấp = fake") -> model học tắt, rò rỉ chính đặc trưng PAMF phải tự học.
 
 sync_conf / embed_consistency: nếu CSV có thì tự đưa vào quality score; không có thì bỏ qua.
+motion_median (từ 02b_motion_score.py): CHỈ dùng làm gate tùy chọn --motion_floor, KHÔNG
+đưa vào quality score (tránh âm thầm đổi thành phần tập đã xuất).
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
   python 04_curate.py --calibrate   # 1) xem phân bố, chọn ngưỡng
@@ -157,6 +159,12 @@ def calibrate(df, emb):
     if "sync_conf" in df.columns:
         print("\n-- sync_conf --")
         print(df["sync_conf"].describe(percentiles=[.1, .25, .5, .75, .9]).round(3).to_string())
+    if "motion_median" in df.columns:
+        print("\n-- motion_median (0-255; thấp = khung đứng yên, ảnh tĩnh/B-roll) --")
+        mm = df["motion_median"].dropna()
+        print(mm.describe(percentiles=[.05, .1, .25, .5, .75, .9]).round(3).to_string())
+        for t in (0.5, 1.0, 2.0):
+            print(f"  < {t}: {int((mm < t).sum())} clip ({100*(mm < t).mean():.1f}%)")
 
     print("\n-- Số speaker theo ngưỡng cluster (cosine distance) --")
     mask = df["has_embedding"].values.astype(bool)
@@ -188,6 +196,11 @@ def main():
                     help="gate sync: loại clip RÁC RÕ RÀNG (LSE-C < floor HOẶC sync fail = "
                          "không ai nói). MẶC ĐỊNH None = không động tới sync. CHỈ đặt giá trị "
                          "CỰC THẤP lấy từ calibrate, và PHẢI áp y hệt cho tập fake (đối xứng).")
+    ap.add_argument("--motion_floor", type=float, default=None,
+                    help="gate motion: loại clip ảnh TĨNH (motion_median < floor HOẶC không "
+                         "đo được). MẶC ĐỊNH None = không động tới motion. Chỉ áp cho tập "
+                         "REAL NGUỒN trước khi sinh fake — KHÔNG lọc motion trên fake đã sinh "
+                         "(anonymization làm mờ -> motion giảm -> loại lệch riêng kênh đó).")
     ap.add_argument("--cap_per_speaker", type=int, default=12)
     ap.add_argument("--out", default="data/02_curate/all_clean.csv")
     args = ap.parse_args()
@@ -218,6 +231,13 @@ def main():
         gate = gate & ~sync_garbage
         print(f"[B3] sync gate (floor={args.sync_floor}): loại thêm {int(sync_garbage.sum())} "
               f"clip rác sync (NHỚ áp cùng floor cho tập fake để đối xứng)")
+    if "motion_median" in df.columns and args.motion_floor is not None:
+        # Ảnh tĩnh / B-roll: frame_reverse và temporal_desync trên clip này ra fake
+        # KHÔNG phân biệt được với real -> cặp nhãn là nhiễu thuần túy.
+        static_garbage = df["motion_median"].isna() | (df["motion_median"] < args.motion_floor)
+        gate = gate & ~static_garbage
+        print(f"[B3] motion gate (floor={args.motion_floor}): loại thêm "
+              f"{int(static_garbage.sum())} clip tĩnh/không đo được")
     rejected = df[~gate].copy()
     df = df[gate].copy()
     print(f"[B3] gate: giữ {len(df)}/{before}, loại {len(rejected)} "

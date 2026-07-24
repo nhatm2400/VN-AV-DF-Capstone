@@ -67,6 +67,7 @@ docs/reports/*
 !docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md
 
 cookies.txt
+logs_*.txt
 
 LA_draft/
 
