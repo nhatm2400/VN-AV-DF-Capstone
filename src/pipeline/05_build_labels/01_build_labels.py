@@ -4,7 +4,7 @@
 Stage 05 của pipeline (xem MODEL_PROPOSAL.md §9 Phase 1 — "Fix Data Contract").
 
 Input:
-  - REAL: data/02_curate/all_clean.csv  (label=0, có speaker_id từ 04_curate)
+  - REAL: data/02_curate/manifests/all_clean.csv  (label=0, có speaker_id từ 04_curate)
   - FAKE: data/03_fake/labels.csv       (label=1, schema chung 4 method 03_fake)
 
 Output: data/05_labels/labels.csv — schema chính:
@@ -401,7 +401,7 @@ class UnionFind:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--real_csv", default="data/02_curate/all_clean.csv")
+    ap.add_argument("--real_csv", default="data/02_curate/manifests/all_clean.csv")
     ap.add_argument("--fake_labels", default="data/03_fake/labels.csv")
     ap.add_argument("--out", default="data/05_labels/labels.csv")
     ap.add_argument("--ratios", default="0.70,0.15,0.15", help="train,val,test (tính trên clip REAL)")

@@ -28,8 +28,8 @@ fake đã sinh: anonymization làm mờ -> frame-diff giảm -> sẽ loại lệ
 
 CÁCH DÙNG (từ thư mục gốc dự án):
   python src/pipeline/02_curate/02b_motion_score.py \
-      --input_csv data/02_curate/tier1_scored_all.csv \
-      --out data/02_curate/tier1_scored_motion.csv
+      --input_csv data/02_curate/measurements/tier1_scored_all.csv \
+      --out data/02_curate/measurements/tier1_scored_motion.csv
 """
 
 import argparse
@@ -95,9 +95,9 @@ def _worker(task):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input_csv", default="data/02_curate/tier1_scored_all.csv",
+    ap.add_argument("--input_csv", default="data/02_curate/measurements/tier1_scored_all.csv",
                     help="output của 02_score_clips")
-    ap.add_argument("--out", default="data/02_curate/tier1_scored_motion.csv")
+    ap.add_argument("--out", default="data/02_curate/measurements/tier1_scored_motion.csv")
     ap.add_argument("--col", default="file_path")
     ap.add_argument("--sample_fps", type=float, default=10.0)
     ap.add_argument("--width", type=int, default=160, help="bề ngang khi thu nhỏ")
@@ -142,6 +142,8 @@ def main():
         st = df["frac_near_static"].dropna()
         print(f"\n  clip có >50% cặp khung gần trùng: {int((st > 0.5).sum())}/{len(st)}")
 
+    out_parent = os.path.dirname(os.path.abspath(args.out))
+    os.makedirs(out_parent, exist_ok=True)
     df.to_csv(args.out, index=False)
     print(f"\nCSV mới (có motion_median / motion_p90 / frac_near_static) -> {args.out}")
     print("Tiếp theo: xem phân bố rồi mới chốt ngưỡng; dùng file này làm --scored_csv "

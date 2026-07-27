@@ -77,7 +77,7 @@ def build_one(stage04, yolo, src_mp4, out_mp4, fps, size, scale, detect_every, c
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", default="data/02_curate/all_clean.csv")
+    ap.add_argument("--csv", default="data/02_curate/manifests/all_clean.csv")
     ap.add_argument("--out_dir", default="data/02_curate/roi_preview")
     ap.add_argument("--face_model", default="yolov8n-face.pt")
     ap.add_argument("--fps", type=float, default=25.0, help="khớp stage 04")

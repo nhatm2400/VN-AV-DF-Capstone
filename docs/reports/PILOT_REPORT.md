@@ -188,7 +188,7 @@ data/01_collect/cut_clips/all_manifest.csv
     │
     ├─ face scoring + speaker embedding + curation
     ▼
-data/02_curate/all_clean.csv
+data/02_curate/manifests/all_clean.csv
     3.001 real sạch / 226 source video / 674 speaker_id
     │
     ├─ 01 temporal desync
@@ -253,7 +253,7 @@ Quá trình trước curation gồm:
 
 ### 3.2. Làm sạch và lựa chọn real (curation)
 
-Artifact real sạch cuối cùng là [`data/02_curate/all_clean.csv`](../../data/02_curate/all_clean.csv):
+Artifact real sạch cuối cùng là [`data/02_curate/manifests/all_clean.csv`](../../data/02_curate/manifests/all_clean.csv):
 
 | Thuộc tính | Giá trị |
 |---|---:|
@@ -745,7 +745,7 @@ Các dependency đầy đủ nằm trong [`requirements.txt`](../../requirements
 | Artifact | Vai trò | Quy mô/trạng thái |
 |---|---|---|
 | [`data/01_collect/cut_clips/all_manifest.csv`](../../data/01_collect/cut_clips/all_manifest.csv) | Manifest clip sau collect/cut | 6.888 clip |
-| [`data/02_curate/all_clean.csv`](../../data/02_curate/all_clean.csv) | Real sạch trước fake | 3.001 clip |
+| [`data/02_curate/manifests/all_clean.csv`](../../data/02_curate/manifests/all_clean.csv) | Real sạch trước fake | 3.001 clip |
 | [`data/03_fake/snvsm/real_snvsm.csv`](../../data/03_fake/snvsm/real_snvsm.csv) | Real sau normalize codec | 3.001 clip |
 | [`data/03_fake/snvsm/fake_snvsm.csv`](../../data/03_fake/snvsm/fake_snvsm.csv) | Bốn fake method sau normalize codec | 12.004 clip |
 | [`data/05_labels/labels.csv`](../../data/05_labels/labels.csv) | Labels full đã sửa leakage | 15.005 dòng |

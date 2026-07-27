@@ -20,7 +20,7 @@ Vấn đề nó giải quyết (chống leakage codec):
 Cách dùng (chạy 2 lần — real và fake với cùng tham số):
   # REAL
   python src/pipeline/03_fake/05_snvsm_compress.py \
-      --input_csv data/02_curate/all_clean.csv \
+      --input_csv data/02_curate/manifests/all_clean.csv \
       --out_dir data/03_fake/snvsm_v2/real \
       --out_manifest data/03_fake/snvsm_v2/real_snvsm.csv
   # FAKE

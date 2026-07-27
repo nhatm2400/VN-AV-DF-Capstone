@@ -16,6 +16,10 @@ Tài liệu ở root chỉ giữ vai trò quy tắc và điểm vào. Nội dung
 
 Các checkpoint cũ được giữ trong [`archives/2026_report_checkpoints/`](archives/2026_report_checkpoints/) để truy vết lịch sử; không dùng chúng thay cho trạng thái hiện tại trong `PROJECT.md`.
 
+## Nhật ký làm việc
+
+- [2026-07-27 — Manual curation và audit dung lượng](logs/2026-07-27_MANUAL_CURATION_AND_STORAGE_AUDIT.md) — tóm tắt phiên phân tích manual review, giới hạn của mẫu 60 clip và phân loại dữ liệu có thể dọn.
+
 ## Thứ tự ưu tiên khi đọc
 
 1. [`../CLAUDE.md`](../CLAUDE.md)

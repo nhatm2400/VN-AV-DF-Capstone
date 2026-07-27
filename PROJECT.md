@@ -41,6 +41,10 @@ Trạng thái hiện tại: **dữ liệu + curation đã xong** (6.888 clip →
 │   │   └── 05_build_labels/
 │   │       └── 01_build_labels.py      # gộp real+fake -> labels.csv + split SPEAKER-DISJOINT
 │   ├── tools/
+│   │   ├── build_review_manifest.py    # all_clean + motion + face_ambiguity + channel -> all_clean_review.csv
+│   │   ├── build_roi_preview.py        # dựng ô ROI+tiếng (chạy đúng detect_and_crop của stage 04)
+│   │   ├── scan_face_ambiguity.py      # luật "mặt to nhất" của stage 04 có đáng tin không
+│   │   ├── measure_lip_audio_corr.py   # kiểm giả thuyết tự động hoá (đã đo: AUC 0,544 = vô dụng)
 │   │   ├── clip_review.py              # Web tool lọc tay clip (stdlib http.server) + so sánh với lọc code
 │   │   └── download_data.py            # tải dataset từ Google Drive (gdown, stream-zip, resume) — tiện ích nhóm
 │   ├── model/
@@ -73,13 +77,18 @@ Trạng thái hiện tại: **dữ liệu + curation đã xong** (6.888 clip →
 │   │       ├── all_manifest.csv        # nguồn chân lý path clip (6.888 clip)
 │   │       └── tier1/ tier2/ tier3/    # các .mp4 đã cắt + tier{N}_v3_clips_*.csv
 │   ├── 02_curate/
-│   │   ├── tier1_scored_all.csv        # 6.888 clip + det_ratio, mean_face_area, embed_consistency
-│   │   ├── embeddings_all.npy          # 6.888 × 512 (commit — có ngoại lệ trong .gitignore)
-│   │   ├── all_clean.csv               # 3.001 clip sạch (kèm speaker_id)
-│   │   ├── all_clean_rejects.csv       # 1.532 clip bị gate loại
-│   │   ├── calibrate_sync_results.csv, sync_calibrate_log.txt
+│   │   ├── measurements/               # kết quả đo tự động trước khi ra quyết định
+│   │   │   ├── tier1_scored_all.csv, tier1_scored_motion.csv
+│   │   │   └── embeddings_all.npy      # 6.888 × 512 (commit — ngoại lệ trong .gitignore)
+│   │   ├── manifests/                  # bảng quyết định của curation
+│   │   │   ├── all_clean.csv, all_clean_rejects.csv
+│   │   │   └── all_clean_review.csv
+│   │   ├── calibration/                # kết quả thử ngưỡng SyncNet
+│   │   │   ├── calibrate_sync_results.csv
+│   │   │   └── sync_calibrate_log.txt
+│   │   ├── logs/                       # log chạy curation/preview (không commit)
 │   │   ├── eda_figs/                   # 11 PNG + eda_summary.md
-│   │   └── manual/manual_review.csv    # kết quả lọc tay từ src/tools/clip_review.py
+│   │   └── manual/                     # quyết định lọc tay từ src/tools/clip_review.py
 │   ├── 03_fake/                        # output fake .mp4 + labels.csv (hiện trống, .gitkeep)
 │   ├── 04_features/                    # output feature .pt + features_index.csv (hiện trống)
 │   ├── 05_labels/                      # labels.csv thống nhất real+fake + cột split
@@ -191,12 +200,15 @@ python src/pipeline/02_curate/01_prep_manifest.py \
     --add tier2 "data/01_collect/cut_clips/tier2/**/*_v3_clips_*.csv" "data/01_collect/cut_clips/tier2" \
     --add tier3 "data/01_collect/cut_clips/tier3/**/*_v3_clips_*.csv" "data/01_collect/cut_clips/tier3" \
     --out data/01_collect/cut_clips/all_manifest.csv
-# 2) Đo mặt + embedding (GPU, InsightFace)  -> tier1_scored_all.csv + embeddings_all.npy
-python src/pipeline/02_curate/02_score_clips.py --input_csv all_manifest.csv --tag all
+# 2) Đo mặt + embedding (GPU, InsightFace) -> data/02_curate/measurements/
+python src/pipeline/02_curate/02_score_clips.py \
+    --input_csv data/01_collect/cut_clips/all_manifest.csv --tag all
 # 3) Đo khớp môi-tiếng (SyncNet) — tùy chọn; calibrate trước
-python src/pipeline/02_curate/03_sync_score.py --input_csv tier1_scored_all.csv --syncnet_dir <repo> --calibrate
-# 4) Quyết định: cluster speaker -> gate rác -> cân bằng -> tập sạch (all_clean.csv)
-python src/pipeline/02_curate/04_curate.py --scored_csv ... --emb ... --calibrate
+python src/pipeline/02_curate/03_sync_score.py \
+    --input_csv data/02_curate/measurements/tier1_scored_all.csv \
+    --syncnet_dir <repo> --calibrate
+# 4) Quyết định: cluster speaker -> gate rác -> cân bằng -> manifests/all_clean.csv
+python src/pipeline/02_curate/04_curate.py --calibrate
 # 5) EDA: thống kê + xuất data/02_curate/eda_figs/
 python src/pipeline/02_curate/05_eda.py
 ```
@@ -205,7 +217,19 @@ python src/pipeline/02_curate/05_eda.py
 
 ⚠️ **Chống leakage:** không siết ngưỡng sync cho tập real (đẩy real về "sync cao" → model học tắt). Mọi gate sync/chất lượng phải áp **đối xứng** real/fake. Các script này thiết kế chạy trên **Kaggle** (GPU, path mặc định `/kaggle/working`).
 
-**Lọc tay đối chiếu:** `python src/tools/clip_review.py` mở web tool xem từng clip (phím K=keep, X=reject, U=unset), xuất `data/02_curate/manual/manual_review.csv` và có nút so sánh lọc-tay vs lọc-code (ma trận keep/gate/balance-drop). Chỉ loại **rác rõ ràng**, KHÔNG lọc theo chất lượng lip-sync, áp đối xứng real/fake.
+**Lọc tay (BẮT BUỘC trước khi sinh fake):** gate tự động **không** xác nhận được người nhìn thấy có phải người phát ra tiếng hay không. Batch hiệu chuẩn 60 clip (rubric v2) loại **34/60** — chủ yếu `dubbed` (14), `cut` (7), `static` (6). Đây là false-accept nghiêm trọng của curation tự động, đủ để chặn pilot.
+
+```bash
+python src/tools/build_review_manifest.py   # 1) gộp số đo -> manifests/all_clean_review.csv
+python src/tools/build_roi_preview.py       # 2) dựng ô ROI+tiếng (~85 phút, 3.001 clip)
+python src/tools/clip_review.py             # 3) mở http://127.0.0.1:8000
+```
+
+Ô ROI phát **chuỗi mouth-ROI thật của stage 04 ghép audio gốc** — nhìn miệng + nghe tiếng cùng lúc mới lộ được lồng tiếng / voice-over / cắt nhầm mặt. Phím `1`–`7` reject kèm lý do, `K` keep, `C` chưa chắc; quyết định ghi kèm `reviewer_id` + `rubric_version`.
+
+**Đã thử và thất bại** (đừng làm lại): `motion_median` và số khuôn mặt không dự báo được keep/reject (60% vs 55%); tương quan pixel-motion ROI với audio RMS cho **AUC 0,544**. Lọc theo kênh chỉ nên dùng để **phân tầng/ưu tiên**, không auto-reject — mẫu theo kênh quá nhỏ (Fisher exact p≈0,12 cho kênh tệ nhất).
+
+⚠️ Chỉ loại **rác rõ ràng**, KHÔNG lọc theo chất lượng lip-sync. Real bị loại thì loại **cả cụm** (1 real + 4 fake sinh từ nó).
 
 ### 03_fake — Sinh pseudo-fake (`src/pipeline/03_fake/`)
 
@@ -238,7 +262,7 @@ python src/pipeline/03_fake/06_build_fake_manifest_v2.py
 
 ```bash
 # REAL và FAKE cùng --crfs/--preset -> H.264 + AAC 128k/16 kHz/mono cùng pipeline
-python src/pipeline/03_fake/05_snvsm_compress.py --input_csv data/02_curate/all_clean.csv \
+python src/pipeline/03_fake/05_snvsm_compress.py --input_csv data/02_curate/manifests/all_clean.csv \
     --out_dir data/03_fake/snvsm_v2/real --out_manifest data/03_fake/snvsm_v2/real_snvsm.csv
 python src/pipeline/03_fake/05_snvsm_compress.py --input_csv data/03_fake/manifests/v2/fake_all.csv \
     --out_dir data/03_fake/snvsm_v2/fake --out_manifest data/03_fake/snvsm_v2/fake_snvsm.csv
@@ -417,7 +441,8 @@ Cần bổ sung ít nhất **4 metrics** vào báo cáo (xem docs). **Cosine sim
 | [src/pipeline/03_fake/07_metadata_shortcut_gate.py](src/pipeline/03_fake/07_metadata_shortcut_gate.py) | Group-disjoint baseline chỉ dùng metadata media/container để chặn shortcut trước extract/train |
 | [src/model/avsp_net.py](src/model/avsp_net.py) | AVSP-Net (cross-attn + prosody + 2 head) + compute_losses |
 | [src/pipeline/05_build_labels/01_build_labels.py](src/pipeline/05_build_labels/01_build_labels.py) | Data contract + split speaker-disjoint + verify leakage |
-| [src/tools/clip_review.py](src/tools/clip_review.py) | Web tool lọc tay + so sánh với lọc code |
+| [src/tools/clip_review.py](src/tools/clip_review.py) | Web tool lọc tay (ô ROI+tiếng) + so sánh với lọc code |
+| [src/tools/build_review_manifest.py](src/tools/build_review_manifest.py) | Dựng `all_clean_review.csv` (tái lập được) |
 | [yolov8n-face.pt](yolov8n-face.pt) | Face detection model (root) |
 | [data/01_collect/cut_clips/all_manifest.csv](data/01_collect/cut_clips/all_manifest.csv) | Nguồn chân lý path 6.888 clip |
-| [data/02_curate/all_clean.csv](data/02_curate/all_clean.csv) | 3.001 clip real sạch (kèm speaker_id) |
+| [data/02_curate/manifests/all_clean.csv](data/02_curate/manifests/all_clean.csv) | 3.001 clip real sạch (kèm speaker_id) |

@@ -59,11 +59,12 @@ def probe(model, path, n_frames, conf):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", default="data/02_curate/all_clean.csv")
+    ap.add_argument("--csv", default="data/02_curate/manifests/all_clean.csv")
     ap.add_argument("--face_model", default="yolov8n-face.pt")
     ap.add_argument("--n_frames", type=int, default=5)
     ap.add_argument("--conf", type=float, default=0.25)
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--out",
+                    default="data/02_curate/measurements/face_ambiguity.json")
     args = ap.parse_args()
 
     rows = list(csv.DictReader(open(args.csv, encoding="utf-8")))

@@ -918,7 +918,7 @@ class TemporalDesyncContractTest(unittest.TestCase):
                          "set RUN_REAL_AV_AUDIT=1 for local real-data smoke")
     def test_real_data_smoke(self):
         manifest = Path(os.environ.get(
-            "REAL_AV_AUDIT_CSV", ROOT / "data/02_curate/all_clean.csv"
+            "REAL_AV_AUDIT_CSV", ROOT / "data/02_curate/manifests/all_clean.csv"
         ))
         by_tier = {}
         with manifest.open(newline="", encoding="utf-8") as handle:

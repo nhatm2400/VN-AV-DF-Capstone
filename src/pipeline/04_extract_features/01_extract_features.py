@@ -448,7 +448,7 @@ class W2V:
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--real_csv", default="data/02_curate/all_clean.csv")
+    ap.add_argument("--real_csv", default="data/02_curate/manifests/all_clean.csv")
     ap.add_argument("--fake_labels", default="data/03_fake/labels.csv")
     ap.add_argument("--out_dir", default="data/04_features")
     ap.add_argument("--face_model", default="yolov8n-face.pt")

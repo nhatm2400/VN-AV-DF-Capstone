@@ -21,8 +21,8 @@ motion_median (từ 02b_motion_score.py): CHỈ dùng làm gate tùy chọn --mo
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
   python 04_curate.py --calibrate   # 1) xem phân bố, chọn ngưỡng
-  python 04_curate.py               # 2) export (ngưỡng mặc định) -> data/02_curate/all_clean.csv
-  -> tự đọc data/02_curate/tier1_scored_all.csv + embeddings_all.npy
+  python 04_curate.py               # 2) export -> data/02_curate/manifests/all_clean.csv
+  -> tự đọc data/02_curate/measurements/tier1_scored_all.csv + embeddings_all.npy
 
 Ví dụ tùy chỉnh / KAGGLE:
   # 1) Xem phân bố + số cụm ở vài ngưỡng (không xuất gì)
@@ -34,8 +34,9 @@ Ví dụ tùy chỉnh / KAGGLE:
       --out tier1_clean.csv
 """
 
-import sys
 import argparse
+import os
+import sys
 import numpy as np
 
 try:                                  # in được tiếng Việt khi pipe/redirect (console cp1252)
@@ -183,9 +184,9 @@ def calibrate(df, emb):
 # ----------------------------- Main -----------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scored_csv", default="data/02_curate/tier1_scored_all.csv",
+    ap.add_argument("--scored_csv", default="data/02_curate/measurements/tier1_scored_all.csv",
                     help="output của 02_score_clips (mặc định local)")
-    ap.add_argument("--emb", default="data/02_curate/embeddings_all.npy")
+    ap.add_argument("--emb", default="data/02_curate/measurements/embeddings_all.npy")
     ap.add_argument("--calibrate", action="store_true", help="chỉ in phân bố, không xuất")
     ap.add_argument("--cluster_dist", type=float, default=0.5, help="cosine distance threshold")
     ap.add_argument("--min_det_ratio", type=float, default=0.6, help="gate: tỉ lệ frame có mặt tối thiểu")
@@ -202,7 +203,7 @@ def main():
                          "REAL NGUỒN trước khi sinh fake — KHÔNG lọc motion trên fake đã sinh "
                          "(anonymization làm mờ -> motion giảm -> loại lệch riêng kênh đó).")
     ap.add_argument("--cap_per_speaker", type=int, default=12)
-    ap.add_argument("--out", default="data/02_curate/all_clean.csv")
+    ap.add_argument("--out", default="data/02_curate/manifests/all_clean.csv")
     args = ap.parse_args()
 
     df, emb = load(args.scored_csv, args.emb)
@@ -251,6 +252,8 @@ def main():
 
     # [B5] xuất
     df = df.sort_values(["speaker_id", "source_video", "start_time"]).reset_index(drop=True)
+    out_parent = os.path.dirname(os.path.abspath(args.out))
+    os.makedirs(out_parent, exist_ok=True)
     df.to_csv(args.out, index=False)
     rej_path = args.out.replace(".csv", "_rejects.csv")
     rejected.to_csv(rej_path, index=False)

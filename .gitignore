@@ -34,7 +34,7 @@ yolov8n-face.pt
 *.npy
 *.npz
 # ngoai le: commit embedding cua stage curate (14MB) de tai su dung khong phai chay lai 02
-!data/02_curate/embeddings_all.npy
+!data/02_curate/measurements/embeddings_all.npy
 
 __pycache__/
 *.py[cod]
@@ -65,6 +65,9 @@ docs/reports/*
 !docs/reports/PILOT_REPORT.md
 !docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md
 !docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md
+!docs/logs/
+docs/logs/*
+!docs/logs/*.md
 
 cookies.txt
 logs_*.txt

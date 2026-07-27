@@ -8,12 +8,12 @@ nên không đụng tới output của pipeline tự động.
 Không cần cài gì thêm — chỉ dùng thư viện chuẩn Python + trình duyệt.
 
 CÁCH DÙNG (chạy từ thư mục gốc dự án):
-    python src/tools/clip_review.py --csv data/02_curate/tier1_scored_motion.csv
-    # rồi mở http://127.0.0.1:8000  (tự mở trình duyệt)
+    python src/tools/build_review_manifest.py     # dựng manifest (chạy 1 lần)
+    python src/tools/build_roi_preview.py         # dựng ô ROI (chạy 1 lần, ~85 phút)
+    python src/tools/clip_review.py               # rồi mở http://127.0.0.1:8000
 
-    # mẻ hiệu chuẩn 60 clip, chia đều 3 tầng theo độ động:
-    python src/tools/clip_review.py --csv data/02_curate/tier1_scored_motion.csv \
-        --sample 60 --stratify motion_median --reviewer nhat
+    # mẻ hiệu chuẩn: N clip chia đều 3 tầng theo một cột đo được
+    python src/tools/clip_review.py --sample 60 --stratify motion_median --reviewer nhat
 
 Ô ROI (quan trọng nhất): cạnh video gốc có ô phát CHUỖI ROI THẬT mà stage 04 cắt ra,
 ghép với AUDIO GỐC. Video gốc bị tắt tiếng để không vọng đôi. Nhìn miệng + nghe tiếng
@@ -21,19 +21,30 @@ cùng lúc là lộ ngay cả ba lỗi: cắt nhầm mặt (miệng đứng im k
 tiếng (môi lệch nhịp), ảnh tĩnh (miệng đóng băng). Dựng trước bằng build_roi_preview.py.
 
 Tùy chọn:
-    --csv       manifest cần review          (mặc định data/02_curate/all_clean_review.csv)
-    --roi_dir   thư mục preview ROI+tiếng    (mặc định data/02_curate/roi_preview)
-    --order     risk (mặc định) = clip nghi ngờ lên đầu | manifest = giữ thứ tự gốc
-    --out       file ghi quyết định          (mặc định tự sinh theo --csv + rubric, xem dưới)
-    --compare   file code GIỮ để đối chiếu    (mặc định data/02_curate/all_clean.csv)
-    --rejects   file code GATE-REJECT         (mặc định data/02_curate/all_clean_rejects.csv)
-    --sample    chỉ review N clip ngẫu nhiên  (0 = toàn bộ)
-    --stratify  cột dùng chia 3 tầng cho --sample (vd motion_median); rỗng = ngẫu nhiên thuần
-    --seed      seed cho --sample (để lặp lại cùng mẫu / resume) (mặc định 42)
-    --reviewer  mã người review, ghi vào CSV  (mặc định biến môi trường USERNAME)
-    --col       cột chứa đường dẫn .mp4       (mặc định file_path)
-    --port      cổng web                      (mặc định 8000)
+    --csv       manifest cần review     (mặc định manifests/all_clean_review.csv)
+    --roi_dir   thư mục preview ROI+tiếng (mặc định data/02_curate/roi_preview)
+    --out       file ghi quyết định     (mặc định tự sinh theo --csv + rubric, xem dưới)
+    --compare   file code GIỮ để đối chiếu     (mặc định manifests/all_clean.csv)
+    --rejects   file code GATE-REJECT          (mặc định manifests/all_clean_rejects.csv)
+    --order     diverse (mặc định) = vòng tròn qua từng video | manifest = thứ tự gốc
+    --exclude_channel  bỏ qua kênh, ngăn cách bằng ';' — áp TRƯỚC --sample
+    --sample    chỉ review N clip ngẫu nhiên   (0 = toàn bộ)
+    --stratify  cột chia 3 tầng cho --sample (vd motion_median); rỗng = ngẫu nhiên thuần
+    --seed      seed cho --sample và cho thứ tự trong `diverse` (mặc định 42)
+    --reviewer  mã người review, ghi vào CSV   (mặc định biến môi trường USERNAME)
+    --col       cột chứa đường dẫn .mp4        (mặc định file_path)
+    --port      cổng web                       (mặc định 8000)
     --no-browser   không tự mở trình duyệt
+
+KHÔNG NHẤT THIẾT PHẢI REVIEW HẾT: mục tiêu là đủ số real cho pilot, nên đếm số KEEP
+chứ đừng đếm số clip đã xem — tỉ lệ giữ chỉ ước lượng được từ mẫu đã review, sai số
+còn rộng. Thứ tự `diverse` bảo đảm dừng lúc nào cũng có tập trải đều nguồn video, NHƯNG
+đa dạng của hàng đợi không tự suy ra đa dạng của tập KEEP: phải audit chính tập keep
+(tier / speaker / source_video / channel / connected-component) trước khi chốt.
+
+KHÔNG auto-reject theo kênh. `--exclude_channel` là công cụ thủ công để hoãn một kênh
+đã biết rõ định dạng; đừng dùng nó thay cho việc xem nội dung clip. Tỉ lệ keep theo kênh
+đo trên mẫu nhỏ có khoảng tin cậy rất rộng.
 
 OUTPUT TỰ ĐỘNG VERSION THEO SCOPE: mặc định ghi ra
     data/02_curate/manual/manual_<tên-csv>_<rubric>.csv
@@ -109,23 +120,32 @@ def roi_path(clip_id):
     return os.path.join(ROI_DIR, clip_id + ".mp4") if ROI_DIR else ""
 
 
-def risk_score(row):
-    """Xếp clip nghi ngờ lên đầu hàng đợi: xem lúc còn tỉnh táo, không phải lúc đã mệt.
+def diverse_order(rows, video_col="source_video", seed=42):
+    """Vòng tròn qua từng source_video: mỗi vòng lấy 1 clip của mỗi video.
 
-    KHÔNG dùng để loại clip — mọi clip vẫn được người quyết định.
+    Mục đích: dừng review lúc nào cũng có tập trải đều nguồn video, thay vì gom hết
+    clip của vài video rồi mới sang video khác. (Đa dạng nguồn là tuyến phòng thủ
+    chính chống identity leakage — xem PROJECT.md.)
+
+    Trong mỗi video, thứ tự clip được xáo theo `seed` chứ không lấy theo thứ tự
+    manifest — manifest sắp theo speaker_id/start_time nên lấy tuần tự sẽ thiên về
+    clip đầu buổi quay. Cùng seed -> cùng thứ tự, nên resume được.
+
+    (Thay cho `risk_score` cũ — kiểm trên 60 clip gán nhãn tay: nhóm "rủi ro" bị loại
+    60% vs nhóm còn lại 55%, tức không có giá trị dự báo.)
     """
-    score = 0
-    try:
-        if float(row.get("n_faces_med", 0)) >= 2 and float(row.get("ratio_med", 0)) > 0.6:
-            score += 2                       # dễ cắt nhầm mặt
-    except (TypeError, ValueError):
-        pass
-    try:
-        if float(row.get("motion_median", 99)) < 1.0:
-            score += 1                       # nghi ảnh tĩnh
-    except (TypeError, ValueError):
-        pass
-    return score
+    import random
+    by_video = {}
+    for r in rows:
+        by_video.setdefault(r.get(video_col, ""), []).append(r)
+    for v, items in by_video.items():
+        random.Random(f"{seed}:{v}").shuffle(items)      # seed riêng mỗi video
+    keyed = []
+    for v, items in by_video.items():
+        for rank, r in enumerate(items):
+            keyed.append((rank, v, r))
+    keyed.sort(key=lambda t: (t[0], t[1]))
+    return [r for _, _, r in keyed]
 
 
 def load_clips(csv_path, path_col):
@@ -671,17 +691,20 @@ def default_out(csv_path):
 def main():
     global OUT, PATH_COL, REVIEWER_ID
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", default="data/02_curate/all_clean_review.csv",
+    ap.add_argument("--csv", default="data/02_curate/manifests/all_clean_review.csv",
                     help="manifest cần review (bản gộp: + motion + face ambiguity)")
     ap.add_argument("--roi_dir", default="data/02_curate/roi_preview",
                     help="thư mục preview ROI+tiếng (build_roi_preview.py); '' = tắt")
-    ap.add_argument("--order", choices=["manifest", "risk"], default="risk",
-                    help="risk = clip nghi ngờ (nhiều mặt / tĩnh) lên đầu hàng đợi")
+    ap.add_argument("--order", choices=["manifest", "diverse"], default="diverse",
+                    help="diverse = vòng tròn qua từng source_video, dừng lúc nào cũng "
+                         "có tập đa dạng nguồn")
+    ap.add_argument("--exclude_channel", default="",
+                    help="bỏ qua kênh (ngăn cách bằng ';'). VD kênh phóng sự lời bình.")
     ap.add_argument("--out", default=None,
                     help="file ghi quyết định (mặc định tự sinh theo --csv + rubric)")
-    ap.add_argument("--compare", default="data/02_curate/all_clean.csv",
+    ap.add_argument("--compare", default="data/02_curate/manifests/all_clean.csv",
                     help="file code GIỮ để đối chiếu (để '' nếu không cần)")
-    ap.add_argument("--rejects", default="data/02_curate/all_clean_rejects.csv",
+    ap.add_argument("--rejects", default="data/02_curate/manifests/all_clean_rejects.csv",
                     help="file code GATE-REJECT (rác) để đối chiếu 3 trạng thái")
     ap.add_argument("--sample", type=int, default=0,
                     help="chỉ review N clip ngẫu nhiên (0 = toàn bộ)")
@@ -714,19 +737,30 @@ def main():
         FILEPATH_BY_ID[r["clip_id"]] = r.get(PATH_COL, "")
         ORDER_BY_ID[r["clip_id"]] = i
 
-    if args.sample and args.sample < len(ALL_ROWS):
+    # Lọc kênh TRƯỚC khi lấy mẫu: làm ngược lại thì --sample N kèm --exclude_channel
+    # sẽ ra ÍT hơn N clip và phân tầng bị lệch theo phần bị bỏ.
+    pool = ALL_ROWS
+    if args.exclude_channel:
+        drop = {c.strip() for c in args.exclude_channel.split(";") if c.strip()}
+        unknown = drop - {r.get("channel", "") for r in pool}
+        if unknown:
+            print(f"[CẢNH BÁO] không có kênh {sorted(unknown)} trong manifest")
+        before = len(pool)
+        pool = [c for c in pool if c.get("channel", "") not in drop]
+        print(f"Bỏ kênh  : {sorted(drop)} -> loại {before - len(pool)} clip")
+
+    if args.sample and args.sample < len(pool):
         if args.stratify:
-            CLIPS = stratified_sample(ALL_ROWS, args.sample, args.stratify, args.seed)
+            CLIPS = stratified_sample(pool, args.sample, args.stratify, args.seed)
         else:
             import random
-            idx = sorted(random.Random(args.seed).sample(range(len(ALL_ROWS)), args.sample))
-            CLIPS = [ALL_ROWS[i] for i in idx]
+            idx = sorted(random.Random(args.seed).sample(range(len(pool)), args.sample))
+            CLIPS = [pool[i] for i in idx]
     else:
-        CLIPS = ALL_ROWS
+        CLIPS = pool
 
-    if args.order == "risk":
-        # sort ổn định -> trong cùng mức rủi ro vẫn giữ thứ tự manifest
-        CLIPS = sorted(CLIPS, key=lambda r: -risk_score(r))
+    if args.order == "diverse":
+        CLIPS = diverse_order(CLIPS, seed=args.seed)
 
     load_decisions(OUT)
     load_code_states(args.compare, args.rejects)
@@ -747,9 +781,11 @@ def main():
           + ("" if not ROI_DIR else f"  ({ROI_DIR})"))
     if ROI_DIR and n_roi < len(CLIPS):
         print("           -> chạy src/tools/build_roi_preview.py để dựng phần còn thiếu")
-    if args.order == "risk":
-        hi = sum(1 for c in CLIPS if risk_score(c) > 0)
-        print(f"Thứ tự   : rủi ro cao trước ({hi}/{len(CLIPS)} clip nghi ngờ lên đầu)")
+    if args.order == "diverse":
+        vtot = len({c.get("source_video", "") for c in CLIPS})
+        v300 = len({c.get("source_video", "") for c in CLIPS[:300]})
+        print(f"Thứ tự   : vòng tròn theo video (seed={args.seed}) — {vtot} video, "
+              f"300 clip đầu đã trải {v300}")
     print(f"Reviewer : {REVIEWER_ID or '(chưa đặt)'} | rubric {RUBRIC_VERSION}")
     print(f"Compare  : code KEEP {len(CODE_KEEP)} | code GATE-REJECT {len(CODE_GATE)}"
           + ("" if CODE_GATE else "  (chưa có --rejects -> cột GATE trống)"))

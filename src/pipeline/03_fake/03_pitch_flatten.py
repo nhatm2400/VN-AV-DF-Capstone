@@ -30,7 +30,7 @@ Phụ thuộc: praat-parselmouth  ->  pip install praat-parselmouth
 Cần ffmpeg/ffprobe trong PATH.
 
 Ví dụ:
-  python 03_pitch_flatten.py --input_csv data/02_curate/all_clean.csv \\
+  python 03_pitch_flatten.py --input_csv data/02_curate/manifests/all_clean.csv \\
       --out_dir data/fake --labels data/labels.csv
   python 03_pitch_flatten.py --input_csv ... --target median --limit 5
 """
@@ -163,7 +163,7 @@ def mux(in_video, flat_wav, out_path, source_media=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input_csv", default="data/02_curate/all_clean.csv",
+    ap.add_argument("--input_csv", default="data/02_curate/manifests/all_clean.csv",
                     help="CSV clip real (cần cột file_path) — mặc định tập sạch từ 04_curate")
     ap.add_argument("--path_col", default="file_path")
     ap.add_argument("--id_col", default="clip_id")

@@ -173,7 +173,7 @@ Generator:
 
 ```powershell
 D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/03_fake/01_temporal_desync.py `
-  --input_csv data/02_curate/all_clean.csv `
+  --input_csv data/02_curate/manifests/all_clean.csv `
   --out_dir data/03_fake/phase0_smoke_v2r4/generator `
   --labels data/03_fake/phase0_smoke_v2r4/temporal_v2.csv `
   --limit 6 --seed 42
