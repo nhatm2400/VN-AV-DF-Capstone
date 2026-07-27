@@ -1,84 +1,70 @@
 # VN-AV-DF-Capstone
 
-VN-AV-DF-Capstone xây dựng dữ liệu và mô hình phát hiện deepfake âm thanh–hình ảnh tiếng Việt, tập trung vào bằng chứng theo thời gian giữa tiếng nói, khẩu hình, chuyển động khuôn mặt và ngữ điệu.
+Phát hiện **deepfake âm thanh–hình ảnh tiếng Việt** — nhận biết video giả mạo bằng cách đối chiếu tiếng nói với khẩu hình, chuyển động khuôn mặt và ngữ điệu theo thời gian, thay vì tìm dấu vết giả mạo trên từng khung hình riêng lẻ.
 
-## Đọc trước khi làm việc
+Đồ án tốt nghiệp, Đại học FPT.
 
-- [CLAUDE.md](CLAUDE.md): quy tắc làm việc chung và quy ước bắt buộc của repository.
-- [PROJECT.md](PROJECT.md): trạng thái hiện tại, cấu trúc source/data, pipeline và các lỗi đã biết.
-- [Đề xuất AVSP-Net V2](docs/architecture/MODEL_PROPOSAL.md): kiến trúc V2a/V2b, loss, code layout, output contract và roadmap.
-- [Báo cáo pilot gốc](docs/reports/PILOT_REPORT.md): toàn bộ quá trình chạy pilot V1.
-- [Đánh giá V1 và kế hoạch V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md): diễn giải kết quả, blocking issues và thứ tự trước full.
-- [Phase 0 temporal smoke](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md): cơ chế sửa generator và bằng chứng test/smoke.
+## Bài toán
 
-## Trạng thái ngắn
+Phần lớn bộ phát hiện deepfake hiện có được huấn luyện trên dữ liệu tiếng Anh và chỉ nhìn hình ảnh. Với tiếng Việt, cách tiếp cận đó bỏ sót một tín hiệu quan trọng: tiếng Việt là **ngôn ngữ có thanh điệu** — cao độ (F0) không phải nét biểu cảm mà mang **nghĩa từ vựng**. "ma", "má", "mà", "mã", "mạ", "mả" khác nhau hoàn toàn chỉ bởi đường F0. Một hệ thống giả giọng làm sai đường thanh điệu sẽ tạo ra lỗi mà người Việt nghe ra ngay nhưng mô hình tiếng Anh không hề biết tới.
 
-- Curation: 6.888 clip nguồn → 3.001 clip real sạch.
-- Pseudo-fake V1: 4 method × 3.001 clip; temporal V1 được giữ làm lịch sử nhưng không dùng cho run mới.
-- Split: real/fake ghép cặp cùng split; không trùng `speaker_id`/`source_video` theo metadata.
-- Pilot AVSP-Net V1: 2.700 clip, test AUC 0,809.
-- Phase 0 V2: bốn generator + SNVSM H.264/AAC-16k-mono + structured timeline đã implement. Stratified smoke `v2r6` trên 15 nguồn thật (5/tier) sinh đủ 60/60 fake, normalize đủ 15 real + 60 fake và Stage 05 tạo 75/75 labels không leak theo metadata.
-- Metadata-shortcut gate `v2r6`: GroupKFold theo 15 `source_clip`, logistic AUC 0,530 và random-forest AUC 0,546 (ngưỡng 0,65) — **đạt trên mẫu smoke**. Riêng `pitch_flatten` logistic AUC 0,649 sát ngưỡng, nên phải chạy lại gate trên toàn repaired pilot.
-- Full feature/model: chưa chạy.
-- Quyết định hiện tại: **NO-GO full**. Bước kế tiếp là tạo repaired pilot 540 real + 2.160 fake, normalize SNVSM V2, qua Stage 05 và metadata gate trên đủ 2.700 labels; chỉ sau khi gate đạt mới extract feature vào store versioned.
+Trở ngại thứ hai: **không có bộ dữ liệu deepfake âm thanh–hình ảnh tiếng Việt nào công khai** để huấn luyện.
 
-## Cấu trúc chính
+## Hướng tiếp cận
 
-```text
-.
-├── CLAUDE.md                    # Quy tắc làm việc
-├── PROJECT.md                   # Tổng quan sống của project
-├── README.md                    # Điểm vào tài liệu
-├── docs/
-│   ├── architecture/
-│   │   └── MODEL_PROPOSAL.md    # AVSP-Net V2a/V2b
-│   ├── reports/
-│   │   ├── PILOT_REPORT.md
-│   │   ├── PILOT_V1_REVIEW_AND_V2_PLAN.md
-│   │   └── TEMPORAL_DESYNC_PHASE0_SMOKE.md
-│   └── README.md                # Chỉ mục tài liệu
-├── src/
-│   ├── pipeline/                # Pipeline 01 → 05
-│   ├── model/                   # Model hiện tại và V2 trong tương lai
-│   ├── train/
-│   ├── eval/
-│   └── tools/
-├── data/                        # Manifest và artifact dữ liệu
-├── experiments/                 # Mỗi run pilot/full là một thư mục bất biến
-└── PoC/                         # Proof of concept PAMF cũ
-```
+**Sinh pseudo-fake có kiểm soát.** Thay vì chờ dữ liệu deepfake thật, dự án tạo giả từ video thật bằng bốn phép biến đổi, mỗi phép tấn công đúng một kênh tín hiệu:
 
-## Môi trường
+| Kênh | Phép biến đổi | Phá vỡ điều gì |
+|---|---|---|
+| Đồng bộ thời gian | `temporal_desync` — xoay vòng audio theo số sample chính xác | Quan hệ thời gian giữa tiếng và khẩu hình |
+| Chuyển động hình | `frame_reverse` — đảo ngược một đoạn khung hình | Hướng chuyển động tự nhiên của môi |
+| Ngữ điệu | `pitch_flatten` — làm phẳng F0 bằng PSOLA | Đường thanh điệu tiếng Việt |
+| Danh tính hình | `anonymization` — làm mờ vùng mặt | Đặc trưng nhận dạng khuôn mặt |
 
-Trên máy phát triển hiện tại, luôn gọi Python bằng đường dẫn:
+Cách này cho **nhãn chính xác tuyệt đối** và cho phép đo riêng từng kênh — biết mô hình mạnh ở đâu, mù ở đâu, thay vì chỉ có một con số tổng.
 
-```powershell
-D:\Anaconda\envs\vn_av_df\python.exe
-```
+**Chống học tắt.** Rủi ro lớn nhất của pseudo-fake là mô hình học đặc điểm phụ thay vì học bản chất. Dự án xử lý bằng ba lớp: chuẩn hoá lại codec **đối xứng** cho cả real lẫn fake (SNVSM) để xoá dấu vết nén; chia tập theo **thành phần liên thông** của `speaker_id ∪ source_video` để cùng một người không xuất hiện ở hai tập; và một **cổng kiểm tra metadata** — huấn luyện bộ phân loại chỉ dùng metadata container, nếu nó đạt AUC quá ngưỡng thì dữ liệu đã lộ đường tắt và pipeline dừng lại.
 
-`ffmpeg` và `ffprobe` phải có trong `PATH`. Không tự chạy job dài như full extraction/full training nếu chưa có yêu cầu rõ; xem chi tiết trong [CLAUDE.md](CLAUDE.md).
+**Kiến trúc AVSP-Net.** Ba nhánh mã hoá — mouth ROI qua CNN + Transformer, tiếng nói qua wav2vec2 tiếng Việt, ngữ điệu qua Conv1D + BiGRU — hợp nhất bằng cross-attention với **audio làm Query**. Hai đầu ra: thật/giả, và phân loại độ lệch thời gian. Bản V1 có 2,29 triệu tham số.
 
-## Pipeline
+## Trạng thái
 
-Pipeline được chạy từ root theo thứ tự:
+Đã chạy pilot V1 trên 2.700 clip, đạt test ROC-AUC **0,809**. Nhưng phân tích theo từng kênh cho thấy con số tổng che giấu khoảng cách lớn: `pitch_flatten` 0,990 trong khi `frame_reverse` chỉ 0,535 — gần bằng đoán bừa. Kiểm tra đối kháng còn phát hiện các baseline tầm thường giải được hai kênh dễ, và một lỗi tạo tác trong generator temporal.
+
+Kết luận hiện tại là **NO-GO** cho huấn luyện đầy đủ với V1. Đang ở giai đoạn sửa generator và kiểm duyệt lại dữ liệu nguồn trước khi dựng kiến trúc V2.
+
+Trạng thái chi tiết và luôn cập nhật: [PROJECT.md](PROJECT.md).
+
+## Cấu trúc
 
 ```text
-01_collect
--> 02_curate
--> 03_fake + 05_snvsm_compress
--> 05_build_labels (contract gate)
--> 04_extract_features
--> train/eval
+src/
+├── pipeline/          # Pipeline dữ liệu 5 stage
+│   ├── 01_collect/    #   Thu thập + cắt clip, tách theo tier nguồn (YouTube CC / YouTube / TikTok)
+│   ├── 02_curate/     #   Lọc clip: đo mặt, gom speaker, loại rác
+│   ├── 03_fake/       #   Sinh 4 loại pseudo-fake + chuẩn hoá codec + cổng metadata
+│   ├── 04_extract_features/   # mouth ROI + wav2vec2 + F0 -> tensor mỗi clip
+│   └── 05_build_labels/       # Gộp real+fake, chia tập chống rò rỉ danh tính
+├── model/             # Kiến trúc AVSP-Net
+├── train/  eval/      # Vòng huấn luyện và đánh giá
+└── tools/             # Công cụ độc lập: lọc tay có preview ROI, các phép đo phụ trợ
+
+data/                  # Manifest và artifact theo stage (media không commit)
+docs/                  # Kiến trúc, báo cáo, nhật ký làm việc — xem docs/README.md
+experiments/           # Mỗi lần chạy là một thư mục bất biến
+tests/                 # Test cho generator và data contract
+PoC/                   # Proof of concept giai đoạn đầu
 ```
 
-Stage 04/05 phải dùng manifest SNVSM và Stage 05 phải pass trước khi launch extraction dài. Không dùng `--limit` để tạo pilot ghép cặp; phải tạo manifest pilot riêng. Các lệnh và data contract cụ thể nằm trong [PROJECT.md](PROJECT.md).
+## Tài liệu
 
-## Quy ước experiment
+| Tài liệu | Nội dung |
+|---|---|
+| [PROJECT.md](PROJECT.md) | Trạng thái, pipeline, data contract, cạm bẫy đã gặp |
+| [docs/README.md](docs/README.md) | Chỉ mục toàn bộ tài liệu |
+| [docs/architecture/MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md) | Đề xuất AVSP-Net V2a/V2b |
+| [docs/reports/](docs/reports/) | Báo cáo pilot, đánh giá V1, bằng chứng smoke test |
 
-Mỗi lần chạy là một thư mục bất biến:
+## Giấy phép và dữ liệu
 
-```text
-experiments/<pilot|full>_<v1|v2a|v2b>_<timestamp>_<git-sha>_<config-hash>/
-```
-
-Run phải lưu config, checksum manifest, source state, log, checkpoint, metrics, predictions và plots. Không ghi đè run đã hoàn tất. Chi tiết tại [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md#18-experiment-output-bất-biến).
+Video nguồn thu thập từ nội dung công khai và **không được phân phối kèm repository**. Chỉ manifest và artifact phái sinh được version-control.
