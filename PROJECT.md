@@ -323,6 +323,12 @@ python src/eval/evaluate.py --ckpt experiments/avsp_audio_visual_prosody/best.pt
 
 Pilot = subset **speaker/video-disjoint** 540 real + 2160 fake (4 method ghép cặp) = **2700 clip**, split 378/81/81. Mục đích: xác nhận model học được TRƯỚC khi bỏ ~4.4h extract full. Output để ở path `_pilot` **cô lập** khỏi production (pilot fail thì xóa, không nhiễm `data/04_features/`).
 
+> **Đường dẫn dưới đây là lịch sử.** Từ 2026-07-28 toàn bộ artifact V1 + pilot V1 đã
+> chuyển sang [`archive/pilot_v1/`](archive/pilot_v1/README.md) và manifest đã được
+> viết lại tương ứng: `data/03_fake/` → `archive/pilot_v1/03_fake/`,
+> `data/04_features_pilot/` → `archive/pilot_v1/04_features_pilot/`,
+> `data/05_labels/labels{,_pilot}.csv` → `archive/pilot_v1/05_labels/`.
+
 ```bash
 # manifest pilot: data/03_fake/snvsm/pilot_{real,fake}_snvsm.csv + data/05_labels/labels_pilot.csv
 # (KHÔNG dùng --limit: code append toàn bộ real trước rồi mới slice -> ra 2700 real, không ghép cặp)
