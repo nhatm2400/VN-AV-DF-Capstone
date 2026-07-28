@@ -278,13 +278,21 @@ Smoke còn phát hiện và sửa hai edge case dữ liệu thật mà fixture s
 - remux có thể làm `avg_frame_rate` thay đổi một tick dù cadence thật không đổi; validator chuyển sang ưu tiên `r_frame_rate`, trim audio concat đúng native sample và chỉ cho phép sai lệch một native sample khi target Stage 04 ở 16 kHz vẫn giống hệt;
 - source tier3 `7204326198501969178_clip0000_t00000` có audio start 0,135 giây; frame reverse/anonymization dùng fallback ALAC lossless, trim đúng native sample và reset PTS. SNVSM chấp nhận sai lệch duration metadata trong tối đa một AAC frame nhưng vẫn yêu cầu decoded PCM đủ target chính xác.
 
-Artifact cục bộ nằm tại `data/03_fake/phase0_stratified_smoke_v2r6/` và `data/05_labels/labels_phase0_stratified_smoke_v2r6.csv`; chúng bị gitignore và chỉ dùng làm bằng chứng smoke, không tái dùng làm repaired pilot.
+Artifact cục bộ nằm tại `phase0_stratified_smoke_v2r6/` và `labels_phase0_stratified_smoke_v2r6.csv`; chúng chỉ dùng làm bằng chứng smoke, không tái dùng làm repaired pilot.
+
+> **Vị trí artifact đã đổi (2026-07-29).** Toàn bộ sáu vòng smoke đã chuyển sang
+> [`archive/phase0_v2_smoke/`](../../archive/phase0_v2_smoke/README.md). Các đường dẫn
+> `data/03_fake/phase0_*` và `data/05_labels/labels_phase0_*` xuất hiện trong lệnh và mô
+> tả ở trên được **giữ nguyên**: chúng ghi lại lệnh đã chạy lúc đó, không phải vị trí
+> hiện tại. Đường dẫn *bên trong* các CSV thì đã được viết lại — xem mục 5.5.
 
 ### 5.4 Provenance của snapshot smoke
 
-Raw media/manifests dưới `data/` bị gitignore theo quy tắc repo. Bảng dưới khóa source/test hiện tại cùng các artifact r4/r5 lịch sử và r6 hiện hành. `labels_phase0_smoke_v2r4.csv` không tái tạo được bằng code hiện tại nếu vẫn dùng ba media V1 lỗi; r5 cũng không còn qua structured-contract gate và chủ động không có labels.
+Bảng dưới khóa source/test cùng các artifact r4/r5 lịch sử và r6 hiện hành, **tại thời điểm chạy smoke (checkpoint `e49140f`)**. `labels_phase0_smoke_v2r4.csv` không tái tạo được bằng code hiện tại nếu vẫn dùng ba media V1 lỗi; r5 cũng không còn qua structured-contract gate và chủ động không có labels.
 
 Các CSV smoke chứa absolute path của workspace lúc chạy và chỉ là bằng chứng cục bộ; không dùng chúng làm input cho repaired pilot.
+
+**Bảng này là bản khóa lịch sử, cố ý không cập nhật.** Phần lớn hash đã lệch so với HEAD; mục 5.5 giải thích từng nguyên nhân.
 
 | Artifact | SHA-256 |
 |---|---|
@@ -321,6 +329,32 @@ Các CSV smoke chứa absolute path của workspace lúc chạy và chỉ là b�
 | `stratified_smoke_v2r6/metadata_gate.json` | `43CD4C065D17C2F5F2A34815760CFF93042FD8B25971F0D4D7FE3E3911D3BA28` |
 | `stratified_smoke_v2r6/metadata_predictions.csv` | `4960C85F0E06641B30A3E5D5105DD468805A7481BA5895FE97A478ED5E958FDA` |
 | `labels_phase0_stratified_smoke_v2r6.csv` | `4AD7BD45D2AD957AD0449CEFDD7323500CC35AB39542598ABBCAC94D22D2344C` |
+
+### 5.5 Vì sao bảng 5.4 không còn khớp HEAD (cập nhật 2026-07-29)
+
+Đối chiếu bằng máy toàn bộ 33 mục: **6 khớp, 24 lệch, 3 không tìm thấy** (ba mục cuối chỉ do đường dẫn trong bảng ghi tên file trần — `fake_media_contract.py` và `timeline_contract.py` nằm ở `src/pipeline/`, còn `01_build_labels.py` ở `src/pipeline/05_build_labels/`).
+
+Lệch do **ba nguyên nhân độc lập**, không cái nào là hỏng dữ liệu:
+
+| Nguyên nhân | Artifact bị ảnh hưởng |
+|---|---|
+| `e49140f` — chính commit chứa bảng, sửa file sau khi tính hash | `04_anonymization.py`, `05_snvsm_compress.py`, `01_extract_features.py` |
+| `d33835d` — bản vá RNG P1 (seed theo clip thay `random.seed()` toàn cục) | `01_temporal_desync.py`, `02_frame_reverse.py`, `03_pitch_flatten.py` |
+| `fc3e75a` + lượt lưu trữ 2026-07-29 — viết lại đường dẫn trong manifest | 20 CSV smoke |
+
+Hệ quả quan trọng: **code ở HEAD không còn là code đã sinh ra bằng chứng r6.** Bản vá RNG P1 đổi hành vi chọn hướng desync, nên nếu chạy lại smoke bằng HEAD sẽ ra media khác. Bảng 5.4 vẫn là bản khóa đúng cho *bằng chứng đã có*.
+
+Bốn artifact **không hề đổi** vì không chứa đường dẫn — và đây đúng là phần mang số liệu:
+
+| Artifact | Trạng thái |
+|---|---|
+| `real_integration_audit.json` (phase0_smoke, v2r2) | khớp `912A344F…` |
+| `stratified_smoke_v2r6/metadata_gate.json` | khớp `43CD4C06…` |
+| `stratified_smoke_v2r6/metadata_predictions.csv` | khớp `4960C85F…` |
+
+Nói cách khác, `lag_error_ms = 0.0` và gate AUC `0,546` vẫn được khóa bằng hash gốc.
+
+Hash mới của toàn bộ artifact sau khi chuyển sang `archive/phase0_v2_smoke/` (đường dẫn tương đối tính từ thư mục đó) nằm trong [README của archive](../../archive/phase0_v2_smoke/README.md); 627/627 đường dẫn trong 33 CSV đã được kiểm chứng trỏ tới file có thật.
 
 ## 6. Bảo toàn pilot V1
 

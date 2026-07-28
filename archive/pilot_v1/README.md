@@ -54,6 +54,16 @@ chứng: toàn bộ 15.005 dòng của `05_labels/labels.csv` và 2.700 dòng c�
 **Lưu ý:** đường dẫn trong các manifest này là **tuyệt đối** (`E:\FPTU\PRJ\...`) trừ
 `features_index.csv` dùng đường dẫn tương đối. Trên máy khác phải viết lại lần nữa.
 
+**Sót một chỗ, đã sửa 2026-07-29.** Lượt lưu trữ này chỉ viết lại đường dẫn trong các
+CSV *được chuyển đi*, nên bỏ quên ba file nằm lại trong `data/`:
+`phase0_smoke_v2r{2,3,4}/fake_all.csv` — chúng trộn output temporal_v2 mới với fake V1
+cũ, và **54 đường dẫn** trong đó trỏ vào `data/03_fake/*.mp4` đã bị dời sang đây. Nay
+đã trỏ đúng vào `archive/pilot_v1/03_fake/`; ba file đó giờ nằm ở
+[`archive/phase0_v2_smoke/`](../phase0_v2_smoke/README.md).
+
+Bài học cho lần sau: khi dời media, phải quét **mọi** CSV trong repo tìm tham chiếu tới
+đường dẫn cũ, không chỉ các CSV cùng đi theo.
+
 ## Có được xóa không
 
 Chưa quyết. Câu hỏi quyết định: **có bao giờ cần tái tạo lại feature V1 từ video không?**

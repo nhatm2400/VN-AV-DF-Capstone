@@ -14,7 +14,10 @@ data/05_labels/*
 !data/05_labels/labels.csv
 
 # archive/ — luu tru dot chay cu. Media da bi chan boi *.mp4 / *.pt o duoi;
-# manifest CSV thi COMMIT lam provenance (~11 MiB), xem archive/pilot_v1/README.md
+# manifest CSV + JSON thi COMMIT lam provenance (~12 MiB tong).
+#   archive/pilot_v1/        — fake V1 + pilot V1 (da bac bo), ~30 GiB media
+#   archive/phase0_v2_smoke/ — 6 vong smoke generator V2, 376 MB media
+# Xem README.md trong tung thu muc.
 
 *.mp4
 *.m4a

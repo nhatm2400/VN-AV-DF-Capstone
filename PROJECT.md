@@ -237,6 +237,13 @@ python src/tools/clip_review.py             # 3) mở http://127.0.0.1:8000
 
 V1 lịch sử đã sinh bốn method vào `data/03_fake/labels.csv`; không dùng lại cho repaired pilot. Bốn generator V2 ghi media/manifest versioned riêng dưới `data/03_fake/*_v2` và `data/03_fake/manifests/v2/`. Builder chỉ nhận đúng generator version + timeline contract V2 của cả bốn method, không còn lấy ba method từ manifest V1.
 
+> **`data/03_fake/` hiện trống (chỉ còn `.gitkeep`).** Fake V1 nằm ở
+> [`archive/pilot_v1/`](archive/pilot_v1/README.md); sáu vòng smoke Phase 0 của generator
+> V2 (`phase0_*`, gồm cả `v2r6` và metadata gate) nằm ở
+> [`archive/phase0_v2_smoke/`](archive/phase0_v2_smoke/README.md) từ 2026-07-29. Đường dẫn
+> trong manifest của cả hai đã được viết lại và kiểm chứng toàn bộ. Repaired pilot sẽ ghi
+> mới vào `data/03_fake/`.
+
 ```bash
 # Mặc định V2: media -> data/03_fake/temporal_v2/
 #               manifest -> data/03_fake/manifests/v2/temporal_desync.csv
