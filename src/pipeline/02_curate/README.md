@@ -20,6 +20,8 @@ và biến thể Kaggle).
   giữ, `all_clean_rejects.csv` là tập code loại, còn `all_clean_review.csv` là scope đưa vào
   công cụ review.
 - `manual/`: quyết định do người review ghi ra; tách khỏi manifest do code tạo.
+- `assignments/v2/`: workload cố định cho từng reviewer; calibration chung, primary không
+  chồng lặp.
 - `calibration/`: kết quả thử ngưỡng SyncNet, không phải dữ liệu train.
 - `logs/`: log console của các lần chạy curation/preview; có thể tái sinh và không commit.
 - `eda_figs/` và `roi_preview/`: artifact trực quan phục vụ phân tích/review.
@@ -92,3 +94,46 @@ Conda env `vn_av_df` (Python 3.10): `insightface`, `onnxruntime-gpu` (+ `nvidia-
 để chạy GPU trên Windows), `opencv-python`, `pandas`, `scikit-learn`, `matplotlib`,
 `ffmpeg`/`ffprobe` trong PATH. Bước 03 cần thêm `scenedetect`, `python_speech_features` và
 repo SyncNet + model (`syncnet_v2.model`, `sfd_face.pth`).
+
+---
+
+## Manual review cho team 3 người
+
+Không chia trực tiếp bằng vị trí dòng hoặc tự copy CSV. Dùng builder để giữ đúng coverage:
+
+```bash
+python src/tools/build_review_assignments.py \
+  --reviewers nguyenminhnhat <reviewer_2> <reviewer_3>
+```
+
+Mỗi assignment gồm 60 clip calibration chung và khoảng 980 clip primary riêng. Mỗi người
+chạy đúng file mang reviewer ID của mình:
+
+```bash
+python src/tools/clip_review.py \
+  --csv data/02_curate/assignments/v2/assignment_<reviewer>.csv \
+  --reviewer <reviewer>
+```
+
+`clip_review.py` dừng ngay nếu `--reviewer` không khớp assignment. Output mặc định cũng
+chứa reviewer ID, nên không ghi đè kết quả của người khác.
+
+Riêng `nguyenminhnhat` đã có 60 calibration trong
+`manual/manual_all_clean_review_v2.csv`, vì vậy dùng thêm
+`--out data/02_curate/manual/manual_all_clean_review_v2.csv` để resume file đó thay vì
+đánh lại 60 clip.
+
+Sau khi đủ ba file kết quả, chạy:
+
+```bash
+python src/tools/merge_review_results.py \
+  --assignments "data/02_curate/assignments/v2/assignment_*.csv" \
+  --results data/02_curate/manual/manual_all_clean_review_v2.csv \
+            "data/02_curate/manual/manual_assignment_*.csv"
+```
+
+Nếu thiếu coverage, có `uncertain` hoặc calibration không đồng thuận, script dừng và ghi
+`data/02_curate/manual/merged_v2/needs_adjudication.csv`. Điền ba cột
+`final_decision`, `final_reason`, `adjudicator`, sau đó chạy lại với
+`--adjudication <file>`. Chỉ khi đủ 3.001 clip và không còn case cần phân xử, script mới
+xuất `data/02_curate/manifests/manual_clean_v2.csv`.

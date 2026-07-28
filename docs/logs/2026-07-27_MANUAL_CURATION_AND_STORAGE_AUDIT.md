@@ -81,11 +81,13 @@ Lệnh được đề xuất trong log có `--exclude_channel "Truyền hình H�
 
 ## 5. Gate đề xuất trước repaired pilot
 
-1. Tiếp tục review trên scope 3.001 clip bằng rubric V2; không auto-reject theo channel.
+1. Team ba người dùng `build_review_assignments.py`: cùng review tập calibration, sau đó
+   chia độc quyền phần primary khoảng 1.000 clip/người; không auto-reject theo channel.
 2. Mở rộng gold set lên ít nhất 250–300 clip, trải theo tier/source/channel, rồi mới ước lượng lại contamination.
 3. Khi có 600–650 keep, chạy builder chọn đúng 540 real theo connected component `speaker_id ∪ source_video`.
 4. Builder phải kiểm diversity, media tồn tại, rubric version, không `uncertain` và đủ headroom để sinh bốn fake/source.
-5. Xuất manifest versioned mới, không ghi đè `manifests/all_clean.csv`.
+5. Dùng `merge_review_results.py` kiểm coverage, tách case cần adjudication và chỉ xuất
+   `manifests/manual_clean_v2.csv` khi đủ 3.001 quyết định; không ghi đè `all_clean.csv`.
 6. Chỉ sau khi gate đạt mới regenerate bốn fake V2, SNVSM, Stage 05 và metadata gate.
 
 ## 6. Audit `data/02_curate`

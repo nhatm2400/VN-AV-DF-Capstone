@@ -42,7 +42,9 @@ Trạng thái hiện tại: **dữ liệu + curation đã xong** (6.888 clip →
 │   │       └── 01_build_labels.py      # gộp real+fake -> labels.csv + split SPEAKER-DISJOINT
 │   ├── tools/
 │   │   ├── build_review_manifest.py    # all_clean + motion + face_ambiguity + channel -> all_clean_review.csv
+│   │   ├── build_review_assignments.py # chia calibration chung + primary riêng cho từng reviewer
 │   │   ├── build_roi_preview.py        # dựng ô ROI+tiếng (chạy đúng detect_and_crop của stage 04)
+│   │   ├── merge_review_results.py     # audit coverage, disagreement -> manual_clean_v2.csv
 │   │   ├── scan_face_ambiguity.py      # luật "mặt to nhất" của stage 04 có đáng tin không
 │   │   ├── measure_lip_audio_corr.py   # kiểm giả thuyết tự động hoá (đã đo: AUC 0,544 = vô dụng)
 │   │   ├── clip_review.py              # Web tool lọc tay clip (stdlib http.server) + so sánh với lọc code

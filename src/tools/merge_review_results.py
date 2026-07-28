@@ -1,0 +1,181 @@
+"""
+Audit và gộp kết quả multi-reviewer.
+
+Clip primary có đúng một reviewer. Clip calibration phải có kết quả của mọi reviewer;
+nếu không đồng thuận hoặc có nhãn uncertain thì được đưa vào needs_adjudication.csv.
+Script chỉ xuất manual_clean_v2.csv khi coverage hoàn tất và không còn clip cần phân xử.
+"""
+
+import argparse
+import csv
+import glob
+import json
+import os
+import sys
+from collections import Counter, defaultdict
+
+
+VALID = {"keep", "reject", "uncertain"}
+
+
+def read_csv(path):
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
+
+
+def expand_paths(patterns):
+    paths = []
+    for pattern in patterns:
+        matches = sorted(glob.glob(pattern))
+        paths.extend(matches or [pattern])
+    return paths
+
+
+def write_csv(path, rows, fields):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    os.replace(tmp, path)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--assignments", nargs="+", required=True)
+    ap.add_argument("--results", nargs="+", required=True)
+    ap.add_argument("--manifest",
+                    default="data/02_curate/manifests/all_clean_review.csv")
+    ap.add_argument("--rubric", default="v2")
+    ap.add_argument("--out_dir", default="data/02_curate/manual/merged_v2")
+    ap.add_argument("--adjudication", default="",
+                    help="needs_adjudication.csv đã điền final_decision/final_reason/adjudicator")
+    ap.add_argument("--final_clean",
+                    default="data/02_curate/manifests/manual_clean_v2.csv")
+    args = ap.parse_args()
+
+    manifest = read_csv(args.manifest)
+    manifest_by_id = {r["clip_id"]: r for r in manifest}
+    expected = {}
+    calibration_reviewers = defaultdict(set)
+    assignment_paths = expand_paths(args.assignments)
+    result_paths = expand_paths(args.results)
+    for path in assignment_paths:
+        for row in read_csv(path):
+            cid = row.get("clip_id", "")
+            reviewer = row.get("assigned_reviewer", "")
+            role = row.get("assignment_role", "")
+            key = (reviewer, cid)
+            if not cid or not reviewer or role not in {"primary", "calibration"}:
+                raise SystemExit(f"[LỖI] Assignment sai schema: {path}")
+            if key in expected:
+                raise SystemExit(f"[LỖI] Assignment trùng {reviewer}/{cid}")
+            expected[key] = role
+            if role == "calibration":
+                calibration_reviewers[cid].add(reviewer)
+
+    actual = {}
+    for path in result_paths:
+        for row in read_csv(path):
+            cid = row.get("clip_id", "")
+            reviewer = row.get("reviewer_id", "")
+            decision = row.get("decision", "")
+            key = (reviewer, cid)
+            if key not in expected:
+                raise SystemExit(f"[LỖI] Kết quả ngoài assignment: {reviewer}/{cid}")
+            if key in actual:
+                raise SystemExit(f"[LỖI] Kết quả trùng: {reviewer}/{cid}")
+            if decision not in VALID:
+                raise SystemExit(f"[LỖI] Decision không hợp lệ: {reviewer}/{cid}")
+            if row.get("rubric_version") != args.rubric:
+                raise SystemExit(f"[LỖI] Sai rubric: {reviewer}/{cid}")
+            actual[key] = row
+
+    missing = sorted(set(expected) - set(actual))
+    by_clip = defaultdict(list)
+    for key, row in actual.items():
+        by_clip[key[1]].append(row)
+
+    resolved = {}
+    pending = []
+    for cid in manifest_by_id:
+        rows = by_clip.get(cid, [])
+        roles = {expected[(r["reviewer_id"], cid)] for r in rows}
+        decisions = {r["decision"] for r in rows}
+        is_calibration = cid in calibration_reviewers
+        complete_calibration = (not is_calibration or
+                                {r["reviewer_id"] for r in rows} ==
+                                calibration_reviewers[cid])
+        if not rows:
+            continue
+        if "uncertain" in decisions or len(decisions) != 1 or not complete_calibration:
+            pending.append({
+                "clip_id": cid,
+                "file_path": manifest_by_id[cid].get("file_path", ""),
+                "assignment_role": "calibration" if is_calibration else
+                                   next(iter(roles), "primary"),
+                "reviewers": ";".join(sorted(r["reviewer_id"] for r in rows)),
+                "decisions": ";".join(f"{r['reviewer_id']}={r['decision']}" for r in rows),
+                "reasons": ";".join(f"{r['reviewer_id']}={r.get('reason', '')}" for r in rows),
+                "final_decision": "",
+                "final_reason": "",
+                "adjudicator": "",
+            })
+        else:
+            decision = next(iter(decisions))
+            resolved[cid] = (decision, rows[0].get("reason", ""))
+
+    adjudicated = 0
+    if args.adjudication:
+        adjudication = {r.get("clip_id", ""): r for r in read_csv(args.adjudication)}
+        pending_ids = {r["clip_id"] for r in pending}
+        extra = sorted(set(adjudication) - pending_ids - {""})
+        if extra:
+            raise SystemExit(f"[LỖI] Adjudication có {len(extra)} clip không cần phân xử")
+        unresolved = []
+        for row in pending:
+            final = adjudication.get(row["clip_id"], {})
+            decision = final.get("final_decision", "")
+            if decision in {"keep", "reject"} and final.get("adjudicator", ""):
+                resolved[row["clip_id"]] = (decision, final.get("final_reason", ""))
+                adjudicated += 1
+            else:
+                unresolved.append(row)
+        pending = unresolved
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    pending_path = os.path.join(args.out_dir, "needs_adjudication.csv")
+    write_csv(pending_path, pending, [
+        "clip_id", "file_path", "assignment_role", "reviewers", "decisions",
+        "reasons", "final_decision", "final_reason", "adjudicator",
+    ])
+    summary = {
+        "schema": "manual_review_merge_v1",
+        "expected_judgements": len(expected),
+        "received_judgements": len(actual),
+        "missing_judgements": len(missing),
+        "resolved_clips": len(resolved),
+        "needs_adjudication": len(pending),
+        "adjudicated_clips": adjudicated,
+        "decisions_resolved": dict(Counter(d for d, _ in resolved.values())),
+    }
+    with open(os.path.join(args.out_dir, "merge_summary.json"), "w", encoding="utf-8") as f:
+        json.dump(summary, f, ensure_ascii=False, indent=2)
+
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+    print(f"-> {pending_path}")
+    if missing or pending or len(resolved) != len(manifest):
+        if os.path.exists(args.final_clean):
+            print(f"[CẢNH BÁO] Không ghi đè final manifest đang có: {args.final_clean}")
+        raise SystemExit("[CHƯA XONG] Thiếu coverage hoặc còn clip cần phân xử")
+
+    clean = [row for row in manifest if resolved[row["clip_id"]][0] == "keep"]
+    if os.path.exists(args.final_clean):
+        raise SystemExit(f"[LỖI] Final manifest đã tồn tại: {args.final_clean}")
+    write_csv(args.final_clean, clean, list(manifest[0]))
+    print(f"-> {args.final_clean} ({len(clean)} keep/{len(manifest)})")
+
+
+if __name__ == "__main__":
+    main()

@@ -23,7 +23,7 @@ tiếng (môi lệch nhịp), ảnh tĩnh (miệng đóng băng). Dựng trướ
 Tùy chọn:
     --csv       manifest cần review     (mặc định manifests/all_clean_review.csv)
     --roi_dir   thư mục preview ROI+tiếng (mặc định data/02_curate/roi_preview)
-    --out       file ghi quyết định     (mặc định tự sinh theo --csv + rubric, xem dưới)
+    --out       file ghi quyết định     (mặc định tự sinh theo --csv + rubric + reviewer)
     --compare   file code GIỮ để đối chiếu     (mặc định manifests/all_clean.csv)
     --rejects   file code GATE-REJECT          (mặc định manifests/all_clean_rejects.csv)
     --order     diverse (mặc định) = vòng tròn qua từng video | manifest = thứ tự gốc
@@ -47,7 +47,7 @@ KHÔNG auto-reject theo kênh. `--exclude_channel` là công cụ thủ công đ
 đo trên mẫu nhỏ có khoảng tin cậy rất rộng.
 
 OUTPUT TỰ ĐỘNG VERSION THEO SCOPE: mặc định ghi ra
-    data/02_curate/manual/manual_<tên-csv>_<rubric>.csv
+    data/02_curate/manual/manual_<tên-csv>_<rubric>_<reviewer>.csv
 Mỗi manifest + mỗi phiên bản rubric có file riêng, nên KHÔNG bao giờ trộn nhầm quyết định
 của hai scope khác nhau (file manual_review.csv cũ thuộc scope tier1_scored_all và chỉ có
 3/47 dòng nằm trong all_clean — đừng tái sử dụng).
@@ -169,6 +169,12 @@ def load_decisions(out_path):
             cid = r.get("clip_id")
             dec = r.get("decision")
             if cid and dec in DECISIONS_VALID:
+                row_reviewer = r.get("reviewer_id", "") or ""
+                if row_reviewer and row_reviewer != REVIEWER_ID:
+                    raise SystemExit(
+                        f"[LỖI] Output chứa reviewer '{row_reviewer}', "
+                        f"không khớp --reviewer '{REVIEWER_ID}': {out_path}"
+                    )
                 DECISIONS[cid] = dec
                 REASON[cid] = r.get("reason", "") or ""
                 TS[cid] = r.get("ts", "")
@@ -682,10 +688,17 @@ def stratified_sample(rows, n, col, seed):
     return [rows[i] for i in picked]
 
 
-def default_out(csv_path):
+def safe_reviewer_name(value):
+    value = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip())
+    if not value:
+        raise ValueError("reviewer ID rỗng hoặc không hợp lệ")
+    return value
+
+
+def default_out(csv_path, reviewer):
     stem = os.path.splitext(os.path.basename(csv_path))[0]
     return os.path.join("data", "02_curate", "manual",
-                        f"manual_{stem}_{RUBRIC_VERSION}.csv")
+                        f"manual_{stem}_{RUBRIC_VERSION}_{safe_reviewer_name(reviewer)}.csv")
 
 
 def main():
@@ -722,17 +735,22 @@ def main():
     PATH_COL = args.col
     REVIEWER_ID = args.reviewer
     ROI_DIR = os.path.abspath(args.roi_dir) if args.roi_dir else ""
-    OUT = os.path.abspath(args.out or default_out(args.csv))
+    if not REVIEWER_ID:
+        print("[LỖI] Bắt buộc truyền --reviewer để không trộn kết quả nhiều người.")
+        sys.exit(1)
+    OUT = os.path.abspath(args.out or default_out(args.csv, REVIEWER_ID))
 
     if not os.path.isfile(args.csv):
         print(f"[LỖI] Không thấy manifest: {args.csv}")
         sys.exit(1)
-    if not REVIEWER_ID:
-        print("[CẢNH BÁO] Chưa có --reviewer -> cột reviewer_id sẽ rỗng, "
-              "không truy được ai đánh dấu.")
-
     global CLIPS, ALL_ROWS
     ALL_ROWS = load_clips(args.csv, args.col)
+    assigned = {r.get("assigned_reviewer", "").strip() for r in ALL_ROWS
+                if r.get("assigned_reviewer", "").strip()}
+    if assigned and assigned != {REVIEWER_ID}:
+        print(f"[LỖI] Assignment dành cho {sorted(assigned)}, "
+              f"không phải reviewer '{REVIEWER_ID}'.")
+        sys.exit(1)
     for i, r in enumerate(ALL_ROWS):
         FILEPATH_BY_ID[r["clip_id"]] = r.get(PATH_COL, "")
         ORDER_BY_ID[r["clip_id"]] = i
