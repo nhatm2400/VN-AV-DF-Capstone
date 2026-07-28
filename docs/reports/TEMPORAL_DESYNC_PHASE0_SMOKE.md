@@ -366,6 +366,15 @@ experiments/pilot_v1_20260720-214741_467f606_b8c61ed7/manifest_hashes.json
 
 Kết quả: 4 manifest/input và 4 artifact model vẫn khớp `8/8`. Không file V1 nào bị ghi đè.
 
+> **Cập nhật 2026-07-29 — cách đối chiếu đã đổi, kết quả vẫn `8/8`.** Lượt lưu trữ
+> 2026-07-28 dời bốn manifest input sang `archive/pilot_v1/` và thay tiền tố đường dẫn
+> bên trong, nên chúng **không còn khớp trực tiếp**; bốn artifact model vẫn khớp trực
+> tiếp. `manifest_hashes.json` cố ý **không** được sửa — bản khóa chạy theo dữ liệu thì
+> hết là bản khóa. Dùng [`archive/pilot_v1/verify_lock.py`](../../archive/pilot_v1/verify_lock.py),
+> nó đảo ngược phép thế tiền tố trong bộ nhớ rồi mới so. Đã chạy: **8/8 khớp**, tức
+> ngoài đường dẫn thì 2.700 dòng `labels_pilot.csv` và 2.700 dòng `features_index.csv`
+> không có gì bị đổi.
+
 ## 7. Giới hạn và quyết định
 
 Đã xác minh:

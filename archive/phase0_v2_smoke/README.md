@@ -134,9 +134,20 @@ mục 5.4 của report.
 | `05_labels/labels_phase0_smoke_v2r4.csv` | `6BA9E6BF5B9A42FC8A7177402E0609AD7B4CEBE0615A4754AF41D3ECE283E8A8` |
 | `05_labels/labels_phase0_stratified_smoke_v2r6.csv` | `691002C350DB63FCB08AD8FF40EBB3180E832B9A201F016D7743A69052AD6D5B` |
 
-**Một điểm không kiểm chứng được:** `stratified_smoke_v2r6/input_real.csv` có hash lệch
-bảng gốc dù script báo *sửa 0 dòng* (15 đường dẫn của nó trỏ vào `cut_clips`, không đổi).
-Vòng đọc/ghi CSV là trung thực — `metadata_predictions.csv` đi qua đúng vòng đó và hash
-vẫn khớp — nên nhiều khả năng mục này đã lệch từ trước. Nhưng script ghi đè cả file
-không có thay đổi và không giữ bản sao, **nên không còn cách chứng minh byte-for-byte.**
-Nội dung vẫn đúng về mặt ngữ nghĩa: 15 dòng, 15 đường dẫn `cut_clips` đều tồn tại.
+**Một điểm cần nói rõ:** `stratified_smoke_v2r6/input_real.csv` có hash lệch bảng gốc
+**dù script báo sửa 0 dòng** — 15 đường dẫn của nó trỏ vào `cut_clips` và không đổi.
+
+Bằng chứng cho thấy nó đã lệch *từ trước* lượt này, chứ không phải do tôi ghi đè:
+
+- [`archive/pilot_v1/verify_lock.py`](../pilot_v1/verify_lock.py) chứng minh vòng
+  đọc/ghi CSV dùng ở đây tái tạo **đúng byte** so với output của pipeline gốc — trên
+  4 file, tổng 8.100 dòng, tất cả khớp bản khóa SHA-256 độc lập của experiment;
+- `metadata_predictions.csv` đi qua đúng vòng đó với 0 thay đổi và hash vẫn khớp.
+
+Nếu writer là trung thực và không ô nào đổi, thì output phải bằng input. Đây là suy
+luận mạnh, **không phải chứng minh trực tiếp**: script ghi đè cả file không có thay đổi
+và không giữ bản sao, nên không còn byte gốc để so. Nội dung vẫn đúng về ngữ nghĩa:
+15 dòng, 15 đường dẫn `cut_clips` đều tồn tại.
+
+Bài học cho script migration lần sau: **chỉ ghi file khi thực sự có thay đổi**, để hash
+của phần không đụng tới vẫn tự chứng minh được.

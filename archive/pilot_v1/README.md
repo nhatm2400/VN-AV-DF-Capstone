@@ -64,6 +64,35 @@ cũ, và **54 đường dẫn** trong đó trỏ vào `data/03_fake/*.mp4` đã 
 Bài học cho lần sau: khi dời media, phải quét **mọi** CSV trong repo tìm tham chiếu tới
 đường dẫn cũ, không chỉ các CSV cùng đi theo.
 
+## Bản khóa toàn vẹn của experiment — vẫn xác minh được
+
+`experiments/pilot_v1_20260720-214741_467f606_b8c61ed7/manifest_hashes.json` khóa 8
+SHA-256. Bốn trong đó là **manifest input đã bị lượt lưu trữ này dời đi và viết lại**,
+nên không còn khớp trực tiếp:
+
+| Nhóm | Trạng thái |
+|---|---|
+| 4 artifact mô hình (`best.pt`, `last.pt`, `history.json`, `eval_test.json`) | **khớp trực tiếp** — kết quả thí nghiệm nguyên vẹn |
+| 4 manifest input (`pilot_{real,fake}_snvsm.csv`, `labels_pilot.csv`, `features_index.csv`) | lệch, **chỉ do đổi tiền tố đường dẫn** |
+
+`manifest_hashes.json` **cố ý không được sửa.** Cập nhật nó thành hash hôm nay sẽ xóa
+mất khả năng phát hiện sửa đổi thật sự về sau — bản khóa mà tự động chạy theo dữ liệu
+thì không còn là bản khóa.
+
+Thay vào đó dùng [`verify_lock.py`](verify_lock.py): nó đảo ngược đúng phép thế tiền tố
+trong bộ nhớ rồi đối chiếu. Chạy từ thư mục gốc repo:
+
+```bash
+D:\Anaconda\envs\vn_av_df\python.exe archive/pilot_v1/verify_lock.py
+```
+
+Kết quả 2026-07-29: **8/8 khớp** — 2.700 dòng `labels_pilot.csv` và 2.700 dòng
+`features_index.csv` đảo ngược ra đúng byte gốc. Nghĩa là ngoài tiền tố đường dẫn,
+không có gì trong bốn manifest bị thay đổi.
+
+Nếu sau này script báo lệch, đó là tín hiệu thật: có ai đó đã sửa nội dung, không phải
+chỉ đổi chỗ file.
+
 ## Có được xóa không
 
 Chưa quyết. Câu hỏi quyết định: **có bao giờ cần tái tạo lại feature V1 từ video không?**
