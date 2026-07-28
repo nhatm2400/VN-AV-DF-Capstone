@@ -155,26 +155,134 @@ Cùng 3.001 dòng, cùng thứ tự, 18 cột chung giống hệt nhau. `all_cle
 
 Chín cột đó hiển thị trong panel công cụ; thiếu chúng reviewer mất thông tin cảnh báo (clip nghi tĩnh, clip nhiều mặt). File assignment sinh từ `all_clean_review.csv` nên đã có đủ.
 
-## 6. Lệnh cho reviewer
+## 6. Hướng dẫn chạy
+
+### 6.1 Người điều phối — chuẩn bị và phát
+
+Ba bước dưới đây **đã chạy xong** trong phiên này; ghi lại để lặp cho batch sau.
 
 ```powershell
-python src/tools/clip_review.py ^
-  --csv assignment_<tên>.csv ^
-  --media_root <thư mục final_clips_batch1 trên máy họ> ^
-  --roi_dir <thư mục roi_preview trên máy họ> ^
-  --reviewer <tên>
+# 1) Dựng manifest review (gộp motion + face ambiguity + channel vào all_clean)
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/build_review_manifest.py
+
+# 2) Dựng ROI preview — ~84 phút cho 3.001 clip, chạy nền
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/build_roi_preview.py --skip_existing
+
+# 3) Gom clip gốc ra một thư mục phẳng — ~36 giây
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/export_review_batch.py `
+    --out_dir data/01_collect/final_clips_batch1
+
+# 4) Chia assignment cho ba reviewer
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/build_review_assignments.py `
+    --reviewers nguyenminhnhat nguyenvanlinh nguyenlamanh
 ```
 
-Gộp kết quả:
+Bước 4 fail nếu assignment đã tồn tại — cố ý, tránh chia lại giữa chừng làm hỏng công đã review. Muốn chia lại thật thì thêm `--overwrite`.
+
+Sau đó upload lên Drive ba thư mục ở mục 5.2, kèm `src/tools/clip_review.py` nếu reviewer chưa clone repo.
+
+### 6.2 Reviewer — cài đặt
+
+Cần Python 3.8+ (công cụ chỉ dùng thư viện chuẩn, **không phải cài gì thêm**) và một trình duyệt.
+
+Tải về từ Drive rồi đặt ở đâu cũng được, ví dụ:
+
+```
+D:\review\
+├── final_clips_batch1\        3.001 file .mp4
+├── roi_preview\               3.001 file .mp4
+├── assignment_nguyenvanlinh.csv
+└── clip_review.py
+```
+
+### 6.3 Reviewer — chạy
 
 ```powershell
-python src/tools/merge_review_results.py ^
-  --assignments "data/02_curate/assignments/v2/assignment_*.csv" ^
-  --results "<thư mục kết quả>/*.csv" ^
-  --allow_partial
+python clip_review.py `
+    --csv assignment_nguyenvanlinh.csv `
+    --media_root D:\review\final_clips_batch1 `
+    --roi_dir D:\review\roi_preview `
+    --reviewer nguyenvanlinh
 ```
 
-Bỏ `--allow_partial` nếu review hết assignment.
+Trình duyệt tự mở `http://127.0.0.1:8000`. Cổng bận thì thêm `--port 8001`.
+
+**Kiểm tra dòng in ra trước khi bắt đầu:**
+
+| Dòng | Phải thấy |
+|---|---|
+| `Media` | quét ... -> **3001** file .mp4 |
+| `ROI` | **1040/1040** clip có preview |
+| `Reviewer` | đúng tên mình, rubric **v2** |
+| Cảnh báo `thiếu file` | **không có** |
+
+Nếu báo thiếu gần hết clip là `--media_root` trỏ sai chỗ hoặc chưa tải xong media — dừng lại, đừng review tiếp.
+
+`--reviewer` phải viết **đúng chính tả như trong tên file assignment**. Công cụ sẽ từ chối chạy nếu tên không khớp assignment, và từ chối đọc file kết quả của người khác.
+
+### 6.4 Reviewer — cách phán
+
+Màn hình có hai ô: **video gốc bên trái đã tắt tiếng**, **ô ROI bên phải có tiếng**. Ô ROI mới là thứ mô hình thật sự nhận — nhìn miệng ở đó và nghe tiếng cùng lúc.
+
+| Phím | Ý nghĩa |
+|---|---|
+| `K` | Keep — miệng trong ô ROI khớp với tiếng nghe được |
+| `1`–`7` | Reject kèm lý do (xem bảng dưới) |
+| `C` | Chưa chắc — không phán được, để lại xử lý sau |
+| `U` | Bỏ đánh dấu |
+| `←` `→` | Clip trước / sau |
+| `Space` | Phát lại cả hai ô |
+
+Bảy lý do reject của rubric v2:
+
+| Phím | Mã | Khi nào dùng |
+|---|---|---|
+| `1` | `static` | Ảnh tĩnh, miệng đóng băng |
+| `2` | `voiceover` | Người trong hình không nói, tiếng của người ngoài hình |
+| `3` | `dubbed` | Lồng tiếng — môi không ăn nhịp, hoặc khác ngôn ngữ |
+| `4` | `wrong_face` | Ô ROI cắt trúng người khác, không phải người đang nói |
+| `5` | `mouth` | Miệng bị che, quay nghiêng quá, hoặc ra khỏi ô ROI |
+| `6` | `cut` | Có chuyển cảnh, đổi người, hoặc B-roll chèn giữa clip |
+| `7` | `broken` | Lỗi file, audio hỏng, hoặc nhạc/nhép miệng thay vì lời nói |
+
+Reject **bắt buộc kèm lý do** — không có nút reject trống.
+
+Nguyên tắc: chỉ loại **rác rõ ràng**. Đừng loại vì "khớp môi chưa hoàn hảo" — siết chặt tiêu chí sync cho tập real sẽ đẩy real về phía "sync cao" và làm rò rỉ nhãn cho mô hình. Người ngồi yên nói bình tĩnh vẫn là dữ liệu tốt.
+
+Quyết định được ghi ra đĩa **ngay sau mỗi lần bấm**, đóng lúc nào cũng được. Mở lại bằng đúng lệnh cũ sẽ tự nhảy tới clip chưa đánh dấu.
+
+### 6.5 Reviewer — gửi kết quả về
+
+Một file duy nhất:
+
+```
+data/02_curate/manual/manual_assignment_<tên>_v2_<tên>.csv
+```
+
+Đường dẫn tương đối so với chỗ chạy lệnh. Gửi nguyên file, không sửa tay.
+
+### 6.6 Người điều phối — gộp
+
+Đặt ba file kết quả vào một thư mục rồi:
+
+```powershell
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/merge_review_results.py `
+    --assignments "data/02_curate/assignments/v2/assignment_*.csv" `
+    --results "<thư mục kết quả>/*.csv" `
+    --allow_partial
+```
+
+Bỏ `--allow_partial` nếu cả ba đã review hết assignment.
+
+Kết quả:
+
+- `data/02_curate/manual/merged_v2/merge_summary.json` — coverage, số keep/reject, `partial` true/false
+- `data/02_curate/manual/merged_v2/needs_adjudication.csv` — clip ba người bất đồng hoặc đánh `uncertain`
+- `data/02_curate/manifests/manual_clean_v2.csv` — chỉ ra khi không còn clip cần phân xử
+
+Còn clip cần phân xử thì điền `final_decision`, `final_reason`, `adjudicator` vào `needs_adjudication.csv` rồi chạy lại kèm `--adjudication <đường dẫn file đó>`.
+
+Merge sẽ **dừng** nếu: thiếu phán quyết mà không có `--allow_partial`, sai rubric version, kết quả nằm ngoài assignment, hoặc `manual_clean_v2.csv` đã tồn tại. Đều là cố ý — không ghi đè manifest cũ, không âm thầm bỏ qua thiếu sót.
 
 ## 7. Chưa kiểm chứng
 

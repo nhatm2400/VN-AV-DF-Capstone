@@ -547,7 +547,7 @@ label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px
     </div>
     <div class="rgrid" id="rgrid"></div>
     <div class="kbd">
-      <b>K</b> keep · <b>C</b> chưa chắc · <b>1</b>–<b>6</b> reject kèm lý do ·
+      <b>K</b> keep · <b>C</b> chưa chắc · <b>1</b>–<b id="nreason">7</b> reject kèm lý do ·
       <b>U</b> bỏ · <b>←</b>/<b>→</b> chuyển · <b>Space</b> phát lại<br>
       Reject BẮT BUỘC có lý do — không có nút reject trống.
     </div>
@@ -580,6 +580,7 @@ async function load(){
   document.getElementById('rub').textContent=j.rubric;
   document.getElementById('rgrid').innerHTML=S.reasons.map((p,k)=>
     `<button onclick="mark('reject','${p[0]}')"><i>${k+1}</i>${p[1]}</button>`).join('');
+  document.getElementById('nreason').textContent=S.reasons.length;  // theo rubric, khong hard-code
   setCounts(j.counts);render();
 }
 function setCounts(c){
