@@ -1,4 +1,9 @@
-"""Media-contract tests for repaired non-temporal fake generators."""
+"""Media-contract test cho ba generator KHÔNG đụng trục thời gian.
+
+frame_reverse (đảo hình, audio copy), pitch_flatten (làm phẳng F0, video giữ nguyên),
+anonymization (làm mờ mặt). Kiểm mỗi generator chỉ đổi đúng kênh của nó, frame/FPS/
+duration khớp source; cộng builder manifest V2 và cổng metadata-shortcut.
+"""
 
 import importlib.util
 from pathlib import Path

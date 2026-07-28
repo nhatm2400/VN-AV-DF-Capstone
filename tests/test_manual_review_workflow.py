@@ -1,3 +1,10 @@
+"""End-to-end test cho quy trình lọc tay nhiều người.
+
+Chia assignment (primary disjoint + calibration dùng chung) rồi gộp kết quả: kiểm
+coverage đúng 1 lần/clip, clip bất đồng bị đẩy sang needs_adjudication thay vì âm
+thầm chọn một phía, và manifest cuối chỉ ra khi đã phân xử hết.
+"""
+
 import csv
 import json
 import subprocess

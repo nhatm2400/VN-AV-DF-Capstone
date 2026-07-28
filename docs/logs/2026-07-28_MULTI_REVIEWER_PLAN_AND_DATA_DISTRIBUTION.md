@@ -191,7 +191,7 @@ Tải về từ Drive rồi đặt ở đâu cũng được, ví dụ:
 D:\review\
 ├── final_clips_batch1\        3.001 file .mp4
 ├── roi_preview\               3.001 file .mp4
-├── assignment_nguyenvanlinh.csv
+├── assignment_nguyenvanlinh.csv or assignment_nguyenlamanh.csv
 └── clip_review.py
 ```
 
@@ -202,7 +202,7 @@ python clip_review.py `
     --csv assignment_nguyenvanlinh.csv `
     --media_root D:\review\final_clips_batch1 `
     --roi_dir D:\review\roi_preview `
-    --reviewer nguyenvanlinh
+    --reviewer nguyenvanlinh or nguyenlamanh
 ```
 
 Trình duyệt tự mở `http://127.0.0.1:8000`. Cổng bận thì thêm `--port 8001`.

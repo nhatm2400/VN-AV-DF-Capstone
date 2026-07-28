@@ -1,4 +1,9 @@
-"""Contract tests for the sample-exact temporal-desync generator."""
+"""Contract test cho generator temporal_desync — file test lớn nhất, phủ vùng khó nhất.
+
+Kiểm: xoay vòng audio đúng số sample (không dùng -itsoffset), video bitstream copy
+nguyên, structured timeline `av_timeline_v1` đúng cả hai hướng lệch, SNVSM re-encode
+đối xứng real/fake, và Stage 04/05 từ chối manifest sai cấu hình SNVSM.
+"""
 
 import csv
 from fractions import Fraction
