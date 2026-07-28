@@ -19,7 +19,7 @@ Các checkpoint cũ được giữ trong [`archives/2026_report_checkpoints/`](a
 ## Nhật ký làm việc
 
 - [2026-07-27 — Manual curation và audit dung lượng](logs/2026-07-27_MANUAL_CURATION_AND_STORAGE_AUDIT.md) — tóm tắt phiên phân tích manual review, giới hạn của mẫu 60 clip và phân loại dữ liệu có thể dọn.
-- [2026-07-28 — Kế hoạch multi-reviewer và phân phối dữ liệu](logs/2026-07-28_MULTI_REVIEWER_PLAN_AND_DATA_DISTRIBUTION.md) — tooling chia việc cho nhiều reviewer, số clip thực sự cần review, và bộ dữ liệu phải gửi cho reviewer.
+- [2026-07-28 — Multi-reviewer và phân phối dữ liệu](logs/2026-07-28_MULTI_REVIEWER_PLAN_AND_DATA_DISTRIBUTION.md) — tooling chia việc cho ba reviewer, số clip thực sự cần review, và bộ 7,3 GiB đã gom sẵn để phát.
 
 ## Thứ tự ưu tiên khi đọc
 
