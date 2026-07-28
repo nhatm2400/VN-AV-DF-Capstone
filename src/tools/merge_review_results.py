@@ -53,6 +53,10 @@ def main():
                     help="needs_adjudication.csv đã điền final_decision/final_reason/adjudicator")
     ap.add_argument("--final_clean",
                     default="data/02_curate/manifests/manual_clean_v2.csv")
+    ap.add_argument("--allow_partial", action="store_true",
+                    help="cho phép xuất manifest khi CHỦ Ý dừng sớm (đã đủ keep). "
+                         "Chỉ gộp clip đã có phán quyết; summary ghi partial=true. "
+                         "Clip bất đồng/uncertain vẫn chặn — phải phân xử trước.")
     args = ap.parse_args()
 
     manifest = read_csv(args.manifest)
@@ -150,8 +154,13 @@ def main():
         "clip_id", "file_path", "assignment_role", "reviewers", "decisions",
         "reasons", "final_decision", "final_reason", "adjudicator",
     ])
+    # Dừng sớm vì đã đủ keep là ý định hợp lệ, nhưng phải GHI RÕ là partial —
+    # manifest partial không đại diện cho toàn manifest, nên mọi tỉ lệ tính từ nó
+    # (keep-rate, phân bố tier/channel) chỉ áp cho phần đã review.
+    partial = bool(missing) and args.allow_partial
     summary = {
         "schema": "manual_review_merge_v1",
+        "partial": partial,
         "expected_judgements": len(expected),
         "received_judgements": len(actual),
         "missing_judgements": len(missing),
@@ -160,21 +169,33 @@ def main():
         "adjudicated_clips": adjudicated,
         "decisions_resolved": dict(Counter(d for d, _ in resolved.values())),
     }
+    if partial:
+        summary["reviewed_by_reviewer"] = dict(Counter(
+            reviewer for reviewer, _ in actual))
     with open(os.path.join(args.out_dir, "merge_summary.json"), "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
 
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     print(f"-> {pending_path}")
-    if missing or pending or len(resolved) != len(manifest):
+    blocked = pending or (missing and not args.allow_partial)
+    if blocked:
         if os.path.exists(args.final_clean):
             print(f"[CẢNH BÁO] Không ghi đè final manifest đang có: {args.final_clean}")
+        if missing and not args.allow_partial:
+            print(f"[GỢI Ý] Thiếu {len(missing)} phán quyết. Nếu CHỦ Ý dừng sớm "
+                  f"(đã đủ keep), chạy lại với --allow_partial.")
         raise SystemExit("[CHƯA XONG] Thiếu coverage hoặc còn clip cần phân xử")
 
-    clean = [row for row in manifest if resolved[row["clip_id"]][0] == "keep"]
+    reviewed_ids = set(resolved)
+    clean = [row for row in manifest
+             if row["clip_id"] in reviewed_ids and resolved[row["clip_id"]][0] == "keep"]
     if os.path.exists(args.final_clean):
         raise SystemExit(f"[LỖI] Final manifest đã tồn tại: {args.final_clean}")
     write_csv(args.final_clean, clean, list(manifest[0]))
-    print(f"-> {args.final_clean} ({len(clean)} keep/{len(manifest)})")
+    if partial:
+        print(f"[PARTIAL] {len(reviewed_ids)}/{len(manifest)} clip đã có phán quyết; "
+              f"{len(missing)} phán quyết còn thiếu.")
+    print(f"-> {args.final_clean} ({len(clean)} keep/{len(reviewed_ids)} đã review)")
 
 
 if __name__ == "__main__":
