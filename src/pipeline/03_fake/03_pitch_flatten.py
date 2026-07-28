@@ -39,7 +39,6 @@ import os
 import sys
 import csv
 import math
-import random
 import tempfile
 import argparse
 import subprocess
@@ -171,11 +170,12 @@ def main():
     ap.add_argument("--labels", default=DEFAULT_LABELS)
     ap.add_argument("--target", choices=["mean", "median"], default="mean",
                     help="làm phẳng F0 về trung bình hay trung vị của phát ngôn")
-    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--seed", type=int, default=42,
+                    help="giữ cho đồng bộ CLI với các generator khác; phép làm phẳng F0 "
+                         "là TẤT ĐỊNH nên seed không ảnh hưởng output")
     ap.add_argument("--limit", type=int, default=0, help="chỉ xử lý N clip đầu (để test)")
     args = ap.parse_args()
 
-    random.seed(args.seed)
     os.makedirs(args.out_dir, exist_ok=True)
     existing_rows = assert_manifest_compatible(args.labels)
 

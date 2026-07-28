@@ -148,7 +148,6 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="chỉ xử lý N clip đầu (để test)")
     args = ap.parse_args()
 
-    random.seed(args.seed)
     os.makedirs(args.out_dir, exist_ok=True)
     existing_rows = assert_manifest_compatible(args.labels)
 
@@ -180,12 +179,16 @@ def main():
         common_duration = min(media["audio_duration"], media["video_duration"])
 
         for k in range(args.n_per_clip):
-            d = random.uniform(args.min_sec, args.max_sec)
+            # RNG theo (seed, src_id, k) chứ KHÔNG phải random.seed() toàn cục: với seed
+            # toàn cục, cửa sổ đảo của một clip phụ thuộc thứ tự nó được xử lý, nên
+            # --limit, resume hay đổi thứ tự manifest đều cho ra tập fake khác.
+            rng = random.Random(f"{args.seed}:{src_id}:{k}")
+            d = rng.uniform(args.min_sec, args.max_sec)
             if common_duration <= d + 0.4:   # không đủ chỗ chừa 2 đầu -> bỏ
                 skipped += 1
                 continue
             fps = media["video_fps"]
-            start_frame = max(1, round(random.uniform(
+            start_frame = max(1, round(rng.uniform(
                 0.1, common_duration - d - 0.1
             ) * float(fps)))
             length_frames = max(2, round(d * float(fps)))

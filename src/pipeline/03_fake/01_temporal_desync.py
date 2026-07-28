@@ -335,7 +335,6 @@ def main():
     ap.add_argument("--limit", type=int, default=0, help="chỉ xử lý N clip đầu (để test)")
     args = ap.parse_args()
 
-    random.seed(args.seed)
     shifts = [int(s) for s in args.shifts.split(",") if s.strip()]
     os.makedirs(args.out_dir, exist_ok=True)
     existing_rows = assert_manifest_compatible(args.labels)
@@ -371,8 +370,12 @@ def main():
             signed_choices = [sign * n for n in shifts
                               for sign in ((1, -1) if args.both_dirs else (1,))]
         else:
-            n = random.choice(shifts)
-            signed_choices = [random.choice((1, -1)) * n]
+            # RNG theo (seed, src_id) chứ KHÔNG phải random.seed() toàn cục: với seed
+            # toàn cục, mức lệch của một clip phụ thuộc thứ tự nó được xử lý, nên
+            # --limit, resume hay đổi thứ tự manifest đều cho ra tập fake khác.
+            rng = random.Random(f"{args.seed}:{src_id}")
+            n = rng.choice(shifts)
+            signed_choices = [rng.choice((1, -1)) * n]
         for signed_frames in signed_choices:
             n = abs(signed_frames)
             t = Fraction(n, 1) / media["fps"]
