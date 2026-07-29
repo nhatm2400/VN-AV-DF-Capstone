@@ -11,7 +11,7 @@
   "face_model": "/kaggle/working/yolov8n-face.pt",
   "use_hwaccel_decode": true,
   "use_nvenc": true,
-  "create_zip": true,
+  "create_zip": false,
   "hash_media": true,
   "note": "Manifest Stage 03 Tier 3 đã được khôi phục tại commit 177de5a: 2274 filename unique."
 }

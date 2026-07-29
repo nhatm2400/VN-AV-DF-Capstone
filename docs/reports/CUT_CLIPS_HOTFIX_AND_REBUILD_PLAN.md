@@ -1,8 +1,11 @@
-# Kế hoạch hotfix Stage 04 Cut Clips và dựng lại dữ liệu downstream
+# Kế hoạch hotfix Stage 04 Cut Clips và dựng lại dữ liệu đến assignment review
 
 **Ngày audit:** 2026-07-29  
 **Phạm vi:** bắt đầu từ `04_cut_clips.ipynb`; không chạy lại bước thu thập, tải và quality gate từ Stage 03 trở về trước.  
-**Trạng thái:** P0 đã snapshot; P1 đã triển khai trong source và đang chờ Kaggle smoke.
+Kế hoạch kết thúc sau khi tạo, kiểm tra và export assignment review mới ở P5.
+Manual review, merge kết quả, sinh fake, trích feature và train nằm ngoài phạm vi.
+**Trạng thái:** P0 đã snapshot; P1 đã triển khai trong source; smoke Tier 1
+`2:11` đạt coverage `9/9`, nhưng chưa kiểm chứng CPU fallback thực tế trên Kaggle.
 Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
 
 ## 0. Nhật ký triển khai
@@ -15,7 +18,7 @@ Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
   ROI preview; không copy, move hoặc delete media.
 - Commit checkpoint P0 sau rebase: `2c4d5a5`.
 
-### P1 — source local hoàn tất, chưa chạy Kaggle
+### P1 — source local hoàn tất; Tier 1 smoke đã đạt coverage
 
 - `src/pipeline/01_collect/cut_clips_core.py`: fallback CUDA → CPU và
   NVENC → libx264, stable clip ID, atomic publish, terminal status và coverage
@@ -31,8 +34,12 @@ Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
 - Kiểm thử local hiện tại: **37 pass, 1 skip**. Test bị skip là real-data smoke chỉ chạy
   khi bật `RUN_REAL_AV_AUDIT=1`; compile Python và compile 5 code cell notebook
   đều đạt.
-- Chưa có bằng chứng Kaggle GPU/smoke, chưa có full cut mới và chưa thay canonical
-  data. Tier 2/Tier 3 vẫn cần khóa Kaggle raw-media path.
+- Tier 1 smoke `2:11` trên Kaggle đã xử lý đủ `9/9` input, tạo `473` clip,
+  `coverage_passed=true`, decode bằng CUDA và cut bằng NVENC. Smoke này chưa
+  kích hoạt CPU/libx264 fallback nên chưa phải bằng chứng thực tế cho hai nhánh
+  fallback trên Kaggle.
+- Chưa có full cut mới và chưa thay canonical data. Tier 2/Tier 3 vẫn cần khóa
+  Kaggle raw-media path.
 
 ### P2 — manifest đã khóa, chờ đối chiếu raw media trên Kaggle
 
@@ -77,15 +84,14 @@ Thứ tự đúng là:
   → chạy lại đủ Tier 1/2/3 trên Kaggle
   → kiểm coverage và media contract
   → dựng lại manifest + toàn bộ curation
-  → manual review lại trên scope mới
-  → sinh fake V2 + SNVSM + metadata gate
-  → build labels chống leakage
-  → extract feature mới
-  → repaired pilot V2a
+  → dựng review manifest + ROI preview
+  → chia và export assignment review mới
+  → DỪNG tại P5
 ```
 
-Không train full ngay sau hotfix. Điểm dừng tiếp theo vẫn là repaired pilot V2a
-và các gate đã quy định trong `MODEL_PROPOSAL.md`.
+Manual review thực tế và mọi bước modeling sau đó là một kế hoạch riêng. Lỗi
+đang hotfix làm sai population từ Cut Clips đến scope/assignment review; không
+có lý do đưa sinh fake, feature hay train vào phạm vi chạy lại hiện tại.
 
 ## 2. Phạm vi đã rà soát
 
@@ -94,10 +100,8 @@ và các gate đã quy định trong `MODEL_PROPOSAL.md`.
 - `src/pipeline/01_collect/` — thu thập, quality gate, Stage 04 Cut Clips theo tier.
 - `src/pipeline/02_curate/` — manifest, face/embedding, motion, sync, curate, EDA.
 - `src/tools/` — face ambiguity, ROI preview, review manifest, chia và merge reviewer.
-- `src/pipeline/03_fake/` — bốn generator V2, hợp nhất manifest, SNVSM, metadata gate.
-- `src/pipeline/04_extract_features/` — mouth ROI, Wav2Vec2 và prosody.
-- `src/pipeline/05_build_labels/` — contract, ghép cặp real-fake và split.
-- `src/train/`, `src/eval/`, `src/model/` và các test hiện có.
+- Các stage fake/labels/feature/model chỉ được rà để xác định ranh giới ảnh
+  hưởng; không thuộc các bước thực thi P0–P5 của kế hoạch này.
 
 ### 2.2 Artifact hiện tại
 
@@ -258,16 +262,12 @@ quyết định nếu đồng thời khớp:
 
 Không tái sử dụng chỉ vì `clip_id` giống nhau.
 
-### 4.5 Fake, feature, labels và experiment
+### 4.5 Ranh giới với các stage sau assignment
 
-Source V2 hiện có thể dùng tiếp sau khi real manifest mới được manual-review,
-nhưng mọi media/manifest mới phải dùng run ID mới:
-
-- bốn fake generator phải chạy lại từ real clean mới;
-- `fake_all.csv`, SNVSM real/fake và metadata gate phải dựng lại;
-- labels/split phải dựng lại vì speaker/source population đã đổi;
-- feature phải extract vào store mới, không dùng `--skip_existing` trên store cũ;
-- pilot/full experiment phải có run ID bất biến mới.
+Fake, labels, feature và experiment chưa được sinh từ population mới, nên không
+có artifact hiện hành nào ở các stage đó cần sửa hoặc xóa trong hotfix này.
+Chúng chỉ được xem xét sau khi manual review mới hoàn tất, theo một kế hoạch
+riêng; P0–P5 không chạy bất kỳ generator, extractor hoặc training job nào.
 
 ## 5. Thiết kế hotfix Stage 04 đề xuất
 
@@ -471,42 +471,36 @@ Thứ tự bắt buộc:
 6. chốt config curate có log, rồi chạy `04_curate.py`
 7. `05_eda.py`
 8. `scan_face_ambiguity.py`
-9. `build_review_manifest.py`
-10. `build_roi_preview.py`
-11. `build_review_assignments.py`
-12. `export_review_batch.py`
 
 Gate P4:
 
 - số dòng nhất quán qua mọi phép join;
 - embedding N×512 khớp đúng N dòng scored;
 - không missing path, duplicate clip ID hoặc source/tier rỗng;
-- `gate_rejected + balance_dropped + clean = scored`;
-- ROI preview coverage đạt 100% hoặc mọi failure được chặn trước khi giao review;
-- assignment primary phủ đúng một lần mỗi clip và calibration phủ đủ reviewer.
+- `gate_rejected + balance_dropped + clean = scored`.
 
-### P5 — manual review lại
+### P5 — dựng scope và chia assignment review
 
-1. Chọn calibration set từ manifest mới.
-2. Reuse quyết định cũ chỉ qua exact media hash + exact interval.
-3. Chia lại assignment theo tier, không chia theo dải liên tiếp.
-4. Merge fail-closed và phân xử disagreement/uncertain.
-5. Chỉ publish real clean mới khi coverage mục tiêu đã đạt và provenance đầy đủ.
+1. Chạy `build_review_manifest.py` từ `all_clean.csv` mới.
+2. Chạy `build_roi_preview.py` và kiểm coverage.
+3. Chọn calibration set từ manifest mới.
+4. Chạy `build_review_assignments.py`; primary disjoint, phân tầng theo tier,
+   không chia theo dải liên tiếp.
+5. Chạy `export_review_batch.py` để tạo gói giao cho từng reviewer.
+6. Kiểm mỗi assignment chỉ trỏ media/ROI thuộc run mới, đúng reviewer ID và
+   rubric version.
 
-### P6 — dựng lại fake V2 đến repaired pilot
+Gate P5:
 
-1. Chạy `01_temporal_desync.py`.
-2. Chạy `02_frame_reverse.py`.
-3. Chạy `03_pitch_flatten.py`.
-4. Chạy `04_anonymization.py`.
-5. Chạy `06_build_fake_manifest_v2.py`.
-6. Chạy SNVSM cho real và fake bằng cùng config.
-7. Chạy `05_build_labels/01_build_labels.py` bằng manifest SNVSM được truyền rõ.
-8. Chạy metadata shortcut gate trên toàn repaired-pilot scope.
-9. Chỉ khi gate đạt mới chạy `04_extract_features/01_extract_features.py` vào
-   feature store mới.
-10. Chạy repaired pilot V2a trong `experiments/<run_id-bất-biến>/`.
-11. Chỉ xem xét full training sau khi pilot qua các gate model/data đã định.
+- review manifest không thiếu path hoặc duplicate clip ID;
+- ROI preview đạt 100% coverage, hoặc mọi clip lỗi bị chặn trước khi chia;
+- mỗi primary clip xuất hiện đúng một assignment;
+- calibration clip xuất hiện đủ ở tất cả reviewer;
+- gói export của từng reviewer đủ CSV, media và ROI cần thiết;
+- chưa chạy manual review/merge và chưa đụng các stage fake trở đi.
+
+**Kế hoạch dừng tại đây.** Manual review, adjudication/merge, publish real clean,
+sinh fake, build labels, extract feature và train không thuộc hotfix P0–P5 này.
 
 ## 8. Kế hoạch giữ, archive, thay thế và xóa
 
@@ -523,7 +517,7 @@ Gate P4:
 | `assignments/v2/` cũ | **Archive; tạo version mới** | Không overwrite giữa lúc có người review |
 | CSV manual cũ/kết quả đang làm | **Giữ vĩnh viễn như provenance** | Có thể reuse chỉ bằng exact hash/interval |
 | `final_clips_batch1/` cũ (6,835 GiB) | **Xóa có điều kiện** | Sau khi batch review mới đã export, verify và phân phối |
-| `data/03_fake/`, `data/04_features/`, `data/05_labels/` hiện hành | **Không cần xóa** | Hiện chỉ có `.gitkeep`; lần mới dùng run/version mới |
+| `data/03_fake/`, `data/04_features/`, `data/05_labels/` hiện hành | **Không đụng tới** | Ngoài phạm vi P0–P5; hiện chỉ có `.gitkeep` |
 | `archive/pilot_v1/`, `archive/phase0_v2_smoke/` | **Giữ nguyên** | Bằng chứng lịch sử |
 | `experiments/pilot_v1_*` | **Giữ nguyên, bất biến** | Không dùng làm output lần mới |
 | Báo cáo pilot V1 | **Giữ nhưng gắn trạng thái lịch sử** | Không sửa số đo đã quan sát |
@@ -545,20 +539,21 @@ Hotfix Stage 04 chỉ được coi là xong khi:
 - rerun cùng input/config tạo cùng clip identity;
 - cut run mới chưa ghi đè dữ liệu cũ trước khi qua gate.
 
-Quá trình dựng lại chỉ được coi là xong khi:
+Quá trình dựng lại trong phạm vi kế hoạch này chỉ được coi là xong khi:
 
-- curation mới có đầy đủ lineage và manual review mới;
-- fake V2/SNVSM/labels/feature đều trỏ real clean mới;
-- split tiếp tục speaker/source-video-disjoint;
-- metadata shortcut gate đạt;
-- repaired pilot V2a có run bất biến và report riêng.
+- curation mới có lineage đầy đủ và partition khớp;
+- review manifest/ROI preview mới đạt contract;
+- assignment primary/calibration đúng coverage và reviewer;
+- từng gói review đã export và kiểm đủ file;
+- chưa ghi đè dữ liệu cũ và chưa chạy bước sau P5.
 
 ## 10. Việc cần làm ngay tiếp theo
 
-Việc tiếp theo là **P0 + P1**, không phải chạy Kaggle ngay:
+Việc tiếp theo là hoàn tất **P3 → P5**:
 
-1. snapshot artifact cũ và thu kết quả reviewer đang làm dở;
-2. sửa Stage 04 thành core testable + notebook/config chuẩn;
-3. thêm test fallback và coverage;
-4. chạy Kaggle smoke;
-5. chỉ sau smoke đạt mới mở full rerun Tier 1/2/3.
+1. chạy full Tier 1 theo các batch bất biến và kiểm Gate C;
+2. sau đó chạy đủ Tier 2/Tier 3 khi raw mount đã đối chiếu xong;
+3. merge cut output vào staging, không ghi đè canonical trước gate;
+4. chạy lại curation P4;
+5. dựng review scope, ROI, assignment và export gói review ở P5;
+6. dừng kế hoạch, bàn giao assignment cho team.

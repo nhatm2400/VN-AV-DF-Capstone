@@ -11,6 +11,6 @@
   "face_model": "/kaggle/working/yolov8n-face.pt",
   "use_hwaccel_decode": true,
   "use_nvenc": true,
-  "create_zip": true,
+  "create_zip": false,
   "hash_media": true
 }
