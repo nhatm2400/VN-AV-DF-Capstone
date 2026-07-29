@@ -8,7 +8,8 @@ Tier 3 trong repo thực tế vẫn trỏ Tier 1, còn Tier 2 không có noteboo
 
 Quy trình:
 
-1. khóa input inventory từ output Stage 03;
+1. khóa input inventory từ output Stage 03 đã commit trong
+   `data/01_collect/tier{1,2,3}_quality_gate_passed.csv`;
 2. chọn config tier, Git SHA, run ID và batch range trong notebook;
 3. chạy smoke trước;
 4. chạy các batch không overlap;
@@ -16,3 +17,7 @@ Quy trình:
 
 Không tái sử dụng run ID và không ghi output mới vào
 `data/01_collect/cut_clips/` trước khi toàn bộ Gate C đạt.
+
+Số input đã khóa: Tier 1 = 472, Tier 2 = 292, Tier 3 = 2.274. Notebook tự lấy
+ba manifest này từ repo tại Git SHA đã checkout; Kaggle Input chỉ cần cung cấp
+đúng raw-media mount cho tier đang chạy.

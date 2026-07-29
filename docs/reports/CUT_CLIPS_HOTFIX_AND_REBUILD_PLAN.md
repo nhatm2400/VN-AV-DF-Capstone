@@ -13,7 +13,7 @@ Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
 - Đã lưu checksum 65 file nhỏ, 15 cut CSV/log và inventory cho media cũ.
 - Media cũ vẫn nguyên vị trí: 6.888 cut MP4, 3.001 MP4 batch review và 3.001
   ROI preview; không copy, move hoặc delete media.
-- Commit checkpoint P0: `db80dda`.
+- Commit checkpoint P0 sau rebase: `2c4d5a5`.
 
 ### P1 — source local hoàn tất, chưa chạy Kaggle
 
@@ -28,29 +28,27 @@ Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
 - Các output measurement/curation mặc định không ghi đè; curation xuất đủ ba
   partition `gate rejected + balance dropped + clean = scored`, kèm config và
   SHA-256 input.
-- Kiểm thử local hiện tại: **36 pass, 1 skip**. Test bị skip là real-data smoke chỉ chạy
+- Kiểm thử local hiện tại: **37 pass, 1 skip**. Test bị skip là real-data smoke chỉ chạy
   khi bật `RUN_REAL_AV_AUDIT=1`; compile Python và compile 5 code cell notebook
   đều đạt.
 - Chưa có bằng chứng Kaggle GPU/smoke, chưa có full cut mới và chưa thay canonical
-  data. Tier 2 vẫn cần khóa Kaggle path; Tier 3 vẫn fail-closed với
-  `expected_input_count=0` cho tới khi khôi phục manifest Stage 03.
+  data. Tier 2/Tier 3 vẫn cần khóa Kaggle raw-media path.
 
-### P2 — preflight local một phần
+### P2 — manifest đã khóa, chờ đối chiếu raw media trên Kaggle
 
 - Tier 1 quality manifest: `472` dòng, `472` filename unique; raw local có đủ
   `472/472`, ngoài ra còn 42 file không thuộc tập quality-pass.
 - Tier 2 quality manifest: `292` dòng, `292` filename unique. Repo local không
   chứa raw Tier 2 nên chưa kiểm được media 1–1; phải kiểm trên Kaggle mount.
-- Tier 3 không có quality CSV gốc hoặc raw local. Từ cut logs đã snapshot có thể
-  phục hồi **danh sách chính xác 1.262 source ID** chứ không chỉ con số tổng:
-  163 source xuất hiện trong accepted log, 1.251 trong reject log, union là
-  1.262 source numeric 19 chữ số.
-- Inventory phục hồi nằm tại
+- Tier 3 quality manifest đã được teammate khôi phục ở commit `177de5a`:
+  `2.274` dòng, `2.274` filename unique. Repo local không chứa raw Tier 3 nên
+  chưa kiểm được media 1–1.
+- Inventory phục hồi trước đó tại
   `archive/cut_clips_v1_decode_bug/tier3_recovered_input_inventory.csv`, kèm
-  checksum provenance. Đây không phải quality-gate manifest thay thế; chỉ được
-  dùng sau khi khớp 1–1 với 1.262 raw MP4 trên Kaggle.
-- P2 chưa hoàn tất vì còn thiếu path/mount raw Tier 2, raw Tier 3 và quality
-  manifest Tier 3 gốc hoặc bằng chứng 1–1 tương đương trên Kaggle.
+  checksum provenance, chỉ có 1.262 source của cut run cũ. So với manifest
+  2.274, cut cũ chưa xử lý **1.012 source Tier 3**.
+- Notebook lấy cả ba quality manifest trực tiếp từ exact Git SHA. P2 chỉ còn
+  thiếu đối chiếu manifest/media 1–1 trên Kaggle raw mount Tier 2 và Tier 3.
 
 ## 1. Kết luận điều hành
 
@@ -63,6 +61,8 @@ Lỗi chính không nằm ở việc các ngưỡng face/speech quá gắt:
 - `1.413` video đã dừng ngay ở `video_decode_failed`, trước khi được xét
   `face_ratio`, `speech_ratio` hay scene cut.
 - Tier 2 chỉ xử lý `123/292` video quality-pass; còn thiếu hoàn toàn `169` video.
+- Tier 3 chỉ xử lý `1.262/2.274` video quality-pass; còn thiếu hoàn toàn
+  `1.012` video.
 - Có thêm `810` cửa sổ bị `ffmpeg_cut_failed`. Chưa thể kết luận tất cả đều cứu
   được, nhưng code hiện tại cũng bỏ qua return code/stderr và không có fallback.
 - Notebook Tier 3 trong repo vẫn mang toàn bộ cấu hình Tier 1; Tier 2 không có
@@ -122,11 +122,12 @@ và các gate đã quy định trong `MODEL_PROPOSAL.md`.
 |---|---:|---:|---:|---:|---:|
 | Tier 1 | 472 | 472 | 70 | 402 | 386 |
 | Tier 2 | 292 | 123 | 13 | 110 | 108 |
-| Tier 3 | chưa có manifest quality-pass trong repo | 1.262 theo log cut | 163 | 1.099 | 919 |
-| **Tổng đo được** | — | 1.857 | 246 | 1.611 | **1.413** |
+| Tier 3 | 2.274 | 1.262 | 163 | 1.099 | 919 |
+| **Tổng** | **3.038** | **1.857** | **246** | **1.611** | **1.413** |
 
 Với Tier 2, `292 - 123 = 169` video quality-pass không xuất hiện trong accepted
 log lẫn reject log. Đây là thiếu coverage do phạm vi chạy, không phải bị filter.
+Tier 3 có cùng lỗi phạm vi lớn hơn: `2.274 - 1.262 = 1.012` video chưa được xử lý.
 
 ### 3.2 Dataset cũ được tạo ra như thế nào
 
@@ -170,8 +171,9 @@ trước khi kết luận nguyên nhân cho từng cửa sổ.
 - `tier3/04_cut_clips.ipynb` vẫn có `TIER_NAME="tier1"`, dataset Tier 1 và input
   CSV Tier 1.
 - `tier2/04_cut_clips.ipynb` không tồn tại.
-- Repo chưa có `tier3_quality_gate_passed.csv`. Stage 03 Tier 3 hiện còn ghi
-  output về `data/` thay vì `data/01_collect/`, không khớp layout hiện tại.
+- Tại thời điểm audit, repo chưa có `tier3_quality_gate_passed.csv`. Artifact này
+  đã được teammate bổ sung vào canonical path ở commit `177de5a`; source Stage 03
+  vẫn còn default output cũ tại `data/` và cần sửa path nếu chạy lại trong tương lai.
 
 Kết luận: không sửa bằng cách đổi riêng `USE_HWACCEL_DECODE=False` rồi chạy.
 Hotfix phải đồng thời khóa code, config, input inventory, output manifest và
@@ -437,13 +439,13 @@ infrastructure khỏi lỗi chất lượng dữ liệu.
 
 1. Tier 1: xác nhận đủ `472` filename quality-pass và media trên Kaggle.
 2. Tier 2: xác nhận đủ `292` filename quality-pass và media trên Kaggle.
-3. Tier 3: khôi phục/export manifest quality-pass chuẩn từ output Stage 03; không
-   chỉ dựa vào con số `1.262` suy ra từ log cut cũ.
+3. Tier 3: manifest quality-pass chuẩn đã được khôi phục với 2.274 filename
+   unique; đối chiếu đủ 2.274 raw media trên Kaggle.
 4. Kiểm filename unique, media tồn tại, probe được và không có input ngoài
    manifest.
 5. Lưu ba input inventory cùng checksum vào run.
 
-Stage 01–03 không chạy lại. Việc khôi phục manifest Tier 3 là khóa provenance
+Stage 01–03 không chạy lại. Manifest Tier 3 đã được khôi phục để khóa provenance
 cho output Stage 03 đã đúng, không phải thay đổi tập dữ liệu.
 
 ### P3 — chạy lại Cut Clips trên Kaggle

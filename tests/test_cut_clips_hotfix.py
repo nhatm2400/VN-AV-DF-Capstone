@@ -1,5 +1,6 @@
 """Contract test cho hotfix Stage 04 Cut Clips."""
 
+import csv
 import importlib.util
 import shutil
 import subprocess
@@ -48,6 +49,24 @@ def config(**overrides):
 
 
 class CutClipsHotfixTest(unittest.TestCase):
+    def test_tier_configs_lock_exact_repo_manifest_counts(self):
+        expected = {"tier1": 472, "tier2": 292, "tier3": 2274}
+        for tier, expected_count in expected.items():
+            config_path = (
+                ROOT / "src/pipeline/01_collect/configs" / f"{tier}.json"
+            )
+            cfg = CORE.CutConfig.from_json(config_path)
+            manifest_path = (
+                ROOT / "data/01_collect" / f"{tier}_quality_gate_passed.csv"
+            )
+            with manifest_path.open(encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+            filenames = [row.get("filename", "").strip() for row in rows]
+            self.assertEqual(cfg.expected_input_count, expected_count)
+            self.assertEqual(len(rows), expected_count)
+            self.assertTrue(all(filenames))
+            self.assertEqual(len(set(filenames)), expected_count)
+
     def test_stable_clip_id_does_not_depend_on_order(self):
         windows = [(9.125, 14.125), (30.5, 35.5), (1.0, 4.0)]
         forward = {

@@ -11,9 +11,10 @@ CUDA decode và chạy lại Cut Clips.
   đó bị Git bỏ qua.
 - `tier3_recovered_input_inventory.csv` là union chính xác của `source_video`
   trong accepted log và `video` trong reject log cũ: 1.262 source, tên file
-  phục hồi theo `<source_video>.mp4`. Đây chỉ là inventory để đối chiếu 1–1
-  với raw media trên Kaggle, không phải quality-gate manifest Stage 03 gốc.
-  Checksum nguồn và cảnh báo nằm trong file `.summary.json` cùng tên.
+  phục hồi theo `<source_video>.mp4`. Đây là inventory **của cut run cũ**, không
+  phải toàn bộ quality-pass Tier 3. Manifest Stage 03 được khôi phục sau đó có
+  2.274 nguồn, qua đó xác nhận cut cũ chưa hề xử lý 1.012 nguồn. Checksum nguồn
+  và cảnh báo nằm trong file `.summary.json` cùng tên.
 
 Tạo snapshot bằng:
 
