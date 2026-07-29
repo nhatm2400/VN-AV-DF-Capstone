@@ -14,7 +14,7 @@ Chạy trên Kaggle T4 (ctx_id=0). Clip ngắn nên decode rẻ -> không cần 
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
   python 02_score_clips.py
-  -> đọc data/clips/all_manifest.csv, xuất
+  -> đọc data/01_collect/cut_clips/all_manifest.csv, xuất
      data/02_curate/measurements/tier1_scored_all.csv + embeddings_all.npy
   GPU Windows: file đã gọi onnxruntime.preload_dlls() để onnxruntime-gpu thấy CUDA;
      cần env có onnxruntime-gpu + nvidia-cudnn-cu12==9.8.0.87 (xem memory env). Không
@@ -177,15 +177,44 @@ def score_clip(app, path, k_frames):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input_csv", default="data/clips/all_manifest.csv",
+    ap.add_argument("--input_csv", default="data/01_collect/cut_clips/all_manifest.csv",
                     help="manifest từ 01_prep_manifest (mặc định local)")
     ap.add_argument("--out_dir", default="data/02_curate/measurements")
     ap.add_argument("--tag", default="all", help="hậu tố tên file output")
     ap.add_argument("--path_col", default="file_path", help="cột chứa đường dẫn .mp4")
     ap.add_argument("--k_frames", type=int, default=K_FRAMES, help="số frame lấy mẫu mỗi clip")
+    ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
 
     df = pd.read_csv(args.input_csv)
+    required = {"clip_id", args.path_col}
+    missing_cols = sorted(required - set(df.columns))
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+    if df.empty:
+        raise ValueError("Input manifest is empty")
+    if df["clip_id"].isna().any() or df["clip_id"].duplicated().any():
+        raise ValueError("clip_id must be non-empty and unique")
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    csv_out = os.path.join(args.out_dir, f"tier1_scored_{args.tag}.csv")
+    npy_out = os.path.join(args.out_dir, f"embeddings_{args.tag}.npy")
+    existing = [p for p in (csv_out, npy_out) if os.path.exists(p)]
+    if existing and not args.overwrite:
+        raise FileExistsError(
+            "Output already exists; pass --overwrite only for an intentional rerun: "
+            + ", ".join(existing)
+        )
+
+    missing_paths = [
+        str(path) for path in df[args.path_col]
+        if not isinstance(path, str) or not os.path.isfile(path)
+    ]
+    if missing_paths:
+        raise FileNotFoundError(
+            f"{len(missing_paths)}/{len(df)} media paths do not exist. "
+            f"Examples: {', '.join(missing_paths[:5])}"
+        )
     print(f"Đọc {len(df)} clip từ {args.input_csv}  (k_frames={args.k_frames})")
 
     # InsightFace: detection + recognition, chạy GPU (ctx_id=0)
@@ -195,21 +224,16 @@ def main():
     det_ratios, face_areas, has_emb, n_sampled, consist = [], [], [], [], []
     embeddings = np.zeros((len(df), EMBED_DIM), dtype=np.float32)
 
-    missing = 0  # file_path không tồn tại (cạm bẫy path Kaggle -> fail ÂM THẦM)
+    failures = []
     t0 = time.time()
     for i, row in enumerate(df.itertuples(index=False)):
         path = getattr(row, args.path_col)
-        if not isinstance(path, str) or not os.path.isfile(path):
-            missing += 1
+        try:
+            r = score_clip(app, path, args.k_frames)
+        except Exception as e:
+            failures.append((str(path), str(e)))
             r = dict(det_ratio=0.0, mean_face_area=0.0, embedding=None,
                      n_sampled=0, embed_consistency=0.0)
-        else:
-            try:
-                r = score_clip(app, path, args.k_frames)
-            except Exception as e:
-                print(f"[LỖI] {path}: {e}")
-                r = dict(det_ratio=0.0, mean_face_area=0.0, embedding=None,
-                         n_sampled=0, embed_consistency=0.0)
 
         det_ratios.append(r["det_ratio"])
         face_areas.append(r["mean_face_area"])
@@ -231,11 +255,25 @@ def main():
     df["n_sampled"] = n_sampled
     df["embed_consistency"] = consist
 
-    os.makedirs(args.out_dir, exist_ok=True)
-    csv_out = os.path.join(args.out_dir, f"tier1_scored_{args.tag}.csv")
-    npy_out = os.path.join(args.out_dir, f"embeddings_{args.tag}.npy")
-    df.to_csv(csv_out, index=False)
-    np.save(npy_out, embeddings)
+    if failures:
+        preview = "; ".join(f"{path}: {error}" for path, error in failures[:5])
+        raise RuntimeError(
+            f"Refusing to publish: scoring failed for {len(failures)}/{len(df)} clips. "
+            f"Examples: {preview}"
+        )
+
+    csv_partial = csv_out + ".partial"
+    npy_partial = npy_out + ".partial"
+    try:
+        df.to_csv(csv_partial, index=False)
+        with open(npy_partial, "wb") as f:
+            np.save(f, embeddings)
+        os.replace(csv_partial, csv_out)
+        os.replace(npy_partial, npy_out)
+    finally:
+        for partial in (csv_partial, npy_partial):
+            if os.path.exists(partial):
+                os.remove(partial)
 
     no_face = len(has_emb) - sum(has_emb)
     print(f"\nXong {len(df)} clip trong {(time.time()-t0)/60:.1f} phút")
@@ -243,13 +281,7 @@ def main():
     print(f"  CSV : {csv_out}")
     print(f"  NPY : {npy_out}  shape={embeddings.shape}")
 
-    # --- Cảnh báo: bắt lỗi path sai (fail âm thầm), thay vì "chạy xong mà toàn rác" ---
-    if missing:
-        pct = missing / len(df) * 100
-        print(f"\n[CẢNH BÁO] {missing}/{len(df)} ({pct:.1f}%) file_path KHÔNG TỒN TẠI.")
-        print("  Nhiều khả năng file_path là đường dẫn Kaggle/môi trường khác.")
-        print("  PHẢI remap file_path về đường dẫn thực rồi chạy lại — kết quả hiện tại không tin được.")
-    elif no_face / len(df) > 0.5:
+    if no_face / len(df) > 0.5:
         print(f"\n[CẢNH BÁO] {no_face}/{len(df)} (>50%) clip 'không mặt'. "
               "Kiểm tra lại đường dẫn / video lỗi trước khi tin kết quả.")
 

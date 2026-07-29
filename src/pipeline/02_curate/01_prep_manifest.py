@@ -10,10 +10,10 @@ Ba vấn đề thực tế cần xử lý trước khi đo:
      đã loại đúng, KHÔNG hề ghi thiếu.
   3) => Phải VERIFY từng .mp4 bằng ffprobe và loại file hỏng (mặc định bật).
 
-Cách chạy: liệt kê mọi .mp4 dưới --clips_root, clip_id = tên file, parse
-source_video + start_time từ tên ({source_video}_clip{idx}_t{start}.mp4), ghép
-metadata CSV nếu có, verify ffprobe, rồi gộp tier + remap file_path về đĩa thật.
-Cột has_cut_meta = 1 nếu clip có trong CSV log (đã qua đủ filter bước cắt).
+Cách chạy: accepted CSV của Stage 04 là NGUỒN CHÂN LÝ. Script đối chiếu 1-1
+accepted row ↔ MP4 dưới --clips_root, verify ffprobe, rồi gộp tier + remap
+file_path về đĩa thật. Thiếu media, media mồ côi hoặc clip_id trùng đều fail.
+Cột has_cut_meta luôn bằng 1.
 
 Lưu ý: 4 file ở data/ (youtube_*_urls.csv = bước 00; *_quality_gate_passed.csv =
 bước 02) là CẤP VIDEO, KHÔNG phải clip CSV — đừng dùng làm input cho script này.
@@ -22,15 +22,15 @@ Chỉ dùng thư viện chuẩn + ffprobe trong PATH -> chạy mọi nơi, khôn
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, chạy từ thư mục gốc dự án):
   python 01_prep_manifest.py
-  -> tự gộp 3 tier trong data/clips/ (glob ** quét mọi batch), verify ffprobe,
-     xuất data/clips/all_manifest.csv
+  -> tự gộp 3 tier trong data/01_collect/cut_clips/ (glob ** quét mọi batch),
+     verify ffprobe, xuất data/01_collect/cut_clips/all_manifest.csv
 
 Dùng tùy chỉnh / KAGGLE (truyền path /kaggle/input/...):
   python 01_prep_manifest.py \\
-    --add tier1 "data/clips/tier1/**/*_v3_clips_*.csv" "data/clips/tier1" \\
-    --add tier2 "data/clips/tier2/**/*_v3_clips_*.csv" "data/clips/tier2" \\
-    --add tier3 "data/clips/tier3/**/*_v3_clips_*.csv" "data/clips/tier3" \\
-    --out data/clips/all_manifest.csv
+    --add tier1 "data/01_collect/cut_clips/tier1/**/accepted_clips.csv" "data/01_collect/cut_clips/tier1" \\
+    --add tier2 "data/01_collect/cut_clips/tier2/**/accepted_clips.csv" "data/01_collect/cut_clips/tier2" \\
+    --add tier3 "data/01_collect/cut_clips/tier3/**/accepted_clips.csv" "data/01_collect/cut_clips/tier3" \\
+    --out data/01_collect/cut_clips/all_manifest.csv
   # thêm --no_verify nếu muốn bỏ qua bước ffprobe (nhanh hơn, kém an toàn)
 
 Tiếp theo: python 02_score_clips.py --input_csv <manifest> --tag <tag>
@@ -42,17 +42,23 @@ import glob
 import argparse
 import subprocess
 
-FIELDS = ["clip_id", "source_video", "start_time", "end_time", "duration",
-          "face_ratio", "speech_ratio", "snr", "file_path", "tier", "has_cut_meta"]
+FIELDS = [
+    "clip_id", "source_video", "start_time", "end_time", "duration",
+    "face_ratio", "speech_ratio", "snr", "file_path", "tier", "has_cut_meta",
+    "decode_backend", "cut_backend", "run_id",
+]
 
 # Mặc định local: chạy thẳng `python 01_prep_manifest.py` không cần tham số.
 # (Override bằng --add khi chạy nơi khác, vd Kaggle /kaggle/input/...)
 DEFAULT_ADDS = [
-    ["tier1", "data/clips/tier1/**/*_v3_clips_*.csv", "data/clips/tier1"],
-    ["tier2", "data/clips/tier2/**/*_v3_clips_*.csv", "data/clips/tier2"],
-    ["tier3", "data/clips/tier3/**/*_v3_clips_*.csv", "data/clips/tier3"],
+    ["tier1", "data/01_collect/cut_clips/tier1/**/accepted_clips.csv",
+     "data/01_collect/cut_clips/tier1"],
+    ["tier2", "data/01_collect/cut_clips/tier2/**/accepted_clips.csv",
+     "data/01_collect/cut_clips/tier2"],
+    ["tier3", "data/01_collect/cut_clips/tier3/**/accepted_clips.csv",
+     "data/01_collect/cut_clips/tier3"],
 ]
-DEFAULT_OUT = "data/clips/all_manifest.csv"
+DEFAULT_OUT = "data/01_collect/cut_clips/all_manifest.csv"
 
 
 def is_valid_video(path):
@@ -68,16 +74,6 @@ def is_valid_video(path):
         return False
 
 
-def parse_name(stem):
-    """{source_video}_clip{idx}_t{start} -> (source_video, start_sec) hoặc (None, None)."""
-    try:
-        head, start = stem.rsplit("_t", 1)
-        vid, _idx = head.rsplit("_clip", 1)
-        return vid, int(start)
-    except ValueError:
-        return None, None
-
-
 def load_meta(csv_glob):
     """Đọc & gộp CSV khớp glob -> dict {clip_id: row}."""
     meta = {}
@@ -88,7 +84,14 @@ def load_meta(csv_glob):
         with open(f, newline="", encoding="utf-8") as fh:
             n = 0
             for r in csv.DictReader(fh):
-                meta[r["clip_id"]] = r
+                clip_id = r.get("clip_id", "").strip()
+                if not clip_id:
+                    raise ValueError(f"clip_id rỗng trong {f}")
+                if clip_id in meta:
+                    raise ValueError(
+                        f"clip_id trùng giữa batch/CSV: {clip_id}"
+                    )
+                meta[clip_id] = r
                 n += 1
         print(f"    + {f}  ({n} dong)")
     return meta
@@ -98,43 +101,46 @@ def prep_tier(tier, csv_glob, clips_root, verify=True):
     print(f"\n[{tier}]")
     meta = load_meta(csv_glob)
 
-    rows, seen, parse_fail, corrupt = [], set(), 0, 0
+    rows = []
     mp4s = sorted(glob.glob(os.path.join(clips_root, "**", "*.mp4"), recursive=True))
-    for p in mp4s:
-        stem = os.path.splitext(os.path.basename(p))[0]
-        if stem in seen:
+    media = {}
+    for path in mp4s:
+        clip_id = os.path.splitext(os.path.basename(path))[0]
+        if clip_id in media:
+            raise ValueError(f"MP4 trùng clip_id dưới {clips_root}: {clip_id}")
+        media[clip_id] = path
+
+    missing_media = sorted(set(meta) - set(media))
+    orphan_media = sorted(set(media) - set(meta))
+    if missing_media or orphan_media:
+        raise ValueError(
+            f"{tier} accepted/media không 1-1: thiếu={len(missing_media)} "
+            f"vd={missing_media[:3]}, mồ_côi={len(orphan_media)} "
+            f"vd={orphan_media[:3]}"
+        )
+
+    corrupt = []
+    for clip_id, m in sorted(meta.items()):
+        path = media[clip_id]
+        if verify and not is_valid_video(path):
+            corrupt.append(clip_id)
             continue
-        seen.add(stem)
-
-        if verify and not is_valid_video(p):
-            corrupt += 1
-            continue
-
-        m = meta.get(stem)
-        vid, start = parse_name(stem)
-        if not m and vid is None:
-            parse_fail += 1
-
-        rows.append({
-            "clip_id":      stem,
-            "source_video": m["source_video"] if m else (vid or ""),
-            "start_time":   m["start_time"] if m else ("" if start is None else start),
-            "end_time":     m["end_time"] if m else "",
-            "duration":     m["duration"] if m else "",
-            "face_ratio":   m["face_ratio"] if m else "",
-            "speech_ratio": m["speech_ratio"] if m else "",
-            "snr":          m["snr"] if m else "",
-            "file_path":    os.path.abspath(p),
-            "tier":         tier,
-            "has_cut_meta": 1 if m else 0,
+        row = {field: m.get(field, "") for field in FIELDS}
+        row.update({
+            "clip_id": clip_id,
+            "file_path": os.path.abspath(path),
+            "tier": tier,
+            "has_cut_meta": 1,
         })
+        if not row["source_video"]:
+            raise ValueError(f"{tier}/{clip_id} thiếu source_video trong cut-log")
+        rows.append(row)
+    if corrupt:
+        raise ValueError(
+            f"{tier} có {len(corrupt)} accepted MP4 hỏng, ví dụ {corrupt[:3]}"
+        )
 
-    n_meta = sum(r["has_cut_meta"] for r in rows)
-    orphan = [c for c in meta if c not in seen]   # CSV có nhưng đĩa không có
-    print(f"    mp4_quet={len(mp4s)} | hong(bo)={corrupt} | giu={len(rows)} "
-          f"| co_cut_meta={n_meta} | thieu_meta={len(rows)-n_meta} | csv_mo_coi={len(orphan)}")
-    if parse_fail:
-        print(f"    [canh bao] {parse_fail} ten file khong parse duoc source_video/start_time")
+    print(f"    accepted={len(meta)} | mp4={len(mp4s)} | verified={len(rows)}")
     return rows
 
 
@@ -146,6 +152,8 @@ def main():
     ap.add_argument("--out", default=DEFAULT_OUT)
     ap.add_argument("--no_verify", action="store_true",
                     help="bo qua ffprobe (nhanh hon nhung giu ca file hong)")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="cho phép ghi đè manifest đã tồn tại (mặc định từ chối)")
     args = ap.parse_args()
 
     verify = not args.no_verify
@@ -158,10 +166,17 @@ def main():
 
     out_dir = os.path.dirname(os.path.abspath(args.out)) or "."
     os.makedirs(out_dir, exist_ok=True)
-    with open(args.out, "w", newline="", encoding="utf-8") as fh:
+    if os.path.exists(args.out) and not args.overwrite:
+        raise SystemExit(
+            f"Output đã tồn tại, từ chối ghi đè: {args.out}. "
+            "Dùng path staging/run mới."
+        )
+    partial = args.out + ".partial"
+    with open(partial, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS)
         w.writeheader()
         w.writerows(all_rows)
+    os.replace(partial, args.out)
 
     print("\n===== MANIFEST =====")
     by_tier = {}

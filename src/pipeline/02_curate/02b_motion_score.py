@@ -102,9 +102,32 @@ def main():
     ap.add_argument("--sample_fps", type=float, default=10.0)
     ap.add_argument("--width", type=int, default=160, help="bề ngang khi thu nhỏ")
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
 
     df = pd.read_csv(args.input_csv)
+    required = {"clip_id", args.col}
+    missing_cols = sorted(required - set(df.columns))
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+    if df.empty:
+        raise ValueError("Input CSV is empty")
+    if df["clip_id"].isna().any() or df["clip_id"].duplicated().any():
+        raise ValueError("clip_id must be non-empty and unique")
+    missing_paths = [
+        str(path) for path in df[args.col]
+        if not isinstance(path, str) or not os.path.isfile(path)
+    ]
+    if missing_paths:
+        raise FileNotFoundError(
+            f"{len(missing_paths)}/{len(df)} media paths do not exist. "
+            f"Examples: {', '.join(missing_paths[:5])}"
+        )
+    if os.path.exists(args.out) and not args.overwrite:
+        raise FileExistsError(
+            f"Output already exists: {args.out}. "
+            "Pass --overwrite only for an intentional rerun."
+        )
     print(f"Đọc {len(df)} clip từ {args.input_csv}")
 
     tasks = [(r.clip_id, getattr(r, args.col), args.sample_fps, args.width)
@@ -130,6 +153,12 @@ def main():
 
     el = time.time() - t0
     print(f"\nXong {len(df)} clip trong {el/60:.1f} phút | không đọc được: {fail}")
+    if fail:
+        failed_ids = [clip_id for clip_id, result in results.items() if result is None]
+        raise RuntimeError(
+            f"Refusing to publish: motion scoring failed for {fail}/{len(df)} clips. "
+            f"Example clip_id values: {', '.join(failed_ids[:5])}"
+        )
 
     m = df["motion_median"].dropna()
     if len(m):
@@ -144,7 +173,13 @@ def main():
 
     out_parent = os.path.dirname(os.path.abspath(args.out))
     os.makedirs(out_parent, exist_ok=True)
-    df.to_csv(args.out, index=False)
+    partial = args.out + ".partial"
+    try:
+        df.to_csv(partial, index=False)
+        os.replace(partial, args.out)
+    finally:
+        if os.path.exists(partial):
+            os.remove(partial)
     print(f"\nCSV mới (có motion_median / motion_p90 / frac_near_static) -> {args.out}")
     print("Tiếp theo: xem phân bố rồi mới chốt ngưỡng; dùng file này làm --scored_csv "
           "cho 04_curate.py (tùy chọn --motion_floor).")

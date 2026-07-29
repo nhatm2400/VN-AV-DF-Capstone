@@ -1,0 +1,16 @@
+{
+  "tier": "tier2",
+  "dataset_dir": "__SET_TIER2_DATASET_DIR__",
+  "input_csv": "__SET_TIER2_QUALITY_MANIFEST__",
+  "output_root": "/kaggle/working",
+  "run_id": "__SET_RUN_ID__",
+  "start_index": 0,
+  "end_index": 0,
+  "expected_input_count": 292,
+  "num_workers": 4,
+  "face_model": "/kaggle/working/yolov8n-face.pt",
+  "use_hwaccel_decode": true,
+  "use_nvenc": true,
+  "create_zip": true,
+  "hash_media": true
+}

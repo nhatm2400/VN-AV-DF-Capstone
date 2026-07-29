@@ -2,7 +2,38 @@
 
 **Ngày audit:** 2026-07-29  
 **Phạm vi:** bắt đầu từ `04_cut_clips.ipynb`; không chạy lại bước thu thập, tải và quality gate từ Stage 03 trở về trước.  
-**Trạng thái:** kế hoạch trước khi sửa code; chưa xóa, di chuyển hoặc ghi đè artifact hiện tại.
+**Trạng thái:** P0 đã snapshot; P1 đã triển khai trong source và đang chờ Kaggle smoke.
+Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
+
+## 0. Nhật ký triển khai
+
+### P0 — hoàn tất
+
+- Snapshot bất biến nằm tại `archive/cut_clips_v1_decode_bug/`.
+- Đã lưu checksum 65 file nhỏ, 15 cut CSV/log và inventory cho media cũ.
+- Media cũ vẫn nguyên vị trí: 6.888 cut MP4, 3.001 MP4 batch review và 3.001
+  ROI preview; không copy, move hoặc delete media.
+- Commit checkpoint P0: `db80dda`.
+
+### P1 — source local hoàn tất, chưa chạy Kaggle
+
+- `src/pipeline/01_collect/cut_clips_core.py`: fallback CUDA → CPU và
+  NVENC → libx264, stable clip ID, atomic publish, terminal status và coverage
+  contract theo batch.
+- `src/pipeline/01_collect/04_cut_clips.ipynb`: driver Kaggle canonical, checkout
+  exact Git SHA; config theo tier nằm trong `configs/`.
+- Hai notebook copy cũ của Tier 1/Tier 3 đã được bỏ khỏi source canonical.
+- `01_prep_manifest.py` dùng accepted CSV làm nguồn chân lý và bắt buộc
+  accepted/media 1–1.
+- Các output measurement/curation mặc định không ghi đè; curation xuất đủ ba
+  partition `gate rejected + balance dropped + clean = scored`, kèm config và
+  SHA-256 input.
+- Kiểm thử local: **34 pass, 1 skip**. Test bị skip là real-data smoke chỉ chạy
+  khi bật `RUN_REAL_AV_AUDIT=1`; compile Python và compile 5 code cell notebook
+  đều đạt.
+- Chưa có bằng chứng Kaggle GPU/smoke, chưa có full cut mới và chưa thay canonical
+  data. Tier 2 vẫn cần khóa Kaggle path; Tier 3 vẫn fail-closed với
+  `expected_input_count=0` cho tới khi khôi phục manifest Stage 03.
 
 ## 1. Kết luận điều hành
 
@@ -229,7 +260,7 @@ Không tiếp tục duy trì các notebook copy-paste khác nhau theo tier.
 
 ```text
 src/pipeline/01_collect/
-├── 04_cut_clips_core.py          # logic có thể unit-test
+├── cut_clips_core.py             # logic có thể unit-test
 ├── 04_cut_clips.ipynb            # driver mỏng để chạy trên Kaggle
 └── configs/
     ├── tier1.json
@@ -512,4 +543,3 @@ Việc tiếp theo là **P0 + P1**, không phải chạy Kaggle ngay:
 3. thêm test fallback và coverage;
 4. chạy Kaggle smoke;
 5. chỉ sau smoke đạt mới mở full rerun Tier 1/2/3.
-

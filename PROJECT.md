@@ -6,7 +6,7 @@ Dự án phát hiện **Deepfake âm thanh-hình ảnh tiếng Việt** (Vietnam
 
 Mô hình hiện đã chạy pilot: **AVSP-Net V1** — mouth ROI + Wav2Vec + prosody, hợp nhất bằng Cross-Attention. Kiến trúc mục tiêu mới là **AVSP-Net V2**, gồm V2a (local temporal core, giữ cùng loại feature nhưng repaired pilot dùng store mới) và V2b (mở rộng để tổng quát hóa sang deepfake thực tế), xem [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
 
-Trạng thái hiện tại: **BLOCKED tại Stage 04 Cut Clips, NO-GO cho manual review mới, sinh fake, extract feature và train**. Audit 2026-07-29 xác nhận lần cắt cũ làm `1.413` video dừng ở `video_decode_failed` do CUDA decode không có CPU fallback; Tier 2 còn thiếu coverage `169/292` video quality-pass. Vì vậy `6.888 clip → 3.001 all_clean` hiện chỉ còn giá trị lịch sử và phải được dựng lại từ Stage 04. Stage 03 trở về trước không chạy lại, nhưng phải khôi phục input inventory Tier 3 để khóa provenance. Xem [kế hoạch hotfix và rebuild](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md).
+Trạng thái hiện tại: **BLOCKED tại Stage 04 Cut Clips, NO-GO cho manual review mới, sinh fake, extract feature và train**. Audit 2026-07-29 xác nhận lần cắt cũ làm `1.413` video dừng ở `video_decode_failed` do CUDA decode không có CPU fallback; Tier 2 còn thiếu coverage `169/292` video quality-pass. Vì vậy `6.888 clip → 3.001 all_clean` hiện chỉ còn giá trị lịch sử và phải được dựng lại từ Stage 04. P0 đã snapshot lineage/media inventory cũ; P1 đã có core dùng chung, notebook Kaggle canonical, fallback CPU/libx264 và contract output fail-closed. Chưa gỡ BLOCKED cho tới khi khôi phục input inventory Tier 3 và Kaggle smoke đạt. Stage 03 trở về trước không chạy lại. Xem [kế hoạch hotfix và rebuild](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md).
 
 Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng sinh 12.004 fake**, **PILOT V1 đã chạy xong** trên 2.700 clip với test AUC **0.809**, bốn generator V2/SNVSM/timeline contract đã implement/test, và stratified smoke `v2r6` đã đạt metadata gate max AUC 0,546. Các con số này không chứng minh tập nguồn hiện tại đã sạch và không được dùng để bỏ qua hotfix. Sau khi cut → curate → manual review được dựng lại, lộ trình tiếp tục từ fake V2/SNVSM/Stage 05/metadata gate đến repaired pilot V2a; full training vẫn **NO-GO**. Xem [báo cáo Phase 0](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) và [đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
 
@@ -21,9 +21,12 @@ Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng s
 ├── src/
 │   ├── pipeline/                       # Pipeline xử lý dữ liệu (stage đánh số)
 │   │   ├── 01_collect/                 # Thu thập + cắt clip — tách theo tier (nguồn)
-│   │   │   ├── tier1/                  # YouTube CC: 01_fetch_youtube_urls 02_download 03_quality_gate 04_cut_clips.ipynb
-│   │   │   ├── tier2/                  # YouTube Std: 00_explore_license 01_fetch 02_download 03_generate_download_script 04_retry_failed 05_clean_temp
-│   │   │   └── tier3/                  # TikTok: 01_fetch_tiktok_urls 02_download 03_quality_gate 04_cut_clips.ipynb
+│   │   │   ├── 04_cut_clips.ipynb      # Driver Kaggle canonical dùng chung ba tier
+│   │   │   ├── cut_clips_core.py       # Core Stage 04 có fallback + contract test
+│   │   │   ├── configs/                # Config tier1/tier2/tier3; placeholder fail-closed nếu chưa khóa
+│   │   │   ├── tier1/                  # YouTube CC: fetch, download, quality gate
+│   │   │   ├── tier2/                  # YouTube Std: fetch, download/retry/cleanup
+│   │   │   └── tier3/                  # TikTok: fetch, download, quality gate
 │   │   ├── 02_curate/                  # Lọc clip tự động (dùng chung mọi tier) — file phẳng
 │   │   │   ├── 01_prep_manifest.py     # remap path + gộp tier -> all_manifest.csv
 │   │   │   ├── 02_score_clips.py       # đo mặt + embedding 512-d (InsightFace buffalo_l)

@@ -31,19 +31,21 @@ và biến thể Kaggle).
 ## Các file
 
 ### 01_prep_manifest.py — gộp tier + verify
-Quét mọi `.mp4` của 3 tier (glob `**` đệ quy, tự bắt mọi batch con), ghép metadata từ
-CSV bước cắt, **verify từng file bằng ffprobe** (loại file hỏng 0-byte), remap `file_path`
-về đĩa thật, gộp thành 1 manifest.
-- **Input:** `data/clips/{tier1,tier2,tier3}/**` (+ các `*_v3_clips_*.csv`)
-- **Output:** `data/clips/all_manifest.csv`
+Đọc `accepted_clips.csv` của mọi batch làm nguồn chân lý, đối chiếu 1–1 với `.mp4`,
+**verify từng file bằng ffprobe**, remap `file_path` về đĩa thật rồi gộp ba tier.
+Thiếu media, media mồ côi, ID trùng hoặc file hỏng đều làm bước này dừng.
+- **Input:** `data/01_collect/cut_clips/{tier1,tier2,tier3}/**/accepted_clips.csv`
+  và media tương ứng
+- **Output:** `data/01_collect/cut_clips/all_manifest.csv` (atomic, mặc định không ghi đè)
 
 ### 02_score_clips.py — đo mặt + embedding (GPU)
 Mỗi clip lấy 9 frame rải đều, chạy **InsightFace (buffalo_l)** đo `det_ratio`,
 `mean_face_area`, `embed_consistency` và trích **face embedding 512 chiều**. Không loại
 clip nào — chỉ đo.
-- **Input:** `data/clips/all_manifest.csv`
+- **Input:** `data/01_collect/cut_clips/all_manifest.csv`
 - **Output:** `data/02_curate/measurements/tier1_scored_all.csv` (manifest + face stats),
-  `data/02_curate/measurements/embeddings_all.npy` (N×512, đã L2-norm)
+  `data/02_curate/measurements/embeddings_all.npy` (N×512, đã L2-norm). Hai output
+  được publish atomic và mặc định không ghi đè.
 
 ### 03_sync_score.py — đo khớp môi-tiếng (SyncNet, tùy chọn)
 Dùng **SyncNet** (repo joonson/syncnet_python) đo độ đồng bộ môi-tiếng: `LSE-C`
@@ -61,9 +63,11 @@ mặt/lẫn người) → cân bằng số clip mỗi speaker → xuất tập s
 - **Input:** `data/02_curate/measurements/tier1_scored_all.csv` +
   `data/02_curate/measurements/embeddings_all.npy`
 - **Output:** `data/02_curate/manifests/all_clean.csv` (tập sạch, có `speaker_id`),
-  `data/02_curate/manifests/all_clean_rejects.csv` (clip bị gate loại)
-- **Ngưỡng đang dùng:** `cluster_dist=0.6`, `min_det_ratio=0.6`, `min_face_area=0.01`,
-  `min_consistency=0.3`, `cap_per_speaker=30`
+  `all_clean_rejects.csv` (clip bị gate loại), `all_clean_balance_dropped.csv`
+  (clip bị bỏ khi cân bằng), và `all_clean_config.json` (tham số, SHA-256 input,
+  số dòng từng partition). Output atomic và mặc định không ghi đè.
+- **Baseline lịch sử để calibrate lại:** `cluster_dist=0.6`, `min_det_ratio=0.6`,
+  `min_face_area=0.01`, `min_consistency=0.3`, `cap_per_speaker=30`
 
 ### 05_eda.py — phân tích khám phá
 Đọc scored CSV (+ clean CSV) → xuất biểu đồ PNG rời + bảng markdown tóm tắt cho báo cáo.
@@ -73,9 +77,11 @@ mặt/lẫn người) → cân bằng số clip mỗi speaker → xuất tập s
 
 ---
 
-## Kết quả (lần chạy gần nhất)
+## Kết quả lịch sử trước hotfix Stage 04
 
 Phễu làm sạch: **6.888** clip đo được → **5.356** qua gate → **3.001** clip sạch / **674** speaker.
+Các số này thuộc cut run có lỗi decode và chỉ được giữ làm provenance; không dùng
+làm scope review/train mới.
 
 | File trong `data/02_curate/` | Mô tả |
 |---|---|

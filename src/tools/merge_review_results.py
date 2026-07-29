@@ -14,6 +14,11 @@ import os
 import sys
 from collections import Counter, defaultdict
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 
 VALID = {"keep", "reject", "uncertain"}
 

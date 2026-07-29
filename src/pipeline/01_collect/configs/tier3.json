@@ -1,0 +1,17 @@
+{
+  "tier": "tier3",
+  "dataset_dir": "__SET_TIER3_DATASET_DIR__",
+  "input_csv": "__SET_TIER3_QUALITY_MANIFEST__",
+  "output_root": "/kaggle/working",
+  "run_id": "__SET_RUN_ID__",
+  "start_index": 0,
+  "end_index": 0,
+  "expected_input_count": 0,
+  "num_workers": 4,
+  "face_model": "/kaggle/working/yolov8n-face.pt",
+  "use_hwaccel_decode": true,
+  "use_nvenc": true,
+  "create_zip": true,
+  "hash_media": true,
+  "note": "Khóa expected_input_count sau khi khôi phục manifest Stage 03 Tier 3."
+}
