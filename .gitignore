@@ -68,6 +68,7 @@ docs/architecture/*
 !docs/architecture/MODEL_PROPOSAL.md
 !docs/reports/
 docs/reports/*
+!docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md
 !docs/reports/PILOT_REPORT.md
 !docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md
 !docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md

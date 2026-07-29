@@ -6,7 +6,9 @@ Dự án phát hiện **Deepfake âm thanh-hình ảnh tiếng Việt** (Vietnam
 
 Mô hình hiện đã chạy pilot: **AVSP-Net V1** — mouth ROI + Wav2Vec + prosody, hợp nhất bằng Cross-Attention. Kiến trúc mục tiêu mới là **AVSP-Net V2**, gồm V2a (local temporal core, giữ cùng loại feature nhưng repaired pilot dùng store mới) và V2b (mở rộng để tổng quát hóa sang deepfake thực tế), xem [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
 
-Trạng thái hiện tại: **dữ liệu + curation đã xong** (6.888 clip → 3.001 clip sạch); **03_fake V1 đã sinh đủ 12.004 fake (4 method), `data/05_labels/labels.csv` đã build + split speaker/video-disjoint verified**; **PILOT V1 đã chạy xong** (2.700 clip, test AUC **0.809** — xem [PILOT](#pilot-đã-chạy-2026-07-21--de-risk-trước-full-run)); **bốn generator V2, SNVSM normalization và structured timeline contract đã implement/test**; **stratified real-data smoke `v2r6` trên 15 nguồn thật đã sinh/validate đủ 60 fake, 75 SNVSM media và 75 labels; metadata gate đạt với max AUC 0,546 ≤ 0,65**; **chưa tạo repaired pilot V2a 2.700 clip, chưa trích feature FULL, chưa train mô hình chính**. Trạng thái quyết định vẫn là **NO-GO full**: bước kế tiếp là tạo repaired pilot 540 real + 2.160 fake, normalize/Stage 05 và chạy metadata gate trên toàn 2.700 labels trước khi extract feature. Xem [báo cáo Phase 0](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) và [đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
+Trạng thái hiện tại: **BLOCKED tại Stage 04 Cut Clips, NO-GO cho manual review mới, sinh fake, extract feature và train**. Audit 2026-07-29 xác nhận lần cắt cũ làm `1.413` video dừng ở `video_decode_failed` do CUDA decode không có CPU fallback; Tier 2 còn thiếu coverage `169/292` video quality-pass. Vì vậy `6.888 clip → 3.001 all_clean` hiện chỉ còn giá trị lịch sử và phải được dựng lại từ Stage 04. Stage 03 trở về trước không chạy lại, nhưng phải khôi phục input inventory Tier 3 để khóa provenance. Xem [kế hoạch hotfix và rebuild](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md).
+
+Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng sinh 12.004 fake**, **PILOT V1 đã chạy xong** trên 2.700 clip với test AUC **0.809**, bốn generator V2/SNVSM/timeline contract đã implement/test, và stratified smoke `v2r6` đã đạt metadata gate max AUC 0,546. Các con số này không chứng minh tập nguồn hiện tại đã sạch và không được dùng để bỏ qua hotfix. Sau khi cut → curate → manual review được dựng lại, lộ trình tiếp tục từ fake V2/SNVSM/Stage 05/metadata gate đến repaired pilot V2a; full training vẫn **NO-GO**. Xem [báo cáo Phase 0](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) và [đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
 
 ---
 
@@ -444,6 +446,7 @@ Cần bổ sung ít nhất **4 metrics** vào báo cáo (xem docs). **Cosine sim
 | File | Mục đích |
 |---|---|
 | [docs/architecture/MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md) | Đề xuất AVSP-Net V2a/V2b, code layout, output contract và roadmap |
+| [docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md) | Audit lỗi Stage 04 Cut Clips và kế hoạch chạy lại toàn bộ downstream |
 | [docs/reports/PILOT_REPORT.md](docs/reports/PILOT_REPORT.md) | Báo cáo chi tiết quá trình pilot gốc |
 | [docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md) | Review V1 sau pilot, fact-check và quyết định NO-GO/roadmap V2 |
 | [docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) | Bằng chứng sửa generator temporal và smoke Phase 0 |
