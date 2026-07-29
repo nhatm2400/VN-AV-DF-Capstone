@@ -1,137 +1,70 @@
 # VN-AV-DF-Capstone
 
-VN-AV-DF-Capstone là repo phục vụ bài toán xây dựng dữ liệu và thử nghiệm mô hình cho dự án capstone liên quan đến video tiếng Việt. Repo hiện tập trung vào chuỗi xử lý dữ liệu gồm: thu thập URL video, tải video, quality gate, cắt clip, và một PoC riêng để huấn luyện/đánh giá mô hình PAMF.
+Phát hiện **deepfake âm thanh–hình ảnh tiếng Việt** — nhận biết video giả mạo bằng cách đối chiếu tiếng nói với khẩu hình, chuyển động khuôn mặt và ngữ điệu theo thời gian, thay vì tìm dấu vết giả mạo trên từng khung hình riêng lẻ.
 
-## Tổng quan
+Đồ án tốt nghiệp, Đại học FPT.
 
-Pipeline chính trong repo được chia thành các bước:
+## Bài toán
 
-1. Thu thập URL video từ YouTube bằng YouTube Data API.
-2. Tải video về máy bằng `yt-dlp`.
-3. Lọc video theo quality gate dựa trên metadata, âm thanh và phát hiện khuôn mặt.
-4. Cắt video thành các clip ngắn để phục vụ huấn luyện hoặc đánh giá.
+Phần lớn bộ phát hiện deepfake hiện có được huấn luyện trên dữ liệu tiếng Anh và chỉ nhìn hình ảnh. Với tiếng Việt, cách tiếp cận đó bỏ sót một tín hiệu quan trọng: tiếng Việt là **ngôn ngữ có thanh điệu** — cao độ (F0) không phải nét biểu cảm mà mang **nghĩa từ vựng**. "ma", "má", "mà", "mã", "mạ", "mả" khác nhau hoàn toàn chỉ bởi đường F0. Một hệ thống giả giọng làm sai đường thanh điệu sẽ tạo ra lỗi mà người Việt nghe ra ngay nhưng mô hình tiếng Anh không hề biết tới.
 
-Ngoài pipeline chính, thư mục `PoC/` chứa một proof-of-concept riêng với mô hình hợp nhất audio-visual.
+Trở ngại thứ hai: **không có bộ dữ liệu deepfake âm thanh–hình ảnh tiếng Việt nào công khai** để huấn luyện.
 
-## Cấu trúc thư mục
+## Hướng tiếp cận
+
+**Sinh pseudo-fake có kiểm soát.** Thay vì chờ dữ liệu deepfake thật, dự án tạo giả từ video thật bằng bốn phép biến đổi, mỗi phép tấn công đúng một kênh tín hiệu:
+
+| Kênh | Phép biến đổi | Phá vỡ điều gì |
+|---|---|---|
+| Đồng bộ thời gian | `temporal_desync` — xoay vòng audio theo số sample chính xác | Quan hệ thời gian giữa tiếng và khẩu hình |
+| Chuyển động hình | `frame_reverse` — đảo ngược một đoạn khung hình | Hướng chuyển động tự nhiên của môi |
+| Ngữ điệu | `pitch_flatten` — làm phẳng F0 bằng PSOLA | Đường thanh điệu tiếng Việt |
+| Danh tính hình | `anonymization` — làm mờ vùng mặt | Đặc trưng nhận dạng khuôn mặt |
+
+Cách này cho **nhãn chính xác tuyệt đối** và cho phép đo riêng từng kênh — biết mô hình mạnh ở đâu, mù ở đâu, thay vì chỉ có một con số tổng.
+
+**Chống học tắt.** Rủi ro lớn nhất của pseudo-fake là mô hình học đặc điểm phụ thay vì học bản chất. Dự án xử lý bằng ba lớp: chuẩn hoá lại codec **đối xứng** cho cả real lẫn fake (SNVSM) để xoá dấu vết nén; chia tập theo **thành phần liên thông** của `speaker_id ∪ source_video` để cùng một người không xuất hiện ở hai tập; và một **cổng kiểm tra metadata** — huấn luyện bộ phân loại chỉ dùng metadata container, nếu nó đạt AUC quá ngưỡng thì dữ liệu đã lộ đường tắt và pipeline dừng lại.
+
+**Kiến trúc AVSP-Net.** Ba nhánh mã hoá — mouth ROI qua CNN + Transformer, tiếng nói qua wav2vec2 tiếng Việt, ngữ điệu qua Conv1D + BiGRU — hợp nhất bằng cross-attention với **audio làm Query**. Hai đầu ra: thật/giả, và phân loại độ lệch thời gian. Bản V1 có 2,29 triệu tham số.
+
+## Trạng thái
+
+Đã chạy pilot V1 trên 2.700 clip, đạt test ROC-AUC **0,809**. Nhưng phân tích theo từng kênh cho thấy con số tổng che giấu khoảng cách lớn: `pitch_flatten` 0,990 trong khi `frame_reverse` chỉ 0,535 — gần bằng đoán bừa. Kiểm tra đối kháng còn phát hiện các baseline tầm thường giải được hai kênh dễ, và một lỗi tạo tác trong generator temporal.
+
+Kết luận hiện tại là **NO-GO** cho huấn luyện đầy đủ với V1. Đang ở giai đoạn sửa generator và kiểm duyệt lại dữ liệu nguồn trước khi dựng kiến trúc V2.
+
+Trạng thái chi tiết và luôn cập nhật: [PROJECT.md](PROJECT.md).
+
+## Cấu trúc
 
 ```text
-.
-├── configs/                 # File cấu hình phụ trợ
-├── data/                    # CSV đầu vào/đầu ra của pipeline
-├── docs/                    # Tài liệu tham khảo, hình ảnh, báo cáo
-├── experiments/             # Kết quả hoặc cấu hình thí nghiệm
-├── notebooks/               # Notebook thử nghiệm
-├── PoC/                     # Proof-of-concept cho mô hình PAMF
-├── src/
-│   ├── pipeline/            # Các bước xử lý dữ liệu chính
-│   ├── eval/
-│   ├── model/
-│   ├── train/
-│   └── utils/
-└── requirements.txt
+src/
+├── pipeline/          # Pipeline dữ liệu 5 stage
+│   ├── 01_collect/    #   Thu thập + cắt clip, tách theo tier nguồn (YouTube CC / YouTube / TikTok)
+│   ├── 02_curate/     #   Lọc clip: đo mặt, gom speaker, loại rác
+│   ├── 03_fake/       #   Sinh 4 loại pseudo-fake + chuẩn hoá codec + cổng metadata
+│   ├── 04_extract_features/   # mouth ROI + wav2vec2 + F0 -> tensor mỗi clip
+│   └── 05_build_labels/       # Gộp real+fake, chia tập chống rò rỉ danh tính
+├── model/             # Kiến trúc AVSP-Net
+├── train/  eval/      # Vòng huấn luyện và đánh giá
+└── tools/             # Công cụ độc lập: lọc tay có preview ROI, các phép đo phụ trợ
+
+data/                  # Manifest và artifact theo stage (media không commit)
+docs/                  # Kiến trúc, báo cáo, nhật ký làm việc — xem docs/README.md
+experiments/           # Mỗi lần chạy là một thư mục bất biến
+tests/                 # Test cho generator và data contract
+PoC/                   # Proof of concept giai đoạn đầu
 ```
 
-## Yêu cầu hệ thống
+## Tài liệu
 
-- Python 3.10+.
-- `ffmpeg` có sẵn trong `PATH`.
-- Tài khoản / API key YouTube Data API v3.
-- Môi trường cài đặt các gói trong `requirements.txt`.
-- Mô hình YOLO face detection `yolov8n-face.pt` cho bước quality gate.
+| Tài liệu | Nội dung |
+|---|---|
+| [PROJECT.md](PROJECT.md) | Trạng thái, pipeline, data contract, cạm bẫy đã gặp |
+| [docs/README.md](docs/README.md) | Chỉ mục toàn bộ tài liệu |
+| [docs/architecture/MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md) | Đề xuất AVSP-Net V2a/V2b |
+| [docs/reports/](docs/reports/) | Báo cáo pilot, đánh giá V1, bằng chứng smoke test |
 
-## Cài đặt
+## Giấy phép và dữ liệu
 
-```bash
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Tạo file `.env` ở root dự án với nội dung tối thiểu:
-
-```env
-YOUTUBE_API_KEY=your_youtube_api_key_here
-```
-
-## Chạy pipeline dữ liệu
-
-Các script trong `src/pipeline/` nên được chạy theo đúng thứ tự sau:
-
-### 1. Lấy danh sách URL YouTube
-
-```bash
-python src/pipeline/00_fetch_youtube_urls.py
-```
-
-Script này dùng YouTube Data API để tìm video phù hợp và xuất CSV vào `data/youtube_tier1_urls.csv`.
-
-### 2. Tải video
-
-```bash
-python src/pipeline/01_download.py
-```
-
-Chương trình sẽ hỏi tier cần tải và đọc các file CSV tương ứng trong `data/`.
-
-### 3. Quality gate
-
-```bash
-python src/pipeline/02_quality_gate.py
-```
-
-Bước này kiểm tra:
-
-- Độ phân giải và FPS của video.
-- Chất lượng âm thanh thông qua SNR.
-- Sự hiện diện của khuôn mặt bằng YOLOv8-Face.
-
-Kết quả đạt chuẩn được lưu thành file CSV trong `data/`.
-
-### 4. Cắt clip
-
-```bash
-python src/pipeline/03_cut_clips.py
-```
-
-Script sẽ cắt video đã qua quality gate thành các clip ngắn và sinh file log metadata cho từng clip.
-
-## Dữ liệu đầu ra
-
-Một số file quan trọng trong `data/`:
-
-- `youtube_tier1_urls.csv`: danh sách URL video đã lọc.
-- `tier1_quality_gate_passed.csv`: danh sách video đạt quality gate.
-- `label.csv`: file nhãn hoặc mapping dùng cho các bước thí nghiệm.
-
-Thư mục `data/raw/` và `data/clips/` được tạo ra trong quá trình chạy pipeline và thường không được commit lên git.
-
-## Proof of Concept
-
-Thư mục `PoC/` là một nhánh thử nghiệm riêng cho mô hình PAMF.
-
-### Huấn luyện
-
-```bash
-cd PoC
-python src/train_and_eval.py
-```
-
-### Suy luận
-
-```bash
-cd PoC
-python src/inference.py
-```
-
-PoC sử dụng checkpoint tại `PoC/checkpoints/pamf_poc_model.pth`.
-
-## Ghi chú
-
-- Nếu chạy `00_fetch_youtube_urls.py`, hãy đảm bảo `.env` có `YOUTUBE_API_KEY` hợp lệ.
-- Nếu chạy `02_quality_gate.py`, cần có `yolov8n-face.pt` ở thư mục gốc hoặc chỉnh lại đường dẫn trong code.
-- Một số script phụ thuộc `ffmpeg`, `opencv-python`, `librosa`, `ultralytics`, và `yt-dlp`.
-
-## Trạng thái repo
-
-Repo này đang nghiêng về phần xây dựng dataset và pipeline xử lý dữ liệu cho capstone. Nếu bạn muốn, có thể mở rộng README bằng phần mô tả mô hình, dataset schema, hoặc hướng dẫn tái lập thí nghiệm chi tiết hơn khi các thành phần đó ổn định.
+Video nguồn thu thập từ nội dung công khai và **không được phân phối kèm repository**. Chỉ manifest và artifact phái sinh được version-control.

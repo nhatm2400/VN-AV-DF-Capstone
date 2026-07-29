@@ -27,7 +27,7 @@ SETUP (chạy 1 lần trước khi dùng script này):
 
 LOCAL (TÙY CHỌN — sync khó dựng trên Windows; có thể BỎ, bước 04/05 vẫn chạy):
   cần repo syncnet_python trên máy, truyền --syncnet_dir <đường dẫn local>:
-  python 03_sync_score.py --input_csv data/02_curate/tier1_scored_all.csv \\
+  python 03_sync_score.py --input_csv data/02_curate/measurements/tier1_scored_all.csv \\
       --syncnet_dir <repo_local> --calibrate
   # input mặc định không trỏ sẵn -> luôn truyền --input_csv (và --syncnet_dir).
 
@@ -276,6 +276,9 @@ def main():
     ap.add_argument("--calibrate",   action="store_true")
     ap.add_argument("--full",        action="store_true")
     ap.add_argument("--n_samples",   type=int, default=20, help="số clip cho calibrate")
+    ap.add_argument("--calibrate_out",
+                    default="data/02_curate/calibration/calibrate_sync_results.csv",
+                    help="CSV kết quả khi chạy --calibrate")
     ap.add_argument("--workers",     type=int, default=1,
                     help="số luồng song song. MẶC ĐỊNH 1: mỗi clip nạp S3FD + SyncNet lên "
                          "GPU, chạy 4 luồng trên 1 T4 dễ OOM. Tăng 2 chỉ khi còn dư VRAM.")
@@ -283,7 +286,7 @@ def main():
                     help="ngưỡng loại: clip LSE-C < ngưỡng bị đánh dấu sync_flag_reject=True. "
                          "MẶC ĐỊNH None = chỉ flag clip fail. ĐẶT SAU KHI xem calibrate, "
                          "và chỉ nên cắt đuôi cực thấp (tránh leakage cho tập real).")
-    ap.add_argument("--out", default="tier1_scored_sync.csv")
+    ap.add_argument("--out", default="data/02_curate/measurements/tier1_scored_sync.csv")
     ap.add_argument("--data_dir", default="/tmp/syncnet_tmp",
                     help="thư mục tạm cho syncnet (xóa sau mỗi clip)")
     args = ap.parse_args()
@@ -308,10 +311,12 @@ def main():
     os.makedirs(args.data_dir, exist_ok=True)
 
     if args.calibrate:
-        calib_out = os.path.join(os.path.dirname(os.path.abspath(args.input_csv)) or ".",
-                                 "calibrate_sync_results.csv")
+        calib_out = os.path.abspath(args.calibrate_out)
+        os.makedirs(os.path.dirname(calib_out), exist_ok=True)
         calibrate_mode(df, args.syncnet_dir, args.n_samples, args.data_dir, out_csv=calib_out)
     else:
+        out_parent = os.path.dirname(os.path.abspath(args.out))
+        os.makedirs(out_parent, exist_ok=True)
         full_mode(df, args.syncnet_dir, args.data_dir, args.out, args.workers, args.lse_c_threshold)
 
 

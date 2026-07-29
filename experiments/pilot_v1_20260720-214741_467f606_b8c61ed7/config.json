@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "run_id": "pilot_v1_20260720-214741_467f606_b8c61ed7",
+  "scope": "pilot",
+  "model_version": "v1",
+  "status": "complete",
+  "immutable": true,
+  "legacy_checkpoint_run_name": "pilot_avsp_full",
+  "config_hash": {
+    "algorithm": "sha256",
+    "canonicalization": "sorted compact JSON of effective training args, excluding legacy run_name",
+    "full_value": "b8c61ed7ce2dbe9bf3fa42feeb36c69b8f9afb288691d4211b03d0867ec828e1",
+    "short_value": "b8c61ed7"
+  },
+  "training": {
+    "labels": "data/05_labels/labels_pilot.csv",
+    "features": "data/04_features_pilot",
+    "branches": [
+      "audio",
+      "visual",
+      "prosody"
+    ],
+    "epochs_requested": 30,
+    "epochs_completed": 28,
+    "batch_size": 16,
+    "learning_rate": 0.0003,
+    "weight_decay": 0.0001,
+    "patience": 7,
+    "real_blur_aug_p": 0.25,
+    "seed": 42,
+    "workers": 2,
+    "amp": true
+  },
+  "best_checkpoint": {
+    "epoch_zero_based": 20,
+    "epoch_one_based": 21,
+    "validation_auc": 0.8125666819082457,
+    "validation_accuracy": 0.7111111111111111
+  },
+  "timing": {
+    "started_at": "2026-07-20T21:47:41+07:00",
+    "started_at_basis": "inferred retroactively from history.json total epoch seconds and file modification time",
+    "training_completed_at": "2026-07-20T22:07:28+07:00",
+    "test_evaluation_completed_at": "2026-07-20T22:08:22+07:00"
+  },
+  "layout": {
+    "kind": "legacy_v1_flat",
+    "note": "The V1 pilot predates the V2 immutable-run artifact layout; original artifact filenames are preserved."
+  }
+}

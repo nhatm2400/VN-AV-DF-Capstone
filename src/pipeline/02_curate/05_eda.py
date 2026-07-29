@@ -21,7 +21,8 @@ Chỉ dùng pandas + numpy + matplotlib -> chạy được trên Kaggle lẫn m�
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
   python 05_eda.py
-  -> đọc data/02_curate/tier1_scored_all.csv + all_clean.csv, xuất data/02_curate/eda_figs/
+  -> đọc data/02_curate/measurements/tier1_scored_all.csv
+     + data/02_curate/manifests/all_clean.csv, xuất data/02_curate/eda_figs/
 
 Ví dụ tùy chỉnh / KAGGLE:
   python 05_eda.py --scored_csv tier1_scored_all.csv --clean_csv all_clean.csv \\
@@ -254,9 +255,9 @@ def build_summary_md(scored, clean, figs):
 # ----------------------------- Main -----------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scored_csv", default="data/02_curate/tier1_scored_all.csv",
+    ap.add_argument("--scored_csv", default="data/02_curate/measurements/tier1_scored_all.csv",
                     help="output 02_score_clips: face stats toàn bộ clip (mặc định local)")
-    ap.add_argument("--clean_csv", default="data/02_curate/all_clean.csv",
+    ap.add_argument("--clean_csv", default="data/02_curate/manifests/all_clean.csv",
                     help="output 04_curate: tập sạch có speaker_id (tùy chọn)")
     ap.add_argument("--out_dir", default="data/02_curate/eda_figs")
     args = ap.parse_args()

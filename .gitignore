@@ -1,12 +1,23 @@
 data/raw/
 data/clips/
+data/01_collect/cut_clips/
 docs
 
 # Output sinh tu dong — giu folder, bo noi dung
-data/fake/*
-!data/fake/.gitkeep
-data/features/*
-!data/features/.gitkeep
+data/03_fake/*
+!data/03_fake/.gitkeep
+data/04_features/*
+!data/04_features/.gitkeep
+data/04_features_pilot/
+data/05_labels/*
+!data/05_labels/.gitkeep
+!data/05_labels/labels.csv
+
+# archive/ — luu tru dot chay cu. Media da bi chan boi *.mp4 / *.pt o duoi;
+# manifest CSV + JSON thi COMMIT lam provenance (~12 MiB tong).
+#   archive/pilot_v1/        — fake V1 + pilot V1 (da bac bo), ~30 GiB media
+#   archive/phase0_v2_smoke/ — 6 vong smoke generator V2, 376 MB media
+# Xem README.md trong tung thu muc.
 
 *.mp4
 *.m4a
@@ -29,7 +40,7 @@ yolov8n-face.pt
 *.npy
 *.npz
 # ngoai le: commit embedding cua stage curate (14MB) de tai su dung khong phai chay lai 02
-!data/02_curate/embeddings_all.npy
+!data/02_curate/measurements/embeddings_all.npy
 
 __pycache__/
 *.py[cod]
@@ -48,8 +59,27 @@ Thumbs.db
 
 docs/
 
+# Tai lieu song can version-control; cac noi dung docs khac van giu ignore
+!docs/
+docs/*
+!docs/README.md
+!docs/architecture/
+docs/architecture/*
+!docs/architecture/MODEL_PROPOSAL.md
+!docs/reports/
+docs/reports/*
+!docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md
+!docs/reports/PILOT_REPORT.md
+!docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md
+!docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md
+!docs/logs/
+docs/logs/*
+!docs/logs/*.md
+
 cookies.txt
+logs_*.txt
 
 LA_draft/
 
+# Huong dan lam viec voi AI — giu LOCAL (tai lieu project o PROJECT.md, co commit)
 CLAUDE.md

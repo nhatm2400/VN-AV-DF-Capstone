@@ -1,0 +1,16 @@
+{
+  "tier": "tier1",
+  "dataset_dir": "/kaggle/input/datasets/xanhla/vn-av-df-data-tier-1/tier1",
+  "input_csv": "/kaggle/input/datasets/xanhla/tier1-quality-gate-passed-csv/tier1_quality_gate_passed.csv",
+  "output_root": "/kaggle/working",
+  "run_id": "__SET_RUN_ID__",
+  "start_index": 0,
+  "end_index": 0,
+  "expected_input_count": 472,
+  "num_workers": 4,
+  "face_model": "/kaggle/working/yolov8n-face.pt",
+  "use_hwaccel_decode": true,
+  "use_nvenc": true,
+  "create_zip": true,
+  "hash_media": true
+}

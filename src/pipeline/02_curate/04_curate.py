@@ -16,11 +16,13 @@ cho tập FAKE (hoặc không gate cho tập nào). Gate một phía sẽ bơm t
 ("sync thấp = fake") -> model học tắt, rò rỉ chính đặc trưng PAMF phải tự học.
 
 sync_conf / embed_consistency: nếu CSV có thì tự đưa vào quality score; không có thì bỏ qua.
+motion_median (từ 02b_motion_score.py): CHỈ dùng làm gate tùy chọn --motion_floor, KHÔNG
+đưa vào quality score (tránh âm thầm đổi thành phần tập đã xuất).
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
   python 04_curate.py --calibrate   # 1) xem phân bố, chọn ngưỡng
-  python 04_curate.py               # 2) export (ngưỡng mặc định) -> data/02_curate/all_clean.csv
-  -> tự đọc data/02_curate/tier1_scored_all.csv + embeddings_all.npy
+  python 04_curate.py               # 2) export -> data/02_curate/manifests/all_clean.csv
+  -> tự đọc data/02_curate/measurements/tier1_scored_all.csv + embeddings_all.npy
 
 Ví dụ tùy chỉnh / KAGGLE:
   # 1) Xem phân bố + số cụm ở vài ngưỡng (không xuất gì)
@@ -32,8 +34,11 @@ Ví dụ tùy chỉnh / KAGGLE:
       --out tier1_clean.csv
 """
 
-import sys
 import argparse
+import hashlib
+import json
+import os
+import sys
 import numpy as np
 
 try:                                  # in được tiếng Việt khi pipe/redirect (console cp1252)
@@ -49,7 +54,21 @@ def load(scored_csv, emb_path):
     df = pd.read_csv(scored_csv)
     emb = np.load(emb_path)
     assert len(df) == len(emb), f"CSV ({len(df)}) và NPY ({len(emb)}) lệch số dòng"
+    if df.empty:
+        raise ValueError("Scored CSV is empty")
+    if "clip_id" not in df.columns:
+        raise ValueError("Scored CSV is missing clip_id")
+    if df["clip_id"].isna().any() or df["clip_id"].duplicated().any():
+        raise ValueError("clip_id must be non-empty and unique")
     return df, emb
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 # ----------------------------- Helpers -----------------------------
@@ -157,6 +176,12 @@ def calibrate(df, emb):
     if "sync_conf" in df.columns:
         print("\n-- sync_conf --")
         print(df["sync_conf"].describe(percentiles=[.1, .25, .5, .75, .9]).round(3).to_string())
+    if "motion_median" in df.columns:
+        print("\n-- motion_median (0-255; thấp = khung đứng yên, ảnh tĩnh/B-roll) --")
+        mm = df["motion_median"].dropna()
+        print(mm.describe(percentiles=[.05, .1, .25, .5, .75, .9]).round(3).to_string())
+        for t in (0.5, 1.0, 2.0):
+            print(f"  < {t}: {int((mm < t).sum())} clip ({100*(mm < t).mean():.1f}%)")
 
     print("\n-- Số speaker theo ngưỡng cluster (cosine distance) --")
     mask = df["has_embedding"].values.astype(bool)
@@ -175,21 +200,27 @@ def calibrate(df, emb):
 # ----------------------------- Main -----------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scored_csv", default="data/02_curate/tier1_scored_all.csv",
+    ap.add_argument("--scored_csv", default="data/02_curate/measurements/tier1_scored_all.csv",
                     help="output của 02_score_clips (mặc định local)")
-    ap.add_argument("--emb", default="data/02_curate/embeddings_all.npy")
+    ap.add_argument("--emb", default="data/02_curate/measurements/embeddings_all.npy")
     ap.add_argument("--calibrate", action="store_true", help="chỉ in phân bố, không xuất")
-    ap.add_argument("--cluster_dist", type=float, default=0.5, help="cosine distance threshold")
+    ap.add_argument("--cluster_dist", type=float, default=0.6, help="cosine distance threshold")
     ap.add_argument("--min_det_ratio", type=float, default=0.6, help="gate: tỉ lệ frame có mặt tối thiểu")
     ap.add_argument("--min_face_area", type=float, default=0.01, help="gate: mặt/khung tối thiểu")
-    ap.add_argument("--min_consistency", type=float, default=0.0,
+    ap.add_argument("--min_consistency", type=float, default=0.3,
                     help="gate: embed_consistency tối thiểu (0 = tắt). Loại clip lẫn nhiều người.")
     ap.add_argument("--sync_floor", type=float, default=None,
                     help="gate sync: loại clip RÁC RÕ RÀNG (LSE-C < floor HOẶC sync fail = "
                          "không ai nói). MẶC ĐỊNH None = không động tới sync. CHỈ đặt giá trị "
                          "CỰC THẤP lấy từ calibrate, và PHẢI áp y hệt cho tập fake (đối xứng).")
-    ap.add_argument("--cap_per_speaker", type=int, default=12)
-    ap.add_argument("--out", default="data/02_curate/all_clean.csv")
+    ap.add_argument("--motion_floor", type=float, default=None,
+                    help="gate motion: loại clip ảnh TĨNH (motion_median < floor HOẶC không "
+                         "đo được). MẶC ĐỊNH None = không động tới motion. Chỉ áp cho tập "
+                         "REAL NGUỒN trước khi sinh fake — KHÔNG lọc motion trên fake đã sinh "
+                         "(anonymization làm mờ -> motion giảm -> loại lệch riêng kênh đó).")
+    ap.add_argument("--cap_per_speaker", type=int, default=30)
+    ap.add_argument("--out", default="data/02_curate/manifests/all_clean.csv")
+    ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
 
     df, emb = load(args.scored_csv, args.emb)
@@ -197,6 +228,20 @@ def main():
     if args.calibrate:
         calibrate(df, emb)
         return
+
+    out_stem, out_ext = os.path.splitext(args.out)
+    if out_ext.lower() != ".csv":
+        raise ValueError("--out must end with .csv")
+    rej_path = out_stem + "_rejects.csv"
+    balance_path = out_stem + "_balance_dropped.csv"
+    config_path = out_stem + "_config.json"
+    outputs = (args.out, rej_path, balance_path, config_path)
+    existing = [path for path in outputs if os.path.exists(path)]
+    if existing and not args.overwrite:
+        raise FileExistsError(
+            "Output already exists; pass --overwrite only for an intentional rerun: "
+            + ", ".join(existing)
+        )
 
     # [B2] speaker_id
     df = cluster_speakers(df, emb, args.cluster_dist)
@@ -218,24 +263,86 @@ def main():
         gate = gate & ~sync_garbage
         print(f"[B3] sync gate (floor={args.sync_floor}): loại thêm {int(sync_garbage.sum())} "
               f"clip rác sync (NHỚ áp cùng floor cho tập fake để đối xứng)")
+    if "motion_median" in df.columns and args.motion_floor is not None:
+        # Ảnh tĩnh / B-roll: frame_reverse và temporal_desync trên clip này ra fake
+        # KHÔNG phân biệt được với real -> cặp nhãn là nhiễu thuần túy.
+        static_garbage = df["motion_median"].isna() | (df["motion_median"] < args.motion_floor)
+        gate = gate & ~static_garbage
+        print(f"[B3] motion gate (floor={args.motion_floor}): loại thêm "
+              f"{int(static_garbage.sum())} clip tĩnh/không đo được")
     rejected = df[~gate].copy()
-    df = df[gate].copy()
-    print(f"[B3] gate: giữ {len(df)}/{before}, loại {len(rejected)} "
+    gated = df[gate].copy()
+    print(f"[B3] gate: giữ {len(gated)}/{before}, loại {len(rejected)} "
           f"(không mặt / mặt nhỏ / mặt thưa / lẫn người)")
 
     # [B4] cân bằng
-    df = balance(df, args.cap_per_speaker)
+    df = balance(gated, args.cap_per_speaker)
+    gated_ids = set(gated["clip_id"])
+    clean_ids = set(df["clip_id"])
+    balance_dropped_ids = gated_ids - clean_ids
+    balance_dropped = gated[gated["clip_id"].isin(balance_dropped_ids)].copy()
+
+    rejected_ids = set(rejected["clip_id"])
+    if rejected_ids & balance_dropped_ids or rejected_ids & clean_ids or balance_dropped_ids & clean_ids:
+        raise RuntimeError("Curation output partitions overlap")
+    input_ids = rejected_ids | gated_ids
+    if rejected_ids | balance_dropped_ids | clean_ids != input_ids:
+        raise RuntimeError("Curation output partitions do not cover the scored input")
+    if len(rejected) + len(balance_dropped) + len(df) != before:
+        raise RuntimeError("Curation output row counts do not match the scored input")
     print(f"[B4] sau cân bằng (cap {args.cap_per_speaker}/speaker): {len(df)} clip")
+    if df.empty:
+        raise RuntimeError("Curation produced zero clean clips; refusing to publish")
     dist = df["speaker_id"].value_counts()
     print(f"     clip/speaker: min={dist.min()} med={int(dist.median())} max={dist.max()}")
 
     # [B5] xuất
     df = df.sort_values(["speaker_id", "source_video", "start_time"]).reset_index(drop=True)
-    df.to_csv(args.out, index=False)
-    rej_path = args.out.replace(".csv", "_rejects.csv")
-    rejected.to_csv(rej_path, index=False)
+    rejected = rejected.sort_values("clip_id").reset_index(drop=True)
+    balance_dropped = balance_dropped.sort_values("clip_id").reset_index(drop=True)
+    run_config = {
+        "inputs": {
+            "scored_csv": os.path.abspath(args.scored_csv),
+            "scored_csv_sha256": sha256_file(args.scored_csv),
+            "embeddings": os.path.abspath(args.emb),
+            "embeddings_sha256": sha256_file(args.emb),
+        },
+        "parameters": {
+            "cluster_dist": args.cluster_dist,
+            "min_det_ratio": args.min_det_ratio,
+            "min_face_area": args.min_face_area,
+            "min_consistency": args.min_consistency,
+            "sync_floor": args.sync_floor,
+            "motion_floor": args.motion_floor,
+            "cap_per_speaker": args.cap_per_speaker,
+        },
+        "counts": {
+            "scored": before,
+            "gate_rejected": len(rejected),
+            "balance_dropped": len(balance_dropped),
+            "clean": len(df),
+        },
+    }
+    out_parent = os.path.dirname(os.path.abspath(args.out))
+    os.makedirs(out_parent, exist_ok=True)
+    partials = {path: path + ".partial" for path in outputs}
+    try:
+        df.to_csv(partials[args.out], index=False)
+        rejected.to_csv(partials[rej_path], index=False)
+        balance_dropped.to_csv(partials[balance_path], index=False)
+        with open(partials[config_path], "w", encoding="utf-8") as f:
+            json.dump(run_config, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        for final_path, partial_path in partials.items():
+            os.replace(partial_path, final_path)
+    finally:
+        for partial_path in partials.values():
+            if os.path.exists(partial_path):
+                os.remove(partial_path)
     print(f"[B5] xuất {len(df)} clip sạch -> {args.out}")
     print(f"     reject log -> {rej_path} (nên xem mẫu để xác nhận đúng là rác)")
+    print(f"     balance drop -> {balance_path}")
+    print(f"     config + input hashes -> {config_path}")
     print(f"     speaker_id sẵn sàng cho split chống identity leakage ở bước sau.")
 
 
