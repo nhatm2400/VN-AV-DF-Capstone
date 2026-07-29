@@ -8,6 +8,7 @@ import time
 import random
 import builtins
 import glob
+import re
 
 # Force flush on all print statements for real-time progress
 def print(*args, **kwargs):
@@ -156,8 +157,11 @@ def download_and_zip_streaming():
     consecutive_failures = 0
     
     for idx, item in enumerate(files, 1):
-        filename = item['path']
+        raw_filename = item['path']
         download_url = item['url']
+        
+        # Sanitize filename (remove " (1)", " (2)", etc.)
+        filename = re.sub(r' \(\d+\)(\.[a-zA-Z0-9]+)$', r'\1', raw_filename)
         
         # Skip if already in zip
         if filename in existing_files:
