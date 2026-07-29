@@ -20,7 +20,18 @@ TARGET_USERS = [
     "bundau_chamchao",
     "lemkcr",
     "khanhbnq",
-    "swan_meii"
+    "swan_meii",
+    "letuankhang2002",
+    "huynl.schannel",
+    "chuyentaolaoreview",
+    "doang_hoang",
+    "gocphimhay01",
+    "cauzoiday.official",
+    "toan.saigon",
+    "hi.trantrongduc",
+    "thalicvoice",
+    "schannelvn",
+    "lmsl.vietnam",
 ]
 
 def fetch_tiktok_videos(username, max_results=30):
