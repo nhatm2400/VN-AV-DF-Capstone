@@ -28,12 +28,29 @@ Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
 - Các output measurement/curation mặc định không ghi đè; curation xuất đủ ba
   partition `gate rejected + balance dropped + clean = scored`, kèm config và
   SHA-256 input.
-- Kiểm thử local: **34 pass, 1 skip**. Test bị skip là real-data smoke chỉ chạy
+- Kiểm thử local hiện tại: **36 pass, 1 skip**. Test bị skip là real-data smoke chỉ chạy
   khi bật `RUN_REAL_AV_AUDIT=1`; compile Python và compile 5 code cell notebook
   đều đạt.
 - Chưa có bằng chứng Kaggle GPU/smoke, chưa có full cut mới và chưa thay canonical
   data. Tier 2 vẫn cần khóa Kaggle path; Tier 3 vẫn fail-closed với
   `expected_input_count=0` cho tới khi khôi phục manifest Stage 03.
+
+### P2 — preflight local một phần
+
+- Tier 1 quality manifest: `472` dòng, `472` filename unique; raw local có đủ
+  `472/472`, ngoài ra còn 42 file không thuộc tập quality-pass.
+- Tier 2 quality manifest: `292` dòng, `292` filename unique. Repo local không
+  chứa raw Tier 2 nên chưa kiểm được media 1–1; phải kiểm trên Kaggle mount.
+- Tier 3 không có quality CSV gốc hoặc raw local. Từ cut logs đã snapshot có thể
+  phục hồi **danh sách chính xác 1.262 source ID** chứ không chỉ con số tổng:
+  163 source xuất hiện trong accepted log, 1.251 trong reject log, union là
+  1.262 source numeric 19 chữ số.
+- Inventory phục hồi nằm tại
+  `archive/cut_clips_v1_decode_bug/tier3_recovered_input_inventory.csv`, kèm
+  checksum provenance. Đây không phải quality-gate manifest thay thế; chỉ được
+  dùng sau khi khớp 1–1 với 1.262 raw MP4 trên Kaggle.
+- P2 chưa hoàn tất vì còn thiếu path/mount raw Tier 2, raw Tier 3 và quality
+  manifest Tier 3 gốc hoặc bằng chứng 1–1 tương đương trên Kaggle.
 
 ## 1. Kết luận điều hành
 

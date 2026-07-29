@@ -9,6 +9,11 @@ CUDA decode và chạy lại Cut Clips.
 - `media_inventory` chỉ lưu path + kích thước, không hash toàn bộ media.
 - `cut_logs/` là bản sao các CSV trong `data/01_collect/cut_clips/`, vì thư mục
   đó bị Git bỏ qua.
+- `tier3_recovered_input_inventory.csv` là union chính xác của `source_video`
+  trong accepted log và `video` trong reject log cũ: 1.262 source, tên file
+  phục hồi theo `<source_video>.mp4`. Đây chỉ là inventory để đối chiếu 1–1
+  với raw media trên Kaggle, không phải quality-gate manifest Stage 03 gốc.
+  Checksum nguồn và cảnh báo nằm trong file `.summary.json` cùng tên.
 
 Tạo snapshot bằng:
 
