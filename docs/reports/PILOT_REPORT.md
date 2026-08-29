@@ -9,6 +9,11 @@
 > này vẫn được giữ nguyên. Hành vi source sinh V1 thuộc snapshot/commit `467f606`;
 > các link source tương đối hiện trỏ code V2 mới và không tái hiện generator V1.
 
+> **Cleanup 2026-08-29:** media, manifest và feature store hỗ trợ Pilot V1 đã
+> được dọn khỏi checkout. Các đường dẫn artifact trong báo cáo được giữ như mô tả
+> lịch sử và có thể không còn mở được; checkpoint/kết quả run trong `experiments/`
+> vẫn còn, nhưng checkout hiện tại không đủ để tái lập toàn bộ pilot V1.
+
 > Snapshot được kiểm chứng ngày **20/07/2026** tại repository `VN-AV-DF-Capstone`.
 >
 > Trạng thái: **PILOT PASS CÓ ĐIỀU KIỆN** — pipeline dữ liệu/feature đủ an toàn để chạy full extraction; kết quả model chưa đủ để tuyên bố mô hình cuối cùng hoạt động tốt trên mọi phương pháp giả mạo.

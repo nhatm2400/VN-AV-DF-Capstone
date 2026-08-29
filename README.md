@@ -31,7 +31,7 @@ Cách này cho **nhãn chính xác tuyệt đối** và cho phép đo riêng t�
 
 Đã chạy pilot V1 trên 2.700 clip, đạt test ROC-AUC **0,809**. Nhưng phân tích theo từng kênh cho thấy con số tổng che giấu khoảng cách lớn: `pitch_flatten` 0,990 trong khi `frame_reverse` chỉ 0,535 — gần bằng đoán bừa. Kiểm tra đối kháng còn phát hiện các baseline tầm thường giải được hai kênh dễ, và một lỗi tạo tác trong generator temporal.
 
-Kết luận hiện tại là **NO-GO** cho huấn luyện đầy đủ với V1. Đang ở giai đoạn sửa generator và kiểm duyệt lại dữ liệu nguồn trước khi dựng kiến trúc V2.
+Kết luận hiện tại là **NO-GO** cho huấn luyện đầy đủ với V1. Stage 04 đã được cắt lại đủ ba tier và đạt coverage; bước kế tiếp là dựng lại curation, ROI review và assignment trên population mới trước khi tiếp tục fake V2.
 
 Trạng thái chi tiết và luôn cập nhật: [PROJECT.md](PROJECT.md).
 
@@ -53,7 +53,6 @@ data/                  # Manifest và artifact theo stage (media không commit)
 docs/                  # Kiến trúc, báo cáo, nhật ký làm việc — xem docs/README.md
 experiments/           # Mỗi lần chạy là một thư mục bất biến
 tests/                 # Test cho generator và data contract
-PoC/                   # Proof of concept giai đoạn đầu
 ```
 
 ## Tài liệu

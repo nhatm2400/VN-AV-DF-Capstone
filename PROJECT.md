@@ -6,7 +6,7 @@ Dự án phát hiện **Deepfake âm thanh-hình ảnh tiếng Việt** (Vietnam
 
 Mô hình hiện đã chạy pilot: **AVSP-Net V1** — mouth ROI + Wav2Vec + prosody, hợp nhất bằng Cross-Attention. Kiến trúc mục tiêu mới là **AVSP-Net V2**, gồm V2a (local temporal core, giữ cùng loại feature nhưng repaired pilot dùng store mới) và V2b (mở rộng để tổng quát hóa sang deepfake thực tế), xem [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
 
-Trạng thái hiện tại: **BLOCKED tại Stage 04 Cut Clips, NO-GO cho manual review mới, sinh fake, extract feature và train**. Audit 2026-07-29 xác nhận lần cắt cũ làm `1.413` video dừng ở `video_decode_failed` do CUDA decode không có CPU fallback. Ngoài ra cut cũ còn thiếu hoàn toàn `169/292` video Tier 2 và `1.012/2.274` video Tier 3 quality-pass. Vì vậy `6.888 clip → 3.001 all_clean` hiện chỉ còn giá trị lịch sử và phải được dựng lại từ Stage 04. P0 đã snapshot lineage/media inventory cũ; P1 đã có core dùng chung, notebook Kaggle canonical, fallback CPU/libx264 và contract output fail-closed. Ba manifest đã khóa lần lượt `472/292/2.274` filename unique; vẫn phải đối chiếu Tier 2/3 với raw media trên Kaggle trước smoke. Stage 03 trở về trước không chạy lại. Xem [kế hoạch hotfix và rebuild](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md).
+Trạng thái hiện tại: **Stage 04 Cut Clips đã dựng lại xong và đạt Gate C; đang chờ P4 curation mới, sau đó P5 tạo assignment review**. Ba quality manifest gồm `472/292/2.274 = 3.038` video nguồn đều có terminal status. Output hiện có `65.622` accepted clip khớp 1–1 với `65.622` MP4, không thiếu/mồ côi/trùng `clip_id`; `120.187` cửa sổ bị reject có lý do. Tổng media sau khi downscale trực tiếp 1.200 clip 4K xuống 1080p là `155,277 GiB`. `all_manifest.csv` mới **chưa được dựng**, vì vậy manual review mới, sinh fake, extract feature và train vẫn **NO-GO**. Ba file `all_clean*.csv` còn lại trong `data/02_curate/manifests/` thuộc population cũ `6.888 → 3.001`, chỉ có giá trị lịch sử và không được dùng làm nguồn real mới. Xem [kế hoạch hotfix và rebuild](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md) và [nhật ký Stage 04 ngày 2026-08-29](docs/logs/2026-08-29_STAGE04_REBUILD_AND_STORAGE_NORMALIZATION.md).
 
 Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng sinh 12.004 fake**, **PILOT V1 đã chạy xong** trên 2.700 clip với test AUC **0.809**, bốn generator V2/SNVSM/timeline contract đã implement/test, và stratified smoke `v2r6` đã đạt metadata gate max AUC 0,546. Các con số này không chứng minh tập nguồn hiện tại đã sạch và không được dùng để bỏ qua hotfix. Sau khi cut → curate → manual review được dựng lại, lộ trình tiếp tục từ fake V2/SNVSM/Stage 05/metadata gate đến repaired pilot V2a; full training vẫn **NO-GO**. Xem [báo cáo Phase 0](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) và [đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
 
@@ -63,39 +63,20 @@ Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng s
 │   │   └── evaluate.py                 # acc/P/R/F1/AUC + method-wise + confusion -> eval_<split>.json
 │   ├── utils/                          # (placeholder test.py)
 │   └── pre-testing/                    # (trống) — thử nghiệm nhanh
-├── PoC/                                # Proof-of-concept PAMF (đã hoạt động)
-│   ├── src/
-│   │   ├── feature_extractor.py        # Wav2Vec2 + MobileNetV2
-│   │   ├── fusion_model.py             # PAMF Cross-Attention
-│   │   ├── train_and_eval.py
-│   │   ├── evaluate.py
-│   │   ├── inference.py
-│   │   ├── extract_all.py
-│   │   └── data_maker.py
-│   ├── data/                           # test1.mp4, test2.mp4 (mẫu)
-│   ├── checkpoints/                    # pamf_poc_model.pth
-│   ├── confusion_matrix.png
-│   └── requirements.txt
 ├── data/                               # (KHÔNG commit phần nặng: raw, cut_clips, fake, features)
 │   ├── 01_collect/
 │   │   ├── youtube_tier1_urls.csv, youtube_tier2_urls.csv
 │   │   ├── tier1_quality_gate_passed.csv, tier2_quality_gate_passed.csv
-│   │   └── cut_clips/                  # ĐÃ DỜI từ data/clips/ về đây
-│   │       ├── all_manifest.csv        # nguồn chân lý path clip (6.888 clip)
-│   │       └── tier1/ tier2/ tier3/    # các .mp4 đã cắt + tier{N}_v3_clips_*.csv
+│   │   └── cut_clips/                  # Stage 04 mới: 65.622 MP4 + metadata/checksum theo batch
+│   │       ├── tier1/ tier2/ tier3/    # accepted_clips.csv, video_status.csv, SHA256SUMS, media/
+│   │       └── all_manifest.csv        # chưa dựng; P4 sẽ tạo từ accepted CSV mới
 │   ├── 02_curate/
-│   │   ├── measurements/               # kết quả đo tự động trước khi ra quyết định
-│   │   │   ├── tier1_scored_all.csv, tier1_scored_motion.csv
-│   │   │   └── embeddings_all.npy      # 6.888 × 512 (commit — ngoại lệ trong .gitignore)
+│   │   ├── measurements/               # P4 sẽ dựng lại score/embedding cho population mới
 │   │   ├── manifests/                  # bảng quyết định của curation
-│   │   │   ├── all_clean.csv, all_clean_rejects.csv
-│   │   │   └── all_clean_review.csv
-│   │   ├── calibration/                # kết quả thử ngưỡng SyncNet
-│   │   │   ├── calibrate_sync_results.csv
-│   │   │   └── sync_calibrate_log.txt
-│   │   ├── logs/                       # log chạy curation/preview (không commit)
-│   │   ├── eda_figs/                   # 11 PNG + eda_summary.md
-│   │   └── manual/                     # quyết định lọc tay từ src/tools/clip_review.py
+│   │   │   └── all_clean*.csv          # 3 manifest lịch sử; P4 sẽ thay bằng output mới
+│   │   ├── calibration/                # P4 sẽ tạo lại nếu tiếp tục dùng SyncNet
+│   │   ├── eda_figs/                   # P4 sẽ tạo lại
+│   │   └── manual/                     # P5/manual review sẽ tạo version mới
 │   ├── 03_fake/                        # output fake .mp4 + labels.csv (hiện trống, .gitkeep)
 │   ├── 04_features/                    # output feature .pt + features_index.csv (hiện trống)
 │   ├── 05_labels/                      # labels.csv thống nhất real+fake + cột split
@@ -118,51 +99,9 @@ Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng s
 
 ---
 
-## Kiến trúc mô hình PAMF
+## Kiến trúc mô hình
 
-### Feature Extractors
-
-| Modality | Backbone | Output dim | Checkpoint |
-|---|---|---|---|
-| Audio | Wav2Vec2 Base (Vietnamese) | `[B, T_A, 768]` | `nguyenvulebinh/wav2vec2-base-vietnamese-250h` |
-| Visual | MobileNetV2 (features only) | `[B, T_V, 1280]` | ImageNet pretrained |
-
-### Fusion Model (`PoC/src/fusion_model.py`)
-
-```
-Audio [B,T_A,768]  ──LayerNorm──Linear──► Query [B,T_A,512]
-                                                    │
-Visual [B,T_V,1280]──LayerNorm──Linear──► Key,Value [B,T_V,512]
-                                                    │
-                                      MultiheadAttention (4 heads)
-                                                    │
-                                        GlobalAvgPool → [B,512]
-                                                    │
-                                        MLP → Dropout(0.3) → Sigmoid
-                                                    │
-                                          0 = Real, 1 = Fake
-```
-
-**Nguyên lý:** Audio làm Query đi tìm khẩu hình miệng (Visual Key/Value) tương ứng. Nếu lệch pha → Deepfake.
-
-> AVSP-Net V1 đã triển khai mouth ROI + prosody nhưng pilot cho thấy global fusion/offset loss chưa đủ. Kiến trúc thay thế V2a/V2b nằm tại [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
-
-### Training (PoC)
-
-- Loss: `BCELoss`
-- Optimizer: `Adam(lr=5e-4)`
-- Epochs: 50
-- Gradient accumulation qua toàn bộ file trong epoch, clip grad norm = 1.0
-- Chạy từ thư mục `PoC/`: `python src/train_and_eval.py`
-
-### Inference
-
-```bash
-cd PoC
-python src/inference.py
-```
-
-Checkpoint: `PoC/checkpoints/pamf_poc_model.pth`
+Code hiện hành dùng **AVSP-Net V1** trong `src/model/avsp_net.py`: mouth ROI, Wav2Vec tiếng Việt và prosody hợp nhất bằng cross-attention. Pilot cho thấy global fusion/offset loss chưa đủ, nên kiến trúc mục tiêu là V2a/V2b trong [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md). Thư mục proof-of-concept PAMF cũ đã được dọn khỏi repository; số đo pilot V1 vẫn được giữ trong báo cáo và run bất biến dưới `experiments/`.
 
 ---
 
@@ -194,19 +133,16 @@ python src/pipeline/01_collect/tier{N}/02_download.py     # yt-dlp -> data/raw/t
 
 Output: `data/01_collect/tier{N}_quality_gate_passed.csv`. (Ngưỡng SNR/face trong tài liệu là chủ trương thiết kế; code hiện gate độ phân giải + FPS + có audio.)
 
-**Cắt clip** — `tier{N}/04_cut_clips.ipynb` (Kaggle GPU). Cắt theo VAD (Silero) + lọc cắt cảnh/mặt (YOLO)/speech; **đo SNR nhưng KHÔNG gate** (`MIN_SNR=-999`, giữ metadata). Output vào `data/01_collect/cut_clips/tier{N}/`: `tier{N}_v3_clips_*.csv` (+ `_rejects_*.csv`) + các `.mp4`. Schema clip: `clip_id, source_video, start_time, end_time, duration, face_ratio, speech_ratio, snr, file_path`.
+**Cắt clip** — `04_cut_clips.ipynb` gọi core dùng chung `cut_clips_core.py` trên Kaggle GPU. Pipeline cắt theo VAD (Silero), kiểm scene/face/speech, có CUDA→CPU decode fallback và NVENC→libx264 cut fallback; **đo SNR nhưng KHÔNG gate** (`min_snr=-999`). Mỗi batch bất biến chứa `accepted_clips.csv`, `rejected_windows.csv`, `video_status.csv`, `run_summary.json`, config/environment, `SHA256SUMS` và `media/`. Stage 04 mới đã hoàn tất `3.038` input → `65.622` accepted clip; 14 nguồn 4K được downscale trực tiếp thành 1080p sau cut, audio stream-copy và checksum hiện hành đã cập nhật.
 
 ### 02_curate — Curation tự động (`src/pipeline/02_curate/`)
 
 Lọc ~6.9k clip thay cho lọc tay. Triết lý: **đo mọi thứ, chỉ loại rác rõ ràng, giữ phần còn lại làm metadata; calibrate trước khi đặt ngưỡng**. Chạy tuần tự:
 
 ```bash
-# 1) Gộp tier + remap file_path về đĩa thật (CHẠY THEO ĐĨA, verify ffprobe)
-python src/pipeline/02_curate/01_prep_manifest.py \
-    --add tier1 "data/01_collect/cut_clips/tier1/**/*_v3_clips_*.csv" "data/01_collect/cut_clips/tier1" \
-    --add tier2 "data/01_collect/cut_clips/tier2/**/*_v3_clips_*.csv" "data/01_collect/cut_clips/tier2" \
-    --add tier3 "data/01_collect/cut_clips/tier3/**/*_v3_clips_*.csv" "data/01_collect/cut_clips/tier3" \
-    --out data/01_collect/cut_clips/all_manifest.csv
+# 1) Gộp accepted CSV ba tier + remap file_path về đĩa thật + verify ffprobe
+python src/pipeline/02_curate/01_prep_manifest.py
+# -> data/01_collect/cut_clips/all_manifest.csv; kỳ vọng 65.622 dòng
 # 2) Đo mặt + embedding (GPU, InsightFace) -> data/02_curate/measurements/
 python src/pipeline/02_curate/02_score_clips.py \
     --input_csv data/01_collect/cut_clips/all_manifest.csv --tag all
@@ -228,7 +164,7 @@ python src/pipeline/02_curate/05_eda.py
 
 ```bash
 python src/tools/build_review_manifest.py   # 1) gộp số đo -> manifests/all_clean_review.csv
-python src/tools/build_roi_preview.py       # 2) dựng ô ROI+tiếng (~85 phút, 3.001 clip)
+python src/tools/build_roi_preview.py       # 2) dựng ô ROI+tiếng cho all_clean mới
 python src/tools/clip_review.py             # 3) mở http://127.0.0.1:8000
 ```
 
@@ -242,12 +178,10 @@ python src/tools/clip_review.py             # 3) mở http://127.0.0.1:8000
 
 V1 lịch sử đã sinh bốn method vào `data/03_fake/labels.csv`; không dùng lại cho repaired pilot. Bốn generator V2 ghi media/manifest versioned riêng dưới `data/03_fake/*_v2` và `data/03_fake/manifests/v2/`. Builder chỉ nhận đúng generator version + timeline contract V2 của cả bốn method, không còn lấy ba method từ manifest V1.
 
-> **`data/03_fake/` hiện trống (chỉ còn `.gitkeep`).** Fake V1 nằm ở
-> [`archive/pilot_v1/`](archive/pilot_v1/README.md); sáu vòng smoke Phase 0 của generator
-> V2 (`phase0_*`, gồm cả `v2r6` và metadata gate) nằm ở
-> [`archive/phase0_v2_smoke/`](archive/phase0_v2_smoke/README.md) từ 2026-07-29. Đường dẫn
-> trong manifest của cả hai đã được viết lại và kiểm chứng toàn bộ. Repaired pilot sẽ ghi
-> mới vào `data/03_fake/`.
+> **`data/03_fake/` hiện trống (chỉ còn `.gitkeep`).** Media/manifest Fake V1 và các
+> smoke Phase 0 cũ đã được dọn khỏi repository; báo cáo kết quả vẫn còn trong `docs/`,
+> còn checkpoint pilot V1 nằm trong `experiments/`. Repaired pilot sẽ ghi mới vào
+> `data/03_fake/` sau khi P4/P5 và manual review hoàn tất.
 
 ```bash
 # Mặc định V2: media -> data/03_fake/temporal_v2/
@@ -335,11 +269,9 @@ python src/eval/evaluate.py --ckpt experiments/avsp_audio_visual_prosody/best.pt
 
 Pilot = subset **speaker/video-disjoint** 540 real + 2160 fake (4 method ghép cặp) = **2700 clip**, split 378/81/81. Mục đích: xác nhận model học được TRƯỚC khi bỏ ~4.4h extract full. Output để ở path `_pilot` **cô lập** khỏi production (pilot fail thì xóa, không nhiễm `data/04_features/`).
 
-> **Đường dẫn dưới đây là lịch sử.** Từ 2026-07-28 toàn bộ artifact V1 + pilot V1 đã
-> chuyển sang [`archive/pilot_v1/`](archive/pilot_v1/README.md) và manifest đã được
-> viết lại tương ứng: `data/03_fake/` → `archive/pilot_v1/03_fake/`,
-> `data/04_features_pilot/` → `archive/pilot_v1/04_features_pilot/`,
-> `data/05_labels/labels{,_pilot}.csv` → `archive/pilot_v1/05_labels/`.
+> **Đường dẫn lệnh dưới đây là lịch sử và không còn chạy lại được nguyên trạng.**
+> Manifest/media/feature Pilot V1 đã được dọn khỏi repository; run kết quả bất biến
+> `experiments/pilot_v1_20260720-214741_467f606_b8c61ed7/` và các báo cáo vẫn được giữ.
 
 ```bash
 # manifest pilot: data/03_fake/snvsm/pilot_{real,fake}_snvsm.csv + data/05_labels/labels_pilot.csv
@@ -386,7 +318,7 @@ Chi tiết bằng chứng và thứ tự xử lý: [PILOT_V1_REVIEW_AND_V2_PLAN.
 - Bước 2 structured timeline: schema `av_timeline_v1`, policy `fixed_common_window_v1`, semantics theo method, propagation qua SNVSM/Stage 05/Stage 04 và `timeline_contract_id` trong feature đã có contract-test.
 - Bước 4 stratified smoke `v2r6`: 15 nguồn thật (5/tier) → 15 output/method, raw paired contract 60/60, SNVSM 15 real + 60 fake, Stage 05 đủ 75 labels và không trùng speaker/source qua split. Metadata gate group-disjoint đạt: logistic AUC 0,530; random forest AUC 0,546; max 0,546 ≤ 0,65.
 - Guard fail-closed: Stage 05 mặc định kiểm file và dừng nếu fake rỗng/mồ côi, media thiếu, coverage/CRF/audio/video lệch; Stage 04 từ chối fake rỗng, chỉ resume feature khớp identity/source/config + exact tensor contract, ghi `.pt` atomic và trả exit lỗi nếu còn clip fail; dataloader không drop labels thiếu/sai feature/nhánh.
-- Pilot V1 vẫn bất biến, checksum khớp 8/8.
+- Báo cáo lịch sử ghi nhận Pilot V1 từng khớp 8/8 checksum; artifact nguồn tương ứng đã được dọn nên không thể kiểm lại đầy đủ từ checkout hiện tại.
 
 Chi tiết: [TEMPORAL_DESYNC_PHASE0_SMOKE.md](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md). Đây vẫn chưa phải pilot V2a. Bước kế tiếp là tạo repaired pilot và, vì SNVSM V2 đổi media của cả real lẫn mọi fake, normalize lại **540 real + 2.160 fake**, qua Stage 05 và metadata gate toàn bộ labels, rồi mới extract **2.700 feature** vào store versioned; không trộn với `.pt` V1.
 
@@ -440,7 +372,7 @@ Cần bổ sung ít nhất **4 metrics** vào báo cáo (xem docs). **Cosine sim
 ### Dữ liệu & nhãn
 - Chiếm 80–90% khối lượng công việc — ưu tiên làm data và label trước.
 - Nguồn: YouTube (tier1 CC, tier2 Std) và TikTok (tier3).
-- **Không commit:** `data/raw/`, `data/01_collect/cut_clips/`, `data/03_fake/`, `data/04_features/` (dung lượng lớn). `all_manifest.csv` là nguồn chân lý về path clip.
+- **Không commit:** `data/raw/`, `data/01_collect/cut_clips/`, `data/03_fake/`, `data/04_features/` (dung lượng lớn). Trước P4, accepted CSV theo batch là nguồn chân lý; sau khi `01_prep_manifest.py` đạt gate, `all_manifest.csv` mới trở thành manifest path canonical cho curation.
 
 ---
 
@@ -453,8 +385,6 @@ Cần bổ sung ít nhất **4 metrics** vào báo cáo (xem docs). **Cosine sim
 | [docs/reports/PILOT_REPORT.md](docs/reports/PILOT_REPORT.md) | Báo cáo chi tiết quá trình pilot gốc |
 | [docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md) | Review V1 sau pilot, fact-check và quyết định NO-GO/roadmap V2 |
 | [docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) | Bằng chứng sửa generator temporal và smoke Phase 0 |
-| [PoC/src/fusion_model.py](PoC/src/fusion_model.py) | Định nghĩa PAMF_Fusion (Cross-Attention) |
-| [PoC/src/feature_extractor.py](PoC/src/feature_extractor.py) | Wav2Vec2 + MobileNetV2 extractor |
 | [src/pipeline/timeline_contract.py](src/pipeline/timeline_contract.py) | Schema/validator timeline dùng chung và fixed-common-window policy |
 | [src/pipeline/fake_media_contract.py](src/pipeline/fake_media_contract.py) | Probe/validator atomic cho paired frame/FPS/duration/audio target của generator V2 |
 | [src/pipeline/03_fake/01_temporal_desync.py](src/pipeline/03_fake/01_temporal_desync.py) | Generator temporal V2 sample-exact, manifest riêng và structured valid-range |
@@ -465,5 +395,6 @@ Cần bổ sung ít nhất **4 metrics** vào báo cáo (xem docs). **Cosine sim
 | [src/tools/clip_review.py](src/tools/clip_review.py) | Web tool lọc tay (ô ROI+tiếng) + so sánh với lọc code |
 | [src/tools/build_review_manifest.py](src/tools/build_review_manifest.py) | Dựng `all_clean_review.csv` (tái lập được) |
 | [yolov8n-face.pt](yolov8n-face.pt) | Face detection model (root) |
-| [data/01_collect/cut_clips/all_manifest.csv](data/01_collect/cut_clips/all_manifest.csv) | Nguồn chân lý path 6.888 clip |
-| [data/02_curate/manifests/all_clean.csv](data/02_curate/manifests/all_clean.csv) | 3.001 clip real sạch (kèm speaker_id) |
+| `data/01_collect/cut_clips/tier{1,2,3}/**/accepted_clips.csv` | Nguồn chân lý Stage 04 hiện tại; tổng 65.622 clip |
+| `data/01_collect/cut_clips/all_manifest.csv` | Output P4 chưa tạo; sẽ gộp accepted CSV và remap path local |
+| [data/02_curate/manifests/all_clean.csv](data/02_curate/manifests/all_clean.csv) | Manifest lịch sử 3.001 clip; không dùng cho population mới |

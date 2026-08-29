@@ -13,12 +13,9 @@ Tài liệu ở root chỉ giữ vai trò quy tắc và điểm vào. Nội dung
 - [PILOT_V1_REVIEW_AND_V2_PLAN.md](reports/PILOT_V1_REVIEW_AND_V2_PLAN.md) — review V1 sau pilot, fact-check, blocking issue và kế hoạch V2.
 - [TEMPORAL_DESYNC_PHASE0_SMOKE.md](reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) — code repair, test matrix và smoke dữ liệu thật cho temporal V2.
 
-## Báo cáo lịch sử
-
-Các checkpoint cũ được giữ trong [`archives/2026_report_checkpoints/`](archives/2026_report_checkpoints/) để truy vết lịch sử; không dùng chúng thay cho trạng thái hiện tại trong `PROJECT.md`.
-
 ## Nhật ký làm việc
 
+- [2026-08-29 — Hoàn tất Stage 04 và chuẩn hóa dung lượng](logs/2026-08-29_STAGE04_REBUILD_AND_STORAGE_NORMALIZATION.md) — audit đủ ba tier, downscale 1.200 clip 4K và trạng thái bàn giao sang P4/P5.
 - [2026-07-27 — Manual curation và audit dung lượng](logs/2026-07-27_MANUAL_CURATION_AND_STORAGE_AUDIT.md) — tóm tắt phiên phân tích manual review, giới hạn của mẫu 60 clip và phân loại dữ liệu có thể dọn.
 - [2026-07-28 — Multi-reviewer và phân phối dữ liệu](logs/2026-07-28_MULTI_REVIEWER_PLAN_AND_DATA_DISTRIBUTION.md) — tooling chia việc cho ba reviewer, số clip thực sự cần review, và bộ 7,3 GiB đã gom sẵn để phát.
 

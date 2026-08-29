@@ -4,18 +4,20 @@
 **Phạm vi:** bắt đầu từ `04_cut_clips.ipynb`; không chạy lại bước thu thập, tải và quality gate từ Stage 03 trở về trước.  
 Kế hoạch kết thúc sau khi tạo, kiểm tra và export assignment review mới ở P5.
 Manual review, merge kết quả, sinh fake, trích feature và train nằm ngoài phạm vi.
-**Trạng thái:** P0 đã snapshot; P1 đã triển khai trong source; smoke Tier 1
-`2:11` đạt coverage `9/9`, nhưng chưa kiểm chứng CPU fallback thực tế trên Kaggle.
-Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
+**Trạng thái cập nhật 2026-08-29:** **P3 đã hoàn tất và đạt Gate C cho cả ba tier**.
+P4 curation mới và P5 assignment review chưa chạy. Manual review, sinh fake,
+extract feature và train vẫn NO-GO.
 
 ## 0. Nhật ký triển khai
 
 ### P0 — hoàn tất
 
-- Snapshot bất biến nằm tại `archive/cut_clips_v1_decode_bug/`.
+- Snapshot từng nằm tại `archive/cut_clips_v1_decode_bug/`; thư mục này đã được
+  dọn khỏi checkout ngày 2026-08-29 nhưng vẫn có thể truy lại từ lịch sử Git.
 - Đã lưu checksum 65 file nhỏ, 15 cut CSV/log và inventory cho media cũ.
-- Media cũ vẫn nguyên vị trí: 6.888 cut MP4, 3.001 MP4 batch review và 3.001
-  ROI preview; không copy, move hoặc delete media.
+- Tại thời điểm P0, media cũ vẫn nguyên vị trí: 6.888 cut MP4, 3.001 MP4 batch
+  review và 3.001 ROI preview. Các artifact này sau đó đã được thay/dọn khi Stage
+  04 mới đạt Gate C.
 - Commit checkpoint P0 sau rebase: `2c4d5a5`.
 
 ### P1 — source local hoàn tất; Tier 1 smoke đã đạt coverage
@@ -41,7 +43,7 @@ Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
 - Chưa có full cut mới và chưa thay canonical data. Tier 2/Tier 3 vẫn cần khóa
   Kaggle raw-media path.
 
-### P2 — manifest đã khóa, chờ đối chiếu raw media trên Kaggle
+### P2 — manifest đã khóa; preflight đã hoàn thành qua các full run
 
 - Tier 1 quality manifest: `472` dòng, `472` filename unique; raw local có đủ
   `472/472`, ngoài ra còn 42 file không thuộc tập quality-pass.
@@ -57,11 +59,30 @@ Chưa xóa, di chuyển hoặc ghi đè media hiện tại.
 - Notebook lấy cả ba quality manifest trực tiếp từ exact Git SHA. P2 chỉ còn
   thiếu đối chiếu manifest/media 1–1 trên Kaggle raw mount Tier 2 và Tier 3.
 
+### P3 — hoàn tất; Gate C đạt cho ba tier
+
+- Đã xử lý đủ `472 + 292 + 2.274 = 3.038` video nguồn; mọi nguồn có đúng một
+  terminal status.
+- `65.622` accepted row khớp 1–1 với `65.622` MP4; không thiếu, mồ côi, trùng
+  `clip_id` hoặc zero-byte. Có `120.187` rejected window với lý do có cấu trúc.
+- Theo tier: Tier 1 `30.623`, Tier 2 `20.512`, Tier 3 `14.487` accepted clip.
+- Audit checksum sau khi tập hợp local đạt; run ID Tier 2/Tier 3 vẫn mang chữ
+  `smoke` dù range thực tế bao phủ full manifest — đây là naming debt, không phải
+  thiếu coverage.
+- 14 nguồn 4K tạo 1.200 clip và từng chiếm `46,381 GiB`. Theo quyết định lưu trữ,
+  các file này đã được downscale trực tiếp `3840×2160 → 1920×1080` bằng
+  `libx264 CRF 18`, audio stream-copy. Nhóm này còn `3,191 GiB`, giải phóng
+  `43,190 GiB`; toàn Stage 04 hiện `155,277 GiB`.
+- `SHA256SUMS` của 8 batch bị tác động đã cập nhật và audit lại. Provenance tạm
+  của phép downscale đã được dọn theo yêu cầu; không còn bản media 4K để rollback.
+
 ## 1. Kết luận điều hành
 
-Không được tiếp tục manual review, sinh fake, trích feature hoặc train trên tập
-`6.888 → 3.001` hiện tại. Tập này được dựng từ một lần cắt clip có lỗi giải mã
-video bằng CUDA và một lần chạy Tier 2 không đủ phạm vi.
+Kết luận audit ban đầu là không được tiếp tục manual review, sinh fake, trích
+feature hoặc train trên tập `6.888 → 3.001`. Tập này được dựng từ một lần cắt
+clip có lỗi giải mã video bằng CUDA và một lần chạy Tier 2 không đủ phạm vi.
+Tính đến 2026-08-29, blocker Stage 04 đã được gỡ bằng population 65.622 clip mới;
+blocker hiện chuyển sang P4/P5, còn ba manifest 3.001 clip chỉ là lịch sử.
 
 Lỗi chính không nằm ở việc các ngưỡng face/speech quá gắt:
 
@@ -107,16 +128,17 @@ có lý do đưa sinh fake, feature hay train vào phạm vi chạy lại hiện
 
 | Artifact | Số file | Dung lượng | Trạng thái sau audit |
 |---|---:|---:|---|
-| `data/01_collect/cut_clips/` | 6.903 tổng, trong đó 6.888 MP4 | 22,400 GiB | Bị ảnh hưởng; không dùng làm nguồn mới |
-| `data/01_collect/final_clips_batch1/` | 3.001 MP4 | 6,835 GiB | Batch review cũ; sẽ thay |
-| `data/02_curate/` | 3.033 | 0,511 GiB | Toàn bộ là dẫn xuất từ cut cũ |
+| `data/01_collect/cut_clips/` | 65.622 MP4 | 155,277 GiB | Stage 04 mới; đã đạt Gate C |
+| `data/01_collect/cut_clips/all_manifest.csv` | chưa có | 0 | P4 phải dựng mới từ accepted CSV |
+| `data/02_curate/manifests/all_clean*.csv` | 3 CSV | nhỏ | Population cũ; chỉ giữ lịch sử, không dùng tiếp |
 | `data/03_fake/` | chỉ `.gitkeep` | 0 | Không có media hiện hành cần xóa |
 | `data/04_features/` | chỉ `.gitkeep` | 0 | Không có feature hiện hành cần xóa |
 | `data/05_labels/` | chỉ `.gitkeep` | 0 | Không có labels hiện hành cần xóa |
 | `experiments/` | 9 | 0,019 GiB | Lịch sử pilot bất biến; giữ nguyên |
 
-`archive/pilot_v1/` và `archive/phase0_v2_smoke/` là bằng chứng lịch sử, không
-được trộn vào lần dựng mới và không được xóa trong hotfix này.
+Các artifact archive/PoC và output curation cũ khác đã được dọn khỏi checkout.
+Báo cáo lịch sử và run pilot trong `experiments/` vẫn còn, nhưng không thay thế
+được population mới hoặc Gate P4/P5.
 
 ## 3. Bằng chứng lỗi Stage 04
 
@@ -448,7 +470,7 @@ infrastructure khỏi lỗi chất lượng dữ liệu.
 Stage 01–03 không chạy lại. Manifest Tier 3 đã được khôi phục để khóa provenance
 cho output Stage 03 đã đúng, không phải thay đổi tập dữ liệu.
 
-### P3 — chạy lại Cut Clips trên Kaggle
+### P3 — chạy lại Cut Clips trên Kaggle — **đã hoàn tất**
 
 1. Chạy Gate B.
 2. Chạy full Tier 1 theo batch bất biến.
@@ -458,7 +480,7 @@ cho output Stage 03 đã đúng, không phải thay đổi tập dữ liệu.
 6. Chạy Gate C cho từng tier và toàn bộ run.
 7. Download vào thư mục staging local, chưa ghi đè canonical.
 
-### P4 — dựng lại curation trong staging
+### P4 — dựng lại curation trong staging — **chưa chạy**
 
 Thứ tự bắt buộc:
 
@@ -479,7 +501,7 @@ Gate P4:
 - không missing path, duplicate clip ID hoặc source/tier rỗng;
 - `gate_rejected + balance_dropped + clean = scored`.
 
-### P5 — dựng scope và chia assignment review
+### P5 — dựng scope và chia assignment review — **chưa chạy**
 
 1. Chạy `build_review_manifest.py` từ `all_clean.csv` mới.
 2. Chạy `build_roi_preview.py` và kiểm coverage.
@@ -508,27 +530,22 @@ sinh fake, build labels, extract feature và train không thuộc hotfix P0–P5
 |---|---|---|
 | `data/raw/`, URL CSV, quality-gate output Stage 03 | **Giữ** | Không chạy lại; bổ sung manifest Tier 3 chuẩn |
 | Source Stage 01–03 | **Giữ logic** | Chỉ sửa path/provenance nếu cần tái lập; không thay data |
-| Cut logs/manifest cũ | **Archive** | P0, kèm config, checksum và nhãn `decode_bug` |
-| 6.888 MP4 cũ trong `cut_clips/` | **Giữ tạm**, sau đó archive hoặc xóa có điều kiện | Chỉ sau khi staging mới đạt Gate C và manifest cũ đã archive |
-| `all_manifest.csv` cũ | **Archive rồi thay** | Sau khi cut mới đạt Gate C |
-| Toàn bộ measurement/embedding/EDA cũ | **Archive rồi chạy lại** | Population clip đã đổi |
-| `all_clean*.csv` cũ | **Archive rồi thay** | Không dùng làm real source mới |
-| `roi_preview/` cũ (0,511 GiB tổng curate chủ yếu ở đây) | **Thay; xóa có điều kiện** | Sau khi ROI mới đạt coverage và được giao reviewer |
-| `assignments/v2/` cũ | **Archive; tạo version mới** | Không overwrite giữa lúc có người review |
-| CSV manual cũ/kết quả đang làm | **Giữ vĩnh viễn như provenance** | Có thể reuse chỉ bằng exact hash/interval |
-| `final_clips_batch1/` cũ (6,835 GiB) | **Xóa có điều kiện** | Sau khi batch review mới đã export, verify và phân phối |
+| Stage 04 mới: 65.622 MP4 + batch metadata | **Giữ** | Nguồn đầu vào duy nhất cho P4 |
+| `all_manifest.csv` | **Tạo mới** | P4, kỳ vọng 65.622 dòng sau verify ffprobe |
+| Measurement/embedding/EDA cũ | **Đã dọn; chạy lại** | Population clip đã đổi |
+| `all_clean*.csv` cũ | **Chỉ lịch sử; thay sau P4** | Không dùng làm real source mới |
+| ROI/assignment/manual cũ | **Đã dọn; tạo version mới** | P5 sau khi P4 đạt gate |
 | `data/03_fake/`, `data/04_features/`, `data/05_labels/` hiện hành | **Không đụng tới** | Ngoài phạm vi P0–P5; hiện chỉ có `.gitkeep` |
-| `archive/pilot_v1/`, `archive/phase0_v2_smoke/` | **Giữ nguyên** | Bằng chứng lịch sử |
 | `experiments/pilot_v1_*` | **Giữ nguyên, bất biến** | Không dùng làm output lần mới |
 | Báo cáo pilot V1 | **Giữ nhưng gắn trạng thái lịch sử** | Không sửa số đo đã quan sát |
 
-Không thực hiện recursive delete trong lúc hotfix đang phát triển. Việc dọn
-`22,4 + 6,835 + ~0,5 GiB` chỉ được làm bằng danh sách path tuyệt đối đã kiểm,
-sau khi artifact thay thế đã được verify.
+Cleanup cũ đã được thực hiện sau khi Stage 04 mới đạt Gate C. Mọi lần dọn tiếp
+theo vẫn phải dùng danh sách path tuyệt đối đã kiểm và không được xóa Stage 04
+65.622 clip trước khi có bản thay thế đã verify.
 
 ## 9. Tiêu chí hoàn tất hotfix
 
-Hotfix Stage 04 chỉ được coi là xong khi:
+Hotfix Stage 04 đã đạt các điều kiện:
 
 - source có một implementation chuẩn, ba config tier và test fallback;
 - input inventory Tier 1/2/3 được khóa;
@@ -537,7 +554,7 @@ Hotfix Stage 04 chỉ được coi là xong khi:
 - CUDA failure không còn âm thầm biến thành frame rỗng;
 - accepted CSV và media khớp 1–1, không corrupt/orphan;
 - rerun cùng input/config tạo cùng clip identity;
-- cut run mới chưa ghi đè dữ liệu cũ trước khi qua gate.
+- accepted/media/checksum đã được audit lại sau khi tập hợp local và sau downscale.
 
 Quá trình dựng lại trong phạm vi kế hoạch này chỉ được coi là xong khi:
 
@@ -545,15 +562,14 @@ Quá trình dựng lại trong phạm vi kế hoạch này chỉ được coi l�
 - review manifest/ROI preview mới đạt contract;
 - assignment primary/calibration đúng coverage và reviewer;
 - từng gói review đã export và kiểm đủ file;
-- chưa ghi đè dữ liệu cũ và chưa chạy bước sau P5.
+- chưa chạy bước sau P5.
 
 ## 10. Việc cần làm ngay tiếp theo
 
-Việc tiếp theo là hoàn tất **P3 → P5**:
+Việc tiếp theo là hoàn tất **P4 → P5**:
 
-1. chạy full Tier 1 theo các batch bất biến và kiểm Gate C;
-2. sau đó chạy đủ Tier 2/Tier 3 khi raw mount đã đối chiếu xong;
-3. merge cut output vào staging, không ghi đè canonical trước gate;
-4. chạy lại curation P4;
-5. dựng review scope, ROI, assignment và export gói review ở P5;
-6. dừng kế hoạch, bàn giao assignment cho team.
+1. chạy `01_prep_manifest.py` trên Stage 04 mới và xác nhận đúng `65.622` dòng;
+2. chạy lại score/motion, curate và EDA theo Gate P4;
+3. dựng review scope và ROI preview từ `all_clean.csv` mới;
+4. chia calibration/primary cho ba reviewer, export và kiểm đủ gói ở P5;
+5. dừng kế hoạch, bàn giao assignment cho team trước khi manual review.

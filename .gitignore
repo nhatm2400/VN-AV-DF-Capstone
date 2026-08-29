@@ -75,6 +75,9 @@ docs/reports/*
 !docs/logs/
 docs/logs/*
 !docs/logs/*.md
+!docs/guides/
+docs/guides/*
+!docs/guides/*.md
 
 cookies.txt
 logs_*.txt

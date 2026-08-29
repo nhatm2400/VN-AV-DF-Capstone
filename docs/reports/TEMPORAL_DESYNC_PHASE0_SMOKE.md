@@ -6,6 +6,11 @@
 
 **Trạng thái:** cơ chế của cả bốn generator V2, SNVSM, structured timeline, synthetic contract-test và stratified real-data smoke/metadata gate đã đạt; **chưa normalize/extract repaired pilot 2.700 clip, chưa train V2a**
 
+> **Cleanup 2026-08-29:** artifact smoke dưới `archive/phase0_v2_smoke/` và
+> snapshot Pilot V1 đã được dọn khỏi checkout. Số đo trong báo cáo vẫn là bằng
+> chứng lịch sử; các link vào archive có thể không còn mở được và không được xem
+> là artifact hiện hành.
+
 ## 1. Mục tiêu
 
 Phase 0 xử lý lỗi blocking của dữ liệu temporal V1:
