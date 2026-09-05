@@ -1,12 +1,12 @@
 """
-Chia manifest review cho nhiều reviewer.
+Chia manifest review cho một hoặc nhiều reviewer.
 
 Mỗi clip calibration xuất hiện trong assignment của mọi reviewer. Các clip còn lại
 chỉ xuất hiện trong đúng một assignment và được cân bằng theo tier.
 
 Ví dụ:
   D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_review_assignments.py \
-      --reviewers nguyenminhnhat reviewer_b reviewer_c
+      --reviewers nguyenminhnhat
 """
 
 import argparse
@@ -90,15 +90,15 @@ def main():
     ap.add_argument("--no_shared_calibration", action="store_true",
                     help="chia scope manual cuối sau khi calibration đã hoàn tất")
     ap.add_argument("--reviewers", nargs="+", required=True,
-                    help="Ba reviewer ID ổn định, không dùng tên thay đổi giữa các máy")
+                    help="Một hoặc nhiều reviewer ID ổn định")
     ap.add_argument("--out_dir", default="data/02_curate/assignments/v3/calibration_450")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
 
     reviewers = [safe_name(r) for r in args.reviewers]
-    if len(reviewers) < 2 or len(reviewers) != len(set(reviewers)):
-        raise SystemExit("[LỖI] Cần ít nhất hai reviewer ID duy nhất")
+    if not reviewers or len(reviewers) != len(set(reviewers)):
+        raise SystemExit("[LỖI] Cần ít nhất một reviewer ID và không được trùng")
 
     rows = read_rows(args.manifest)
     by_id = {r["clip_id"]: r for r in rows}
@@ -148,13 +148,15 @@ def main():
 
     summary = {
         "schema": "manual_review_assignment_v1",
+        "review_mode": "single_reviewer" if len(reviewers) == 1 else "multi_reviewer",
+        "reviewer_count": len(reviewers),
         "manifest": args.manifest.replace("\\", "/"),
         "calibration_source": None if args.no_shared_calibration else
                               args.calibration.replace("\\", "/"),
         "seed": args.seed,
         "reviewers": reviewers,
         "manifest_clips": len(rows),
-        "calibration_clips_shared": len(cal_ids),
+        "calibration_clips_per_reviewer": len(cal_ids),
         "primary_clips_disjoint": len(remaining),
         "outputs": outputs,
     }

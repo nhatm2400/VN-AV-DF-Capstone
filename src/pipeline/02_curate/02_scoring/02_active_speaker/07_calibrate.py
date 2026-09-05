@@ -93,7 +93,8 @@ def predict(timeline, ids, policy):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--calibration_manifest", required=True)
-    parser.add_argument("--consensus_labels", required=True)
+    parser.add_argument("--review_labels", "--consensus_labels",
+                        dest="review_labels", required=True)
     parser.add_argument("--timeline", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--light_margins", default="0.3,0.5,0.7")
@@ -103,7 +104,7 @@ def main():
         raise FileExistsError(f"Immutable calibration report exists: {args.out}")
 
     manifest = pd.read_csv(args.calibration_manifest)
-    labels = pd.read_csv(args.consensus_labels)
+    labels = pd.read_csv(args.review_labels)
     required = {"clip_id", "tier", "source_video", "calibration_split"}
     if not required <= set(manifest.columns):
         raise ValueError(f"Calibration manifest missing {sorted(required - set(manifest.columns))}")
@@ -111,12 +112,12 @@ def main():
             or manifest["clip_id"].duplicated().any()):
         raise ValueError("Calibration manifest must contain exactly 450 unique clips")
     if labels.empty or labels["clip_id"].duplicated().any():
-        raise ValueError("Consensus labels must be non-empty and unique by clip_id")
+        raise ValueError("Review labels must be non-empty and unique by clip_id")
     if "rubric_version" not in labels or set(labels["rubric_version"].astype(str)) != {"v3"}:
-        raise ValueError("Consensus labels must use rubric v3")
+        raise ValueError("Review labels must use rubric v3")
     labels = manifest[list(required)].merge(labels, on="clip_id", how="inner", validate="one_to_one")
     if len(labels) != len(manifest):
-        raise ValueError("Consensus labels do not cover all 450 calibration clips")
+        raise ValueError("Review labels do not cover all 450 calibration clips")
     if set(labels.calibration_split) != {"tune", "locked_validation"}:
         raise ValueError("Expected tune and locked_validation splits")
     timeline = load_timeline(args.timeline)
@@ -166,7 +167,7 @@ def main():
         "locked_validation_metrics": locked_metrics,
         "input_sha256": {
             "calibration_manifest": sha256_file(args.calibration_manifest),
-            "consensus_labels": sha256_file(args.consensus_labels),
+            "review_labels": sha256_file(args.review_labels),
             "timeline": sha256_file(args.timeline),
             "run_config": sha256_file(run_config_path),
         },

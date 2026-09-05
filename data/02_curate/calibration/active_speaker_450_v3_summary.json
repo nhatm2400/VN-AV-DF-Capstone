@@ -1,0 +1,25 @@
+{
+  "schema": "active_speaker_calibration_manifest_v1",
+  "clips": 450,
+  "tune": 300,
+  "locked_validation": 150,
+  "unique_sources": 450,
+  "by_tier": {
+    "tier1": 150,
+    "tier2": 150,
+    "tier3": 150
+  },
+  "by_risk_stratum": {
+    "clean_candidate": 126,
+    "mixed": 104,
+    "multiple_faces": 124,
+    "static": 37,
+    "voiceover": 59
+  },
+  "seed": 42,
+  "input_sha256": {
+    "manifest": "69645a92d2e3b7e5a155d0175668059490c1ab592e21760d89df627005eb7396",
+    "scores": "dfb3fe1f537cd8b3edc9bf770b1287219a948d90cd06905022cf260ea5cac4c7",
+    "timeline": "adaa0fc324227f8c09cca1dac322b034f75f17e66b37d35b0b740e69c7ca0f68"
+  }
+}

@@ -150,7 +150,7 @@ triển và dữ liệu chưa gán nhãn, vì vậy chỉ chứng minh pipeline 
 
 Sau khi preliminary scoring + LASER enrichment phủ đủ candidate pool,
 `06_build_calibration_manifest.py` tạo 450 clip source-disjoint (150/tier), gồm 300 tune và
-150 locked validation. Sau khi hai reviewer gán interval theo rubric v3 và người thứ ba phân xử,
+150 locked validation. Sau khi một reviewer duy nhất gán interval theo rubric v3 và tự chốt mọi nhãn `uncertain`,
 `07_calibrate.py` grid-search chỉ trên tune rồi kiểm tra validation. Auto gate chỉ được publish khi recall
 static/voice-over/mixed ≥95%, false-reject clean ≤2% toàn bộ và ≤3% từng tier.
 
@@ -207,8 +207,8 @@ repo SyncNet + model (`syncnet_v2.model`, `sfd_face.pth`).
 ## Manual review rubric v3
 
 Reviewer đánh dấu từng khoảng lỗi bằng `start_ms`, `end_ms`, `reason`; reason cấp clip là lý do
-của interval dài nhất. Hai reviewer gán 450 clip calibration độc lập, người thứ ba adjudicate.
-Biên interval lệch tối đa 200 ms vẫn được xem là đồng thuận.
+của interval dài nhất. Một reviewer duy nhất gán toàn bộ 450 clip. Không có bước consensus
+hay người thứ ba adjudicate; reviewer phải mở lại và chốt mọi nhãn `uncertain`.
 
 Không chia trực tiếp bằng vị trí dòng hoặc tự copy CSV. Dùng builder để giữ đúng coverage:
 
@@ -216,43 +216,40 @@ Không chia trực tiếp bằng vị trí dòng hoặc tự copy CSV. Dùng bui
 D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/build_review_assignments.py \
   --manifest data/02_curate/calibration/active_speaker_450_v3.csv \
   --calibration data/02_curate/calibration/active_speaker_450_v3.csv \
-  --reviewers <reviewer_1> <reviewer_2> \
+  --reviewers nguyenminhnhat \
   --out_dir data/02_curate/assignments/v3/calibration_450
 ```
 
-Hai assignment calibration đều chứa đủ 450 clip. Reviewer thứ ba chỉ xử lý file
-`needs_adjudication.csv`. Sau khi policy pass và `04_curate` tạo scope manual mới, chạy builder
-lần nữa với `--no_shared_calibration --manifest <temporal-pass-review.csv> --reviewers <3 ID>`
-để chia primary disjoint cho cả ba người; không trộn 60 nhãn v2 lịch sử vào scope này.
+Assignment `assignment_nguyenminhnhat.csv` chứa đủ 450 clip calibration. Sau khi policy pass
+và `04_curate` tạo scope manual mới, builder vẫn hỗ trợ một hoặc nhiều reviewer cho scope khác;
+không trộn 60 nhãn v2 lịch sử vào calibration hiện tại.
 
-Mỗi người chạy đúng file mang reviewer ID của mình:
+Reviewer chạy đúng file mang reviewer ID của mình:
 
 ```bash
 D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/clip_review.py \
-  --csv data/02_curate/assignments/v3/assignment_<reviewer>.csv \
-  --reviewer <reviewer>
+  --csv data/02_curate/assignments/v3/calibration_450/assignment_nguyenminhnhat.csv \
+  --reviewer nguyenminhnhat
 ```
 
-`clip_review.py` dừng ngay nếu `--reviewer` không khớp assignment. Output mặc định cũng
-chứa reviewer ID, nên không ghi đè kết quả của người khác.
+`clip_review.py` dừng ngay nếu `--reviewer` không khớp assignment. Output mặc định chứa
+reviewer ID để giữ provenance.
 
-Sau khi đủ hai file kết quả calibration, chạy merger; nếu có bất đồng thì người thứ ba điền
-adjudication rồi chạy lại:
+Sau khi reviewer hoàn tất đủ 450 clip và không còn `uncertain`, chạy merger:
 
 ```bash
 D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/merge_review_results.py \
   --manifest data/02_curate/calibration/active_speaker_450_v3.csv \
-  --assignments "data/02_curate/assignments/v3/calibration_450/assignment_*.csv" \
-  --results "data/02_curate/manual/manual_assignment_*_v3_*.csv" \
+  --assignments data/02_curate/assignments/v3/calibration_450/assignment_nguyenminhnhat.csv \
+  --results data/02_curate/manual/manual_assignment_nguyenminhnhat_v3_nguyenminhnhat.csv \
   --out_dir data/02_curate/manual/merged_calibration_v3 \
   --final_clean data/02_curate/calibration/active_speaker_450_keep_v3.csv
 ```
 
-Nếu thiếu coverage, có `uncertain` hoặc calibration không đồng thuận, script dừng và ghi
-`data/02_curate/manual/merged_v3/needs_adjudication.csv`. Điền
-`final_decision`, `final_reason`, `final_bad_intervals_json`, `adjudicator`, sau đó chạy lại với
-`--adjudication <file>`. Chỉ khi đủ scope đang review và không còn case cần phân xử, script mới
-xuất `data/02_curate/manifests/manual_clean_v3.csv` và `consensus_labels_v3.csv`.
+Nếu thiếu coverage hoặc có `uncertain`, merger dừng. Reviewer mở lại file kết quả trong
+`clip_review.py`, sửa các clip đó thành `keep` hoặc `reject`, rồi chạy merger lại. Chỉ khi đủ
+450/450 phán quyết, script mới xuất `active_speaker_450_keep_v3.csv` và
+`review_labels_v3.csv`.
 
 Quy trình đầy đủ, trạng thái đã/chưa chạy và giới hạn LASER được ghi tại
 [`ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md`](../../../docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md).

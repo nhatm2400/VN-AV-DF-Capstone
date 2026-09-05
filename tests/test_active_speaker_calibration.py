@@ -67,7 +67,7 @@ class ActiveSpeakerCalibrationTest(unittest.TestCase):
             output = temp / "policy.json"
             subprocess.run([
                 PYTHON, str(SCRIPT), "--calibration_manifest", str(manifest),
-                "--consensus_labels", str(label_path), "--timeline", str(timeline),
+                "--review_labels", str(label_path), "--timeline", str(timeline),
                 "--out", str(output), "--light_margins", "0.5",
                 "--mouth_freeze_thresholds", "1.0",
             ], cwd=ROOT, check=True, capture_output=True, text=True)

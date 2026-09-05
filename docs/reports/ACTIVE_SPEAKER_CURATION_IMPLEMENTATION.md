@@ -3,7 +3,7 @@
 **Ngày cập nhật:** 2026-09-05
 
 **Phạm vi dữ liệu:** 65.622 clip real nguồn trong `data/01_collect/cut_clips/all_manifest.csv`
-**Trạng thái:** code và contract đã triển khai; candidate pool 750 clip đã dựng; pipeline Light-ASD + Silero + InsightFace + LoCoNet/LASER đã smoke đủ chuỗi trên 30 clip cân bằng với coverage 100%, nhưng **chưa preliminary-score đủ pool, chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
+**Trạng thái:** code và contract đã triển khai; candidate pool 750 clip đã preliminary-score và enrich đủ coverage; manifest 450 clip đã tạo; workflow hiện dùng **một reviewer duy nhất**, nhưng **chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
 
 ## 1. Vấn đề cần giải quyết
 
@@ -92,8 +92,8 @@ source Tier 2 dự phòng và vẫn có 100 source/tier dư so với calibration
 
 - 300 clip `tune`: dùng grid-search ngưỡng;
 - 150 clip `locked_validation`: không được xem kết quả để sửa ngưỡng;
-- hai reviewer gán nhãn độc lập;
-- reviewer thứ ba phân xử decision, reason hoặc interval bất đồng;
+- một reviewer duy nhất gán nhãn toàn bộ 450 clip;
+- không có consensus hay adjudication; `uncertain` phải được reviewer xem lại và chốt;
 - 60 nhãn v2 lịch sử chỉ là development seed, không nhập vào validation khóa.
 
 Rubric v3 lưu `bad_intervals_json`, ví dụ:
@@ -102,7 +102,7 @@ Rubric v3 lưu `bad_intervals_json`, ví dụ:
 [{"start_ms":3000,"end_ms":5000,"reason":"voiceover"}]
 ```
 
-`reason` cấp clip được suy ra từ interval dài nhất. Hai reviewer được xem là đồng thuận về interval khi cùng số đoạn, cùng reason và mỗi biên lệch không quá 200 ms. Kết quả hợp nhất đầy đủ nằm ở `consensus_labels_v3.csv`.
+`reason` cấp clip được suy ra từ interval dài nhất. Kết quả đã khóa nằm ở `review_labels_v3.csv`. Merger chỉ xuất file này khi đủ 450/450 phán quyết và không còn `uncertain`.
 
 ## 5. Validation gate bắt buộc
 
@@ -146,8 +146,8 @@ Không chạy full ngay. Thứ tự an toàn là:
 
 1. Pin commit của Light-ASD, LASER, Silero; tải weight và ghi SHA-256.
 2. Chạy development nhỏ để xác nhận preprocessing/model API.
-3. Preliminary-score candidate pool 750 clip hiện hành, enrich các bin mơ hồ bằng LASER rồi tạo manifest 450.
-4. Hai người review toàn bộ 450 bằng rubric v3; người thứ ba adjudicate.
+3. Preliminary-score candidate pool 750 clip hiện hành, enrich các bin mơ hồ bằng LASER rồi tạo manifest 450. **Đã xong.**
+4. Một reviewer review toàn bộ 450 bằng rubric v3; tự xem lại mọi nhãn `uncertain` trước khi khóa.
 5. Grid-search trên 300 và mở validation khóa 150; chỉ giữ policy nếu đạt gate.
 6. Smoke 300 clip đủ ba tier trên Kaggle; đo clip/s, VRAM, failure, tỷ lệ cần LASER và kiểm tra bước enrich.
 7. Audit 100% disagreement, 10% auto-reject mỗi reason/tier và mọi false-reject.
@@ -159,7 +159,7 @@ Mọi lệnh Python phải dùng `D:\Anaconda\envs\vn_av_df\python.exe` ở loca
 
 ## 8. Kiểm thử đã chạy
 
-Ngày 2026-09-05, `unittest discover` pass 69 test, skip 1 smoke dữ liệu thật có chủ đích. Các case policy tổng hợp đã cover:
+Ngày 2026-09-05, `unittest discover` pass 70 test, skip 1 smoke dữ liệu thật có chủ đích. Các case policy tổng hợp đã cover:
 
 1. người nói liên tục → pass;
 2. 3 giây nói + 2 giây miệng tĩnh còn tiếng → reject `static`;
@@ -183,6 +183,8 @@ Light-ASD smoke cân bằng `smoke_asd_candidate30_20260905_01` ban đầu có 3
 Run bất biến sau fix `smoke_asd_candidate30_20260905_02` đạt 30/30 summary, 734 timeline bin, 0 exception trong `failures.csv`, coverage 100% và thời gian 118,546 giây, tương đương 3,952 giây/clip trên máy local. Có 5 clip chứa tổng cộng 5 bin `inference_failure`, được đưa manual đúng fail-closed. Trong 726 bin có speech, 228 bin yêu cầu LASER (31,4%); con số này chỉ là số đo trên 30 clip, chưa được ngoại suy thành tỷ lệ toàn bộ 750 clip.
 
 LASER run `smoke_laser_loconet_candidate30_20260905_01` chấm đủ 228/228 bin được yêu cầu trên cả 30 clip trong 140,22 giây, `missing_bins=0`, `failure_rows=0`, coverage 100%. Run ghép `smoke_asd_laser_candidate30_20260905_01` giữ đủ 30 summary và 734 timeline bin, gắn đủ 228 LASER score, không phát sinh failure. So với quyết định preliminary, 9 clip thay đổi: 2 clip từ `manual/ambiguous` thành `pass`, 6 clip từ `manual/ambiguous` thành `reject`, và 1 clip từ `pass` thành `reject`. Đây là hành vi của ngưỡng phát triển trên dữ liệu chưa gán nhãn; tuyệt đối không dùng các con số pass/reject này làm accuracy hoặc làm gate production.
+
+Run candidate đầy đủ `preliminary_asd_candidate750_20260905_01` phủ 750/750 clip và 16.039 bin trong 2.344,878 giây. Một clip `7472219282072472840_s0000000000_e0000005000` lỗi `light_asd_track_too_short`; pipeline vẫn tạo summary và chuyển clip đó sang `manual/inference_failure`. LASER run `preliminary_laser_loconet_candidate750_20260905_01` chấm đủ 3.856/3.856 bin trong 2.472,522 giây, `missing_bins=0`, `failure_rows=0`. Run enrich `preliminary_asd_laser_candidate750_20260905_01` giữ đủ 750 summary và 16.039 bin. Manifest `active_speaker_450_v3.csv` sau đó được tạo đủ 450 clip/450 source, 150 clip mỗi tier, 300 tune + 150 locked validation; phân tầng gồm 126 `clean_candidate`, 104 `mixed`, 124 `multiple_faces`, 37 `static`, 59 `voiceover`, không thiếu media hay file 0 byte.
 
 Các bài test và smoke trên chỉ xác nhận đường chạy, contract và fail-closed, **không phải bằng chứng accuracy của pretrained model trên data thật**. Bằng chứng đó chỉ có sau calibration 450 và smoke 300 clip đủ ba tier.
 
@@ -209,6 +211,7 @@ Giới hạn còn phải đo:
 - năm landmark đủ để ổn định tổng thể nhưng kém chi tiết hơn 82 lip landmarks của LASER;
 - ngưỡng mặc định chỉ phục vụ development, không được dùng để publish gate;
 - `wrong_face` và `dubbed` vẫn cần reviewer/nhánh LASER; không nên suy diễn rằng Light-ASD giải quyết hoàn toàn.
+- chỉ một reviewer giúp giảm chi phí nhưng không đo được inter-rater agreement và dễ mang thiên lệch cá nhân; locked validation vì vậy chỉ đo độ khớp với rubric của người đó, không thay thế audit độc lập.
 
 ## 11. Tài liệu gốc
 

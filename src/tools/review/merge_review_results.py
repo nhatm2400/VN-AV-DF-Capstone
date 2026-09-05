@@ -1,9 +1,11 @@
 """
-Audit và gộp kết quả multi-reviewer.
+Audit và gộp kết quả của một hoặc nhiều reviewer.
 
 Clip primary có đúng một reviewer. Clip calibration phải có kết quả của mọi reviewer;
-nếu không đồng thuận hoặc có nhãn uncertain thì được đưa vào needs_adjudication.csv.
-Script chỉ xuất manual_clean_v3.csv khi coverage hoàn tất và không còn clip cần phân xử.
+nếu không đồng thuận hoặc có nhãn uncertain thì được đưa vào needs_resolution.csv.
+Trong workflow một reviewer, người đó phải sửa nhãn uncertain trong file kết quả rồi
+chạy lại. Script chỉ xuất manual_clean_v3.csv khi coverage hoàn tất và không còn clip
+cần xử lý.
 """
 
 import argparse
@@ -119,8 +121,8 @@ def main():
                     default="data/02_curate/manifests/all_clean_review.csv")
     ap.add_argument("--rubric", default="v3")
     ap.add_argument("--out_dir", default="data/02_curate/manual/merged_v3")
-    ap.add_argument("--adjudication", default="",
-                    help="needs_adjudication.csv đã điền final_decision/final_reason/adjudicator")
+    ap.add_argument("--resolution", "--adjudication", dest="resolution", default="",
+                    help="needs_resolution.csv đã điền final_decision/final_reason/resolved_by")
     ap.add_argument("--final_clean",
                     default="data/02_curate/manifests/manual_clean_v3.csv")
     ap.add_argument("--allow_partial", action="store_true",
@@ -219,24 +221,25 @@ def main():
                 "final_decision": "",
                 "final_reason": "",
                 "final_bad_intervals_json": "",
-                "adjudicator": "",
+                "resolved_by": "",
             })
         else:
             decision = next(iter(decisions))
             resolved[cid] = (decision, rows[0].get("reason", ""), consensus_intervals)
 
-    adjudicated = 0
-    if args.adjudication:
-        adjudication = {r.get("clip_id", ""): r for r in read_csv(args.adjudication)}
+    resolved_from_resolution = 0
+    if args.resolution:
+        resolution = {r.get("clip_id", ""): r for r in read_csv(args.resolution)}
         pending_ids = {r["clip_id"] for r in pending}
-        extra = sorted(set(adjudication) - pending_ids - {""})
+        extra = sorted(set(resolution) - pending_ids - {""})
         if extra:
-            raise SystemExit(f"[LỖI] Adjudication có {len(extra)} clip không cần phân xử")
+            raise SystemExit(f"[LỖI] Resolution có {len(extra)} clip không cần xử lý")
         unresolved = []
         for row in pending:
-            final = adjudication.get(row["clip_id"], {})
+            final = resolution.get(row["clip_id"], {})
             decision = final.get("final_decision", "")
-            if decision in {"keep", "reject"} and final.get("adjudicator", ""):
+            resolved_by = final.get("resolved_by", "") or final.get("adjudicator", "")
+            if decision in {"keep", "reject"} and resolved_by:
                 intervals = parse_intervals(final, "final_bad_intervals_json")
                 if decision == "reject" and not intervals:
                     unresolved.append(row)
@@ -256,17 +259,17 @@ def main():
                     continue
                 reason = longest_reason(intervals) if decision == "reject" else ""
                 resolved[row["clip_id"]] = (decision, reason, intervals)
-                adjudicated += 1
+                resolved_from_resolution += 1
             else:
                 unresolved.append(row)
         pending = unresolved
 
     os.makedirs(args.out_dir, exist_ok=True)
-    pending_path = os.path.join(args.out_dir, "needs_adjudication.csv")
+    pending_path = os.path.join(args.out_dir, "needs_resolution.csv")
     write_csv(pending_path, pending, [
         "clip_id", "file_path", "assignment_role", "reviewers", "decisions",
         "reasons", "bad_intervals_by_reviewer_json", "final_decision", "final_reason",
-        "final_bad_intervals_json", "adjudicator",
+        "final_bad_intervals_json", "resolved_by",
     ])
     # Dừng sớm vì đã đủ keep là ý định hợp lệ, nhưng phải GHI RÕ là partial —
     # manifest partial không đại diện cho toàn manifest, nên mọi tỉ lệ tính từ nó
@@ -279,8 +282,8 @@ def main():
         "received_judgements": len(actual),
         "missing_judgements": len(missing),
         "resolved_clips": len(resolved),
-        "needs_adjudication": len(pending),
-        "adjudicated_clips": adjudicated,
+        "needs_resolution": len(pending),
+        "resolved_from_resolution": resolved_from_resolution,
         "decisions_resolved": dict(Counter(value[0] for value in resolved.values())),
     }
     if partial:
@@ -306,15 +309,15 @@ def main():
     if os.path.exists(args.final_clean):
         raise SystemExit(f"[LỖI] Final manifest đã tồn tại: {args.final_clean}")
     write_csv(args.final_clean, clean, list(manifest[0]))
-    consensus_path = os.path.join(args.out_dir, "consensus_labels_v3.csv")
-    consensus_rows = [{
+    labels_path = os.path.join(args.out_dir, "review_labels_v3.csv")
+    label_rows = [{
         "clip_id": cid,
         "decision": decision,
         "reason": reason,
         "bad_intervals_json": json.dumps(intervals, ensure_ascii=False, separators=(",", ":")),
         "rubric_version": args.rubric,
     } for cid, (decision, reason, intervals) in sorted(resolved.items())]
-    write_csv(consensus_path, consensus_rows,
+    write_csv(labels_path, label_rows,
               ["clip_id", "decision", "reason", "bad_intervals_json", "rubric_version"])
     if partial:
         print(f"[PARTIAL] {len(reviewed_ids)}/{len(manifest)} clip đã có phán quyết; "
