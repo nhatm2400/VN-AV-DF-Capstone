@@ -5,7 +5,7 @@ This stage is intentionally placed after ``all_manifest.csv`` and before
 
 Light-ASD is loaded from an explicit checkout of the official repository. Bins
 that need LASER are marked ``laser_requested`` and enriched in the separate
-``04_apply_laser_scores.py`` step. Until then they remain manual, never reject.
+``05_apply_laser_scores.py`` step. Until then they remain manual, never reject.
 """
 
 from __future__ import annotations

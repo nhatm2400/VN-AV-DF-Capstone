@@ -3,7 +3,7 @@
 **Ngày cập nhật:** 2026-09-05
 
 **Phạm vi dữ liệu:** 65.622 clip real nguồn trong `data/01_collect/cut_clips/all_manifest.csv`
-**Trạng thái:** code và contract đã triển khai; pipeline Light-ASD + Silero + InsightFace đã smoke end-to-end trên 1 clip thật nhưng **chưa chạy LASER thật, chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
+**Trạng thái:** code và contract đã triển khai; pipeline Light-ASD + Silero + InsightFace + LoCoNet+LASER đã smoke end-to-end trên 1 clip thật với coverage 100%, nhưng **chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
 
 ## 1. Vấn đề cần giải quyết
 
@@ -34,8 +34,10 @@ all_manifest.csv
                  ↓ 02_merge_shards.py (coverage 100%, fail-closed)
        runs/<run_id>/{4 artifact hợp nhất}
                  ↓ 03_export_laser_requests.py → LASER chỉ trên bin laser_requested
-       04_apply_laser_scores.py → runs/<enriched_run_id>/{4 artifact}
-                 ↓ 06_calibrate.py
+       04_run_laser.py → runs/<laser_run_id>/{score + failure + metadata}
+                 ↓ 05_apply_laser_scores.py → runs/<enriched_run_id>/{4 artifact}
+                 ↓ 06_build_calibration_manifest.py
+                 ↓ 07_calibrate.py
        active_speaker_policy_v1.json
                  ↓ 04_curate.py
        temporal gate → face-quality gate → cap speaker → manual review v3
@@ -52,11 +54,16 @@ InsightFace phát hiện nhiều mặt và cung cấp năm landmark. Detection �
 ### Light-ASD và LASER
 
 - Light-ASD chạy trên từng face track bằng API model của checkout chính thức. Code bắt buộc nhận đường dẫn repo và weight; `run_config.json` lưu Git SHA và SHA-256 weight.
-- LASER chỉ cần ở bin Light-ASD gần ngưỡng, mâu thuẫn với mouth-motion hoặc có nhiều mặt cạnh tranh. Repo LASER chính thức hiện không có package API/CLI xuất score tương thích trực tiếp, nên implementation nhận **sidecar JSONL có provenance** từ runner LASER chính thức rồi enrich thành một run bất biến mới. Thiếu score ở vùng cần LASER dẫn đến `manual`, không bao giờ tự suy thành `reject`.
-- Audit checkout LASER commit `3703d3f396cc7b29aa704364f8a9a5ab0c8c1fb9` cho thấy weight chỉ được liên kết qua Google Drive, không nằm trong repo; demo `demoLoCoNet_landmark.py` gọi `loadParameters('')`, tạo tensor landmark toàn số 0 và còn để TODO ở forward loop. Vì vậy không được coi demo nguyên trạng là runner LASER hợp lệ hoặc dùng score của nó để auto-reject.
+- LASER chỉ chạy ở bin Light-ASD gần ngưỡng, mâu thuẫn với mouth-motion hoặc có nhiều mặt cạnh tranh. Adapter `04_run_laser.py` dùng backbone **LoCoNet+LASER**, checkout chính thức ở commit `3703d3f396cc7b29aa704364f8a9a5ab0c8c1fb9` và checkpoint có SHA-256 `1702df2cc9a6976e4193dcd78d468d3a0f3afc7a926891e0376cc6d2ea72cc1f`.
+- Repo upstream không cung cấp sẵn CLI xuất score theo contract của dự án: demo để trống đường dẫn `loadParameters('')` và còn TODO ở forward loop. Adapter vì vậy kiểm tra revision/checkpoint, tái sử dụng decode 25 fps và face tracker của stage này, áp crop 112×112 theo demo chính thức, chạy VGGish audio 16 kHz và chuyển logits hai lớp thành xác suất bằng softmax.
+- Checkpoint được huấn luyện với landmark môi, nhưng đường consistency inference của LASER cho phép chạy không cần landmark; adapter truyền landmark feature bằng 0 và ghi rõ `landmarks_at_inference=false` trong metadata. Đây là lựa chọn phải được kiểm chứng bằng calibration, không phải bằng chứng accuracy.
+- Demo full-video upstream lọc track ngắn hơn 20 frame. Pipeline này cần chấm đúng bin 200 ms, nên adapter nhận track từ 5 frame (một bin ở 25 fps); policy cấp clip vẫn không thể auto-reject chỉ từ một bin ngắn.
+- Thiếu score ở vùng cần LASER dẫn đến `manual`, không bao giờ tự suy thành `reject`.
 - Sidecar có `clip_id`, `bin_index`, `laser_score`, trong đó score là xác suất active lớn nhất của mọi mặt trong bin. Không ghép `track_id` giữa hai pipeline vì ID track độc lập không tương đương. Metadata đi kèm phải có schema `laser_sidecar_v1`, `model_git_sha`, `weights_sha256`, `source_timeline_sha256`; script từ chối sidecar không sinh từ đúng base timeline.
 
-Điểm trên là ranh giới quan trọng: code đã có đường tích hợp an toàn, nhưng chưa thể tuyên bố “Light-ASD + LASER đã chạy” cho đến khi weight, runner sidecar và smoke GPU thật đều được xác minh.
+Runner ghi `model_git_sha`, SHA-256 weight/config/code/request/timeline, số bin request/scored/missing và `coverage_passed`. `05_apply_laser_scores.py` chỉ nhận sidecar sinh từ đúng base timeline và tạo một run bất biến mới.
+
+Backbone LoCoNet+LASER được chọn thay vì TalkNet+LASER vì paper báo cáo độ bền tốt hơn trong benchmark nhiễu và trực tiếp đánh giá các tình huống audio bị swap/shift. Đây mới là cơ sở chọn kỹ thuật; khả năng tổng quát trên video tiếng Việt vẫn phải được đo bằng tập calibration của dự án.
 
 ## 3. Policy quyết định
 
@@ -73,7 +80,7 @@ Light-ASD tự đủ để xác nhận khi nằm ngoài margin độ tin cậy. 
 
 ## 4. Calibration 450 clip
 
-`02_scoring/02_active_speaker/05_build_calibration_manifest.py` chọn 450 clip, 150 clip mỗi tier, tối đa một clip cho mỗi `source_video`. Mẫu được round-robin qua các nhóm rủi ro `clean_candidate`, `static`, `voiceover`, `mixed`, `multiple_faces` dựa trên preliminary scoring.
+`02_scoring/02_active_speaker/06_build_calibration_manifest.py` chọn 450 clip, 150 clip mỗi tier, tối đa một clip cho mỗi `source_video`. Mẫu được round-robin qua các nhóm rủi ro `clean_candidate`, `static`, `voiceover`, `mixed`, `multiple_faces` dựa trên preliminary scoring.
 
 - 300 clip `tune`: dùng grid-search ngưỡng;
 - 150 clip `locked_validation`: không được xem kết quả để sửa ngưỡng;
@@ -91,7 +98,7 @@ Rubric v3 lưu `bad_intervals_json`, ví dụ:
 
 ## 5. Validation gate bắt buộc
 
-`02_scoring/02_active_speaker/06_calibrate.py` chỉ dùng 300 clip tune để chọn candidate tối đa hóa số auto-reject với false-reject clean không quá 2%. Candidate đã chọn mới được đánh giá một lần trên 150 clip khóa.
+`02_scoring/02_active_speaker/07_calibrate.py` chỉ dùng 300 clip tune để chọn candidate tối đa hóa số auto-reject với false-reject clean không quá 2%. Candidate đã chọn mới được đánh giá một lần trên 150 clip khóa.
 
 Policy chỉ được publish làm auto gate khi:
 
@@ -144,7 +151,7 @@ Mọi lệnh Python phải dùng `D:\Anaconda\envs\vn_av_df\python.exe` ở loca
 
 ## 8. Kiểm thử đã chạy
 
-Ngày 2026-09-05, `unittest discover` pass 60 test, skip 1 smoke dữ liệu thật có chủ đích. Các case policy tổng hợp đã cover:
+Ngày 2026-09-05, `unittest discover` pass 65 test, skip 1 smoke dữ liệu thật có chủ đích. Các case policy tổng hợp đã cover:
 
 1. người nói liên tục → pass;
 2. 3 giây nói + 2 giây miệng tĩnh còn tiếng → reject `static`;
@@ -159,7 +166,9 @@ Ngày 2026-09-05, `unittest discover` pass 60 test, skip 1 smoke dữ liệu th�
 
 Adapter Light-ASD cũng đã được khởi tạo bằng weight `pretrain_AVA_CVPR.model` từ checkout chính thức và chạy tensor giả 1 giây: trả 24 score hữu hạn.
 
-Smoke end-to-end bất biến `dev_asd_real1_20260905_01` chạy clip `-17kN1xdzBE_s0000098754_e0000103754` trong 17,834 giây: 1/1 summary, 25 bin, 0 failure, coverage 100%. Clip có 12 bin cần LASER nên kết quả sơ bộ là `manual/ambiguous`, đúng cơ chế fail-closed. Run config ghi Git SHA của Light-ASD/Silero, SHA-256 của weight Light-ASD, Silero ONNX, InsightFace `det_10g.onnx`, cùng hash code/config preprocessing. `03_export_laser_requests.py` đã smoke trên đúng timeline này, xuất 12/12 bin với `source_timeline_sha256`; chưa có score LASER thật. Artifact smoke nằm trong `data/02_curate/runs/` và bị Git ignore; nó không phải input cho `04_curate.py` vì chỉ phủ một clip.
+Smoke end-to-end bất biến `dev_asd_real1_20260905_01` chạy clip `-17kN1xdzBE_s0000098754_e0000103754` trong 17,834 giây: 1/1 summary, 25 bin, 0 failure, coverage 100%. `03_export_laser_requests.py` xuất 12 bin cần LASER cùng hash timeline. LASER smoke đầu tiên dùng ngưỡng demo 20 frame và chỉ phủ 11/12 bin; bin đầu thuộc hai track dài 13 frame nên được ghi failure, không mất âm thầm. Sau khi điều chỉnh ngưỡng adapter thành một bin 5 frame và bắt buộc khớp SHA-256 checkpoint/source revision, run `dev_laser_loconet_real1_20260905_03` chấm đủ 12/12 bin trong 9,195 giây, 0 failure, coverage 100%.
+
+`05_apply_laser_scores.py` tạo run `dev_asd_laser_real1_20260905_02`: 25 timeline bin, 12/12 LASER score, 0 failure, coverage 100%. Quyết định của clip vẫn là `manual/ambiguous` và `asd_disagreement_ratio=0,12`; đây là kết quả hợp lý của policy phát triển, không được diễn giải là nhãn thật của clip. Các artifact smoke nằm trong `data/02_curate/runs/`, bị Git ignore và không phải input cho `04_curate.py` vì chỉ phủ một clip.
 
 Các bài trên và smoke một clip chỉ xác nhận đường chạy, contract và fail-closed, **không phải bằng chứng accuracy của pretrained model trên data thật**. Bằng chứng đó chỉ có sau calibration 450 và smoke 300 clip đủ ba tier.
 
@@ -182,7 +191,7 @@ Giới hạn còn phải đo:
 
 - InsightFace + Light-ASD có thể chậm hơn mục tiêu; batch size chỉ chốt sau smoke;
 - Light-ASD domain AVA có thể lệch miền video tiếng Việt/dubbed;
-- bridge LASER sidecar chưa phải runner end-to-end một lệnh; demo upstream hiện thiếu weight tích hợp và không dùng landmark thật trong đường demo;
+- adapter LASER đã chạy end-to-end nhưng vẫn phải clone checkout và cung cấp checkpoint ngoài repo; chưa có installer/cache manager tự động;
 - năm landmark đủ để ổn định tổng thể nhưng kém chi tiết hơn 82 lip landmarks của LASER;
 - ngưỡng mặc định chỉ phục vụ development, không được dùng để publish gate;
 - `wrong_face` và `dubbed` vẫn cần reviewer/nhánh LASER; không nên suy diễn rằng Light-ASD giải quyết hoàn toàn.

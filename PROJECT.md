@@ -6,7 +6,7 @@ Dự án phát hiện **Deepfake âm thanh-hình ảnh tiếng Việt** (Vietnam
 
 Mô hình hiện đã chạy pilot: **AVSP-Net V1** — mouth ROI + Wav2Vec + prosody, hợp nhất bằng Cross-Attention. Kiến trúc mục tiêu mới là **AVSP-Net V2**, gồm V2a (local temporal core, giữ cùng loại feature nhưng repaired pilot dùng store mới) và V2b (mở rộng để tổng quát hóa sang deepfake thực tế), xem [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
 
-Trạng thái hiện tại: **Stage 04 Cut Clips đã dựng lại xong và đạt Gate C; P4.1 `all_manifest.csv` đã dựng đủ 65.622 clip; code Temporal Active-Speaker P4 đã triển khai và smoke end-to-end 1 clip thật, nhưng chưa chạy LASER/calibrate**. Ba quality manifest gồm `472/292/2.274 = 3.038` video nguồn đều có terminal status. Output có `65.622` accepted clip khớp 1–1 với `65.622` MP4, không thiếu/mồ côi/trùng `clip_id`; `120.187` cửa sổ bị reject có lý do. Tổng media sau khi downscale trực tiếp 1.200 clip 4K xuống 1080p là `155,277 GiB`. Auto gate vẫn **NO-GO** cho đến khi có 450 clip rubric v3, policy đạt locked validation và smoke GPU 300 clip đủ ba tier; manual review mới, sinh fake, extract feature và train cũng chưa được mở. Ba file `all_clean*.csv` còn lại trong `data/02_curate/manifests/` thuộc population cũ `6.888 → 3.001`, chỉ có giá trị lịch sử. Xem [triển khai Active-Speaker](docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md), [kế hoạch hotfix](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md) và [nhật ký Stage 04](docs/logs/2026-08-29_STAGE04_REBUILD_AND_STORAGE_NORMALIZATION.md).
+Trạng thái hiện tại: **Stage 04 Cut Clips đã dựng lại xong và đạt Gate C; P4.1 `all_manifest.csv` đã dựng đủ 65.622 clip; Temporal Active-Speaker P4 và runner LoCoNet+LASER đã smoke end-to-end trên 1 clip thật, nhưng chưa có calibration 450 clip và chưa khóa ngưỡng**. Ba quality manifest gồm `472/292/2.274 = 3.038` video nguồn đều có terminal status. Output có `65.622` accepted clip khớp 1–1 với `65.622` MP4, không thiếu/mồ côi/trùng `clip_id`; `120.187` cửa sổ bị reject có lý do. Tổng media sau khi downscale trực tiếp 1.200 clip 4K xuống 1080p là `155,277 GiB`. Auto gate vẫn **NO-GO** cho đến khi có 450 clip rubric v3, policy đạt locked validation và smoke GPU 300 clip đủ ba tier; manual review mới, sinh fake, extract feature và train cũng chưa được mở. Ba file `all_clean*.csv` còn lại trong `data/02_curate/manifests/` thuộc population cũ `6.888 → 3.001`, chỉ có giá trị lịch sử. Xem [triển khai Active-Speaker](docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md), [kế hoạch hotfix](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md) và [nhật ký Stage 04](docs/logs/2026-08-29_STAGE04_REBUILD_AND_STORAGE_NORMALIZATION.md).
 
 Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng sinh 12.004 fake**, **PILOT V1 đã chạy xong** trên 2.700 clip với test AUC **0.809**, bốn generator V2/SNVSM/timeline contract đã implement/test, và stratified smoke `v2r6` đã đạt metadata gate max AUC 0,546. Các con số này không chứng minh tập nguồn hiện tại đã sạch và không được dùng để bỏ qua hotfix. Sau khi cut → curate → manual review được dựng lại, lộ trình tiếp tục từ fake V2/SNVSM/Stage 05/metadata gate đến repaired pilot V2a; full training vẫn **NO-GO**. Xem [báo cáo Phase 0](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) và [đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
 
@@ -35,9 +35,10 @@ Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng s
 │   │   │   │       ├── 01_score.py
 │   │   │   │       ├── 02_merge_shards.py
 │   │   │   │       ├── 03_export_laser_requests.py
-│   │   │   │       ├── 04_apply_laser_scores.py
-│   │   │   │       ├── 05_build_calibration_manifest.py
-│   │   │   │       ├── 06_calibrate.py
+│   │   │   │       ├── 04_run_laser.py
+│   │   │   │       ├── 05_apply_laser_scores.py
+│   │   │   │       ├── 06_build_calibration_manifest.py
+│   │   │   │       ├── 07_calibrate.py
 │   │   │   │       └── policy.py       # policy thuần, dùng chung và test độc lập
 │   │   │   ├── 03_diagnostics_optional/ # motion/SyncNet chỉ để chẩn đoán
 │   │   │   │   ├── 01_motion_score.py
@@ -166,12 +167,14 @@ D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/01_face_q
 # 3) Temporal ASD: VAD 200 ms + face track + mouth motion + Light-ASD;
 #    chạy candidate/calibration trước, chưa chạy full khi policy chưa pass.
 D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/01_score.py ...
-# 3b) Chạy LASER cho bin laser_requested, rồi enrich thành run bất biến mới
-D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/04_apply_laser_scores.py ...
+# 3b) Xuất request, chạy LoCoNet+LASER cho đúng các bin mơ hồ, rồi enrich run
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/03_export_laser_requests.py ...
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/04_run_laser.py ...
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/05_apply_laser_scores.py ...
 # 4) Tạo 450 clip source-disjoint; 300 tune + 150 locked validation; review rubric v3
-D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/05_build_calibration_manifest.py ...
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/06_build_calibration_manifest.py ...
 # 5) Grid-search tune, sau đó gate validation khóa
-D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/06_calibrate.py ...
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/07_calibrate.py ...
 # Chẩn đoán khớp môi-tiếng (SyncNet) — tùy chọn, không phải quality gate chính
 D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/03_diagnostics_optional/02_sync_score.py \
     --input_csv data/02_curate/measurements/tier1_scored_all.csv \

@@ -42,9 +42,10 @@ và biến thể Kaggle).
 │       ├── 01_score.py
 │       ├── 02_merge_shards.py
 │       ├── 03_export_laser_requests.py
-│       ├── 04_apply_laser_scores.py
-│       ├── 05_build_calibration_manifest.py
-│       ├── 06_calibrate.py
+│       ├── 04_run_laser.py
+│       ├── 05_apply_laser_scores.py
+│       ├── 06_build_calibration_manifest.py
+│       ├── 07_calibrate.py
 │       └── policy.py
 ├── 03_diagnostics_optional/
 │   ├── 01_motion_score.py
@@ -88,13 +89,16 @@ tránh siết sync cho tập real; 04/05 chạy không cần nó.
 
 Giải mã audio tạm thành mono 16 kHz, chuẩn hóa PCM rồi chạy Silero ONNX từ checkout đã pin theo bin 200 ms, track nhiều mặt bằng
 InsightFace, ổn định vùng miệng theo năm landmark rồi chạy Light-ASD. Bin mơ hồ được đánh dấu
-`laser_requested`; sidecar từ runner LASER chính thức được ghép fail-closed bằng
-`04_apply_laser_scores.py` thành một run mới. Thiếu bằng chứng cần thiết thì clip vào manual,
+`laser_requested`; `04_run_laser.py` chạy checkpoint LoCoNet+LASER chính thức và sidecar
+được ghép fail-closed bằng `05_apply_laser_scores.py` thành một run mới. Thiếu bằng chứng cần thiết thì clip vào manual,
 không auto-reject. Các script không ghi đè video.
 
-`03_export_laser_requests.py` xuất đúng các bin cần chạy cùng `source_timeline_sha256`. Runner LASER
-phải trả JSONL `{clip_id, bin_index, laser_score}` với score là xác suất active lớn nhất trong bin;
-không ghép face `track_id` giữa hai pipeline độc lập.
+`03_export_laser_requests.py` xuất đúng các bin cần chạy cùng `source_timeline_sha256`.
+`04_run_laser.py` kiểm tra Git SHA của checkout, SHA-256 checkpoint, chạy CUDA rồi trả
+JSONL `{clip_id, bin_index, laser_score}` với score là xác suất active lớn nhất trong bin.
+Runner dùng face-track tối thiểu 5 frame, tương ứng trọn một bin 200 ms; điều kiện này khác
+ngưỡng 20 frame mang tính lọc track của demo full-video upstream. Không ghép face `track_id`
+giữa hai pipeline độc lập.
 
 - **Input:** `all_manifest.csv`, checkout/weights Light-ASD đã pin, checkout Silero đã pin có ONNX 16 kHz, tùy chọn sidecar LASER.
 - **Output bất biến:** `data/02_curate/runs/<run_id>/` hoặc
@@ -103,11 +107,29 @@ không ghép face `track_id` giữa hai pipeline độc lập.
 - **Merge:** `02_merge_shards.py` chỉ publish khi config hash đồng nhất và score +
   timeline phủ chính xác 100% manifest.
 
-### 02_scoring/02_active_speaker/06_calibrate.py — khóa temporal policy
+Chuỗi chạy LASER selective sau khi đã có một base run hợp nhất:
 
-`05_build_calibration_manifest.py` tạo 450 clip source-disjoint (150/tier), gồm 300 tune và
+```powershell
+# Checkout/weight để ngoài repository; revision và checksum dưới đây là bản đã smoke.
+git clone https://github.com/plnguyen2908/LASER_ASD C:\models\LASER_ASD
+git -C C:\models\LASER_ASD checkout 3703d3f396cc7b29aa704364f8a9a5ab0c8c1fb9
+D:\Anaconda\envs\vn_av_df\python.exe -m gdown 1IrntlKqzw5EYAVbyDupr5tk-H3q9kkoW -O C:\models\LoCoNet_LASER.model
+# SHA-256 checkpoint phải là 1702df2cc9a6976e4193dcd78d468d3a0f3afc7a926891e0376cc6d2ea72cc1f.
+
+D:\Anaconda\envs\vn_av_df\python.exe src\pipeline\02_curate\02_scoring\02_active_speaker\03_export_laser_requests.py --manifest data\01_collect\cut_clips\all_manifest.csv --timeline data\02_curate\runs\<base_run>\asd_timeline.jsonl.gz --out_dir data\02_curate\runs\<request_run>
+D:\Anaconda\envs\vn_av_df\python.exe src\pipeline\02_curate\02_scoring\02_active_speaker\04_run_laser.py --requests_dir data\02_curate\runs\<request_run> --laser_repo C:\models\LASER_ASD --laser_weights C:\models\LoCoNet_LASER.model --laser_weights_sha256 1702df2cc9a6976e4193dcd78d468d3a0f3afc7a926891e0376cc6d2ea72cc1f --laser_revision 3703d3f396cc7b29aa704364f8a9a5ab0c8c1fb9 --out_dir data\02_curate\runs\<laser_run>
+D:\Anaconda\envs\vn_av_df\python.exe src\pipeline\02_curate\02_scoring\02_active_speaker\05_apply_laser_scores.py --base_run data\02_curate\runs\<base_run> --laser_scores data\02_curate\runs\<laser_run>\laser_scores.jsonl --laser_metadata data\02_curate\runs\<laser_run>\laser_metadata.json --out_run data\02_curate\runs\<enriched_run>
+```
+
+Mọi tên `<...>` phải được thay bằng run ID mới. Các thư mục output là bất biến; không dùng
+lại tên đã tồn tại. `04_run_laser.py` cần CUDA. Gói `resampy` là dependency runtime của
+VGGish; `gdown` chỉ dùng để tải checkpoint liên kết từ README upstream.
+
+### 02_scoring/02_active_speaker/07_calibrate.py — khóa temporal policy
+
+`06_build_calibration_manifest.py` tạo 450 clip source-disjoint (150/tier), gồm 300 tune và
 150 locked validation. Sau khi hai reviewer gán interval theo rubric v3 và người thứ ba phân xử,
-`06_calibrate.py` grid-search chỉ trên tune rồi kiểm tra validation. Auto gate chỉ được publish khi recall
+`07_calibrate.py` grid-search chỉ trên tune rồi kiểm tra validation. Auto gate chỉ được publish khi recall
 static/voice-over/mixed ≥95%, false-reject clean ≤2% toàn bộ và ≤3% từng tier.
 
 ### 04_curate.py — temporal gate → face gate → cluster/cân bằng

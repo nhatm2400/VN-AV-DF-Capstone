@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "src/pipeline/02_curate/02_scoring/02_active_speaker/06_calibrate.py"
+SCRIPT = ROOT / "src/pipeline/02_curate/02_scoring/02_active_speaker/07_calibrate.py"
 PYTHON = sys.executable
 
 

@@ -18,6 +18,11 @@ import re
 import sys
 from collections import Counter
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 
 def safe_name(value):
     value = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip())
