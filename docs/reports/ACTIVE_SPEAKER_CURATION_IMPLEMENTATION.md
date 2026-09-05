@@ -3,7 +3,7 @@
 **Ngày cập nhật:** 2026-09-05
 
 **Phạm vi dữ liệu:** 65.622 clip real nguồn trong `data/01_collect/cut_clips/all_manifest.csv`
-**Trạng thái:** code và contract đã triển khai; pipeline Light-ASD + Silero + InsightFace + LoCoNet+LASER đã smoke end-to-end trên 1 clip thật với coverage 100%, nhưng **chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
+**Trạng thái:** code và contract đã triển khai; pipeline Light-ASD + Silero + InsightFace + LoCoNet+LASER đã smoke end-to-end trên dữ liệu thật; candidate pool 750 clip đã dựng và Light-ASD smoke 30 clip cân bằng đạt coverage 100%, nhưng **chưa preliminary-score đủ pool, chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
 
 ## 1. Vấn đề cần giải quyết
 
@@ -24,7 +24,9 @@ Các lỗi mục tiêu:
 ```text
 all_manifest.csv
   ├─ 02_scoring/01_face_quality.py  face quality + embedding (nhánh hiện có)
-  └─ 02_scoring/02_active_speaker/01_score.py
+  └─ 02_scoring/02_active_speaker/00_build_candidate_pool.py
+       └─ candidate pool 750 clip, 250/tier, một clip/source
+            ↓ 01_score.py
                                     VAD 200 ms + face track + mouth motion + Light-ASD
        └─ runs/<run_id>/shards/*
             ├─ asd_clip_scores.csv
@@ -79,6 +81,12 @@ Light-ASD tự đủ để xác nhận khi nằm ngoài margin độ tin cậy. 
 `04_curate.py` chỉ bật binary temporal gate khi JSON policy có `gate_passed=true` và policy trong JSON khớp chính xác policy đã dùng để scoring. Nếu validation chưa đạt, temporal score chỉ là metadata/ưu tiên manual. Điểm ASD liên tục không tham gia `quality_score` hay xếp hạng real.
 
 ## 4. Calibration 450 clip
+
+Candidate pool hiện hành là `active_speaker_candidate_pool_750_v1.csv`: 750 clip từ
+750 source khác nhau, cân bằng 250 clip/tier, không có source trùng giữa tier. Pool chiếm
+1,720 GiB media; 750/750 đường dẫn tồn tại, không có file 0 byte. Tier 2 chỉ có 285 source
+trong toàn bộ manifest nên phương án 400 clip/tier là bất khả thi; mức 250/tier để lại 35
+source Tier 2 dự phòng và vẫn có 100 source/tier dư so với calibration đích.
 
 `02_scoring/02_active_speaker/06_build_calibration_manifest.py` chọn 450 clip, 150 clip mỗi tier, tối đa một clip cho mỗi `source_video`. Mẫu được round-robin qua các nhóm rủi ro `clean_candidate`, `static`, `voiceover`, `mixed`, `multiple_faces` dựa trên preliminary scoring.
 
@@ -138,7 +146,7 @@ Không chạy full ngay. Thứ tự an toàn là:
 
 1. Pin commit của Light-ASD, LASER, Silero; tải weight và ghi SHA-256.
 2. Chạy development nhỏ để xác nhận preprocessing/model API.
-3. Preliminary-score một candidate pool source-disjoint đủ lớn, enrich các bin mơ hồ bằng LASER rồi tạo manifest 450.
+3. Preliminary-score candidate pool 750 clip hiện hành, enrich các bin mơ hồ bằng LASER rồi tạo manifest 450.
 4. Hai người review toàn bộ 450 bằng rubric v3; người thứ ba adjudicate.
 5. Grid-search trên 300 và mở validation khóa 150; chỉ giữ policy nếu đạt gate.
 6. Smoke 300 clip đủ ba tier trên Kaggle; đo clip/s, VRAM, failure, tỷ lệ cần LASER và kiểm tra bước enrich.
@@ -151,7 +159,7 @@ Mọi lệnh Python phải dùng `D:\Anaconda\envs\vn_av_df\python.exe` ở loca
 
 ## 8. Kiểm thử đã chạy
 
-Ngày 2026-09-05, `unittest discover` pass 65 test, skip 1 smoke dữ liệu thật có chủ đích. Các case policy tổng hợp đã cover:
+Ngày 2026-09-05, `unittest discover` pass 69 test, skip 1 smoke dữ liệu thật có chủ đích. Các case policy tổng hợp đã cover:
 
 1. người nói liên tục → pass;
 2. 3 giây nói + 2 giây miệng tĩnh còn tiếng → reject `static`;
@@ -169,6 +177,10 @@ Adapter Light-ASD cũng đã được khởi tạo bằng weight `pretrain_AVA_C
 Smoke end-to-end bất biến `dev_asd_real1_20260905_01` chạy clip `-17kN1xdzBE_s0000098754_e0000103754` trong 17,834 giây: 1/1 summary, 25 bin, 0 failure, coverage 100%. `03_export_laser_requests.py` xuất 12 bin cần LASER cùng hash timeline. LASER smoke đầu tiên dùng ngưỡng demo 20 frame và chỉ phủ 11/12 bin; bin đầu thuộc hai track dài 13 frame nên được ghi failure, không mất âm thầm. Sau khi điều chỉnh ngưỡng adapter thành một bin 5 frame và bắt buộc khớp SHA-256 checkpoint/source revision, run `dev_laser_loconet_real1_20260905_03` chấm đủ 12/12 bin trong 9,195 giây, 0 failure, coverage 100%.
 
 `05_apply_laser_scores.py` tạo run `dev_asd_laser_real1_20260905_02`: 25 timeline bin, 12/12 LASER score, 0 failure, coverage 100%. Quyết định của clip vẫn là `manual/ambiguous` và `asd_disagreement_ratio=0,12`; đây là kết quả hợp lý của policy phát triển, không được diễn giải là nhãn thật của clip. Các artifact smoke nằm trong `data/02_curate/runs/`, bị Git ignore và không phải input cho `04_curate.py` vì chỉ phủ một clip.
+
+Light-ASD smoke cân bằng `smoke_asd_candidate30_20260905_01` ban đầu có 3/30 clip exception `light_asd_track_too_short`. Audit cho thấy cả ba vẫn có face-track dài hợp lệ, nhưng một track phụ đúng 5 frame làm exception thoát ra cấp clip. Ở 25 fps, 5 frame chỉ sinh dưới 20 bước MFCC nên chưa đủ 5 output Light-ASD. Code đã sửa để chỉ nhận track từ 6 frame và bỏ riêng track phụ quá ngắn; regression test bảo đảm track 5 frame không làm mất toàn clip.
+
+Run bất biến sau fix `smoke_asd_candidate30_20260905_02` đạt 30/30 summary, 734 timeline bin, 0 exception trong `failures.csv`, coverage 100% và thời gian 118,546 giây, tương đương 3,952 giây/clip trên máy local. Có 5 clip chứa tổng cộng 5 bin `inference_failure`, được đưa manual đúng fail-closed. Trong 726 bin có speech, 228 bin yêu cầu LASER (31,4%); con số này chỉ là số đo trên 30 clip, chưa được ngoại suy thành tỷ lệ toàn bộ 750 clip.
 
 Các bài trên và smoke một clip chỉ xác nhận đường chạy, contract và fail-closed, **không phải bằng chứng accuracy của pretrained model trên data thật**. Bằng chứng đó chỉ có sau calibration 450 và smoke 300 clip đủ ba tier.
 

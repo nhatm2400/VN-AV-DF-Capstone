@@ -39,6 +39,7 @@ và biến thể Kaggle).
 ├── 02_scoring/
 │   ├── 01_face_quality.py
 │   └── 02_active_speaker/
+│       ├── 00_build_candidate_pool.py
 │       ├── 01_score.py
 │       ├── 02_merge_shards.py
 │       ├── 03_export_laser_requests.py
@@ -87,11 +88,25 @@ tránh siết sync cho tập real; 04/05 chạy không cần nó.
 
 ### 02_scoring/02_active_speaker/ — đo active speaker theo thời gian
 
+`00_build_candidate_pool.py` chọn trước 750 clip, gồm 250 clip mỗi tier và tối đa một
+clip cho mỗi `source_video`. Thứ tự chọn dựa trên SHA-256 của seed/source/clip nên không
+phụ thuộc thứ tự dòng trong manifest. Pool này chỉ là population để preliminary scoring,
+không phải nhãn calibration và không phải tập train.
+
+- **Input:** `data/01_collect/cut_clips/all_manifest.csv`.
+- **Output bất biến:** `data/02_curate/calibration/active_speaker_candidate_pool_750_v1.csv`
+  và file `_summary.json` chứa hash input/output, seed và kiểm tra source-disjoint.
+
 Giải mã audio tạm thành mono 16 kHz, chuẩn hóa PCM rồi chạy Silero ONNX từ checkout đã pin theo bin 200 ms, track nhiều mặt bằng
 InsightFace, ổn định vùng miệng theo năm landmark rồi chạy Light-ASD. Bin mơ hồ được đánh dấu
 `laser_requested`; `04_run_laser.py` chạy checkpoint LoCoNet+LASER chính thức và sidecar
 được ghép fail-closed bằng `05_apply_laser_scores.py` thành một run mới. Thiếu bằng chứng cần thiết thì clip vào manual,
 không auto-reject. Các script không ghi đè video.
+
+Light-ASD chỉ nhận face-track từ 6 frame. Ở 25 fps, track 5 frame chưa tạo đủ 20 bước
+MFCC cho tối thiểu 5 output model; track phụ quá ngắn được bỏ riêng, không làm exception
+toàn clip. Nếu một bin có speech và có detection nhưng không còn track đủ dài, bin đó ghi
+`inference_failure=true` và clip được chuyển manual.
 
 `03_export_laser_requests.py` xuất đúng các bin cần chạy cùng `source_timeline_sha256`.
 `04_run_laser.py` kiểm tra Git SHA của checkout, SHA-256 checkpoint, chạy CUDA rồi trả
@@ -127,6 +142,7 @@ VGGish; `gdown` chỉ dùng để tải checkpoint liên kết từ README upstr
 
 ### 02_scoring/02_active_speaker/07_calibrate.py — khóa temporal policy
 
+Sau khi preliminary scoring + LASER enrichment phủ đủ candidate pool,
 `06_build_calibration_manifest.py` tạo 450 clip source-disjoint (150/tier), gồm 300 tune và
 150 locked validation. Sau khi hai reviewer gán interval theo rubric v3 và người thứ ba phân xử,
 `07_calibrate.py` grid-search chỉ trên tune rồi kiểm tra validation. Auto gate chỉ được publish khi recall

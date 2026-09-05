@@ -1,0 +1,16 @@
+{
+  "schema": "active_speaker_candidate_pool_v1",
+  "clips": 750,
+  "clips_per_tier": 250,
+  "unique_sources": 750,
+  "source_disjoint": true,
+  "by_tier": {
+    "tier1": 250,
+    "tier2": 250,
+    "tier3": 250
+  },
+  "seed": 42,
+  "selection": "sha256_rank_one_clip_per_source_v1",
+  "input_manifest_sha256": "6ca67d68cdc6594c825f4681b9f5f11695cb9a6a8cf3fb2baf843230e49c37c9",
+  "candidate_manifest_sha256": "69645a92d2e3b7e5a155d0175668059490c1ab592e21760d89df627005eb7396"
+}

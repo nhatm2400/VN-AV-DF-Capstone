@@ -90,6 +90,52 @@ class ActiveSpeakerVADTest(unittest.TestCase):
         self.assertEqual((summary["temporal_decision"], summary["temporal_reason"]),
                          ("reject", "voiceover"))
 
+    def test_five_frame_nuisance_track_does_not_fail_the_whole_clip(self):
+        frames = [np.zeros((32, 32, 3), dtype=np.uint8) for _ in range(10)]
+
+        def track(track_id, count):
+            return {
+                "track_id": track_id,
+                "frames": np.arange(count),
+                "bbox": np.tile(
+                    np.array([[2, 2, 28, 28]], dtype=np.float32), (count, 1)
+                ),
+                "kps": np.zeros((count, 5, 2), dtype=np.float32),
+            }
+
+        class Tracker:
+            def track(self, _frames):
+                return [track(0, 10), track(1, 5)]
+
+        class Light:
+            calls = []
+
+            def score(self, _audio, faces, _start):
+                self.calls.append(len(faces))
+                if len(faces) < 6:
+                    raise RuntimeError("light_asd_track_too_short")
+                return np.ones(len(faces), dtype=np.float32)
+
+        class VAD:
+            def bins(self, _audio, count, _bin_ms):
+                return [True] * count
+
+        light = Light()
+        face = np.zeros((112, 112), dtype=np.uint8)
+        mouth = np.zeros((38, 62), dtype=np.uint8)
+        with mock.patch.object(self.module, "decode_25fps", return_value=frames), \
+             mock.patch.object(self.module, "extract_audio",
+                               return_value=np.zeros(6400, dtype=np.float32)), \
+             mock.patch.object(self.module, "aligned_face_and_mouth",
+                               return_value=(face, mouth)):
+            _, timeline = self.module.score_clip(
+                "clip", "unused.mp4", Tracker(), light, VAD(), {},
+                self.module.TemporalPolicy(),
+            )
+
+        self.assertEqual(light.calls, [10])
+        self.assertTrue(all(not row["inference_failure"] for row in timeline))
+
 
 if __name__ == "__main__":
     unittest.main()

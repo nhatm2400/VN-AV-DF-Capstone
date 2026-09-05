@@ -36,6 +36,9 @@ from policy import TemporalPolicy, summarize_timeline
 TARGET_FPS = 25
 TARGET_SR = 16000
 FACE_SIZE = 112
+# Five video frames (200 ms) yield fewer than the 20 MFCC steps required for
+# five Light-ASD outputs. Six frames are the shortest valid track at 25 fps.
+MIN_LIGHT_TRACK_FRAMES = 6
 ALIGN_TEMPLATE = np.array(
     [[38.3, 51.7], [73.5, 51.5], [56.0, 71.7], [41.5, 92.4], [70.7, 92.2]],
     dtype=np.float32,
@@ -417,7 +420,7 @@ def score_clip(clip_id, path, tracker, light, vad, laser, policy):
             faces.append(face)
             mouths.append(mouth)
             valid_frames.append(int(frame_id))
-        if len(faces) < 5:
+        if len(faces) < MIN_LIGHT_TRACK_FRAMES:
             continue
         scores = light.score(audio, np.asarray(faces), valid_frames[0])
         usable = min(len(scores), len(valid_frames))
