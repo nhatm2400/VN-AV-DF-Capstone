@@ -3,7 +3,7 @@
 **Ngày cập nhật:** 2026-09-05
 
 **Phạm vi dữ liệu:** 65.622 clip real nguồn trong `data/01_collect/cut_clips/all_manifest.csv`
-**Trạng thái:** code và contract đã triển khai; pipeline Light-ASD + Silero + InsightFace + LoCoNet+LASER đã smoke end-to-end trên dữ liệu thật; candidate pool 750 clip đã dựng và Light-ASD smoke 30 clip cân bằng đạt coverage 100%, nhưng **chưa preliminary-score đủ pool, chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
+**Trạng thái:** code và contract đã triển khai; candidate pool 750 clip đã dựng; pipeline Light-ASD + Silero + InsightFace + LoCoNet/LASER đã smoke đủ chuỗi trên 30 clip cân bằng với coverage 100%, nhưng **chưa preliminary-score đủ pool, chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
 
 ## 1. Vấn đề cần giải quyết
 
@@ -182,7 +182,9 @@ Light-ASD smoke cân bằng `smoke_asd_candidate30_20260905_01` ban đầu có 3
 
 Run bất biến sau fix `smoke_asd_candidate30_20260905_02` đạt 30/30 summary, 734 timeline bin, 0 exception trong `failures.csv`, coverage 100% và thời gian 118,546 giây, tương đương 3,952 giây/clip trên máy local. Có 5 clip chứa tổng cộng 5 bin `inference_failure`, được đưa manual đúng fail-closed. Trong 726 bin có speech, 228 bin yêu cầu LASER (31,4%); con số này chỉ là số đo trên 30 clip, chưa được ngoại suy thành tỷ lệ toàn bộ 750 clip.
 
-Các bài trên và smoke một clip chỉ xác nhận đường chạy, contract và fail-closed, **không phải bằng chứng accuracy của pretrained model trên data thật**. Bằng chứng đó chỉ có sau calibration 450 và smoke 300 clip đủ ba tier.
+LASER run `smoke_laser_loconet_candidate30_20260905_01` chấm đủ 228/228 bin được yêu cầu trên cả 30 clip trong 140,22 giây, `missing_bins=0`, `failure_rows=0`, coverage 100%. Run ghép `smoke_asd_laser_candidate30_20260905_01` giữ đủ 30 summary và 734 timeline bin, gắn đủ 228 LASER score, không phát sinh failure. So với quyết định preliminary, 9 clip thay đổi: 2 clip từ `manual/ambiguous` thành `pass`, 6 clip từ `manual/ambiguous` thành `reject`, và 1 clip từ `pass` thành `reject`. Đây là hành vi của ngưỡng phát triển trên dữ liệu chưa gán nhãn; tuyệt đối không dùng các con số pass/reject này làm accuracy hoặc làm gate production.
+
+Các bài test và smoke trên chỉ xác nhận đường chạy, contract và fail-closed, **không phải bằng chứng accuracy của pretrained model trên data thật**. Bằng chứng đó chỉ có sau calibration 450 và smoke 300 clip đủ ba tier.
 
 ## 9. Chống leakage
 

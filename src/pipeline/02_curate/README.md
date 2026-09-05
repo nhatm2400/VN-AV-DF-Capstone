@@ -140,6 +140,12 @@ Mọi tên `<...>` phải được thay bằng run ID mới. Các thư mục out
 lại tên đã tồn tại. `04_run_laser.py` cần CUDA. Gói `resampy` là dependency runtime của
 VGGish; `gdown` chỉ dùng để tải checkpoint liên kết từ README upstream.
 
+Smoke cân bằng gần nhất dùng 30 clip (10/tier): Light-ASD phủ 30/30 clip và 734 bin;
+LASER chấm đủ 228/228 bin được yêu cầu trong 140,22 giây, không thiếu score hay failure;
+run enrich giữ coverage 100%. Các quyết định pass/manual/reject tại đây dùng ngưỡng phát
+triển và dữ liệu chưa gán nhãn, vì vậy chỉ chứng minh pipeline chạy đúng contract, không
+được coi là số đo accuracy hoặc dùng để mở auto gate.
+
 ### 02_scoring/02_active_speaker/07_calibrate.py — khóa temporal policy
 
 Sau khi preliminary scoring + LASER enrichment phủ đủ candidate pool,
