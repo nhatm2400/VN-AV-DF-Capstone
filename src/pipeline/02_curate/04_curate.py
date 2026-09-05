@@ -1,35 +1,33 @@
 """
 04_curate.py — BƯỚC QUYẾT ĐỊNH (decision pass) — chạy CUỐI trong bộ 02/03/04
 
-Đọc output của 02_score_clips.py (scored CSV + embeddings.npy), tùy chọn có thêm
-cột sync_conf từ 03_sync_score.py, rồi:
-  [B2] cluster embedding -> speaker_id   (agglomerative, cosine)
-  [B3] gate: loại clip không mặt / mặt quá nhỏ (CHỈ rác rõ ràng)
+Đọc output của 02_scoring/01_face_quality.py (scored CSV + embeddings.npy), tùy chọn có thêm
+cột sync_conf từ 03_diagnostics_optional/02_sync_score.py, rồi:
+  [B2] temporal gate đã khóa -> cluster embedding (agglomerative, cosine)
+  [B3] face gate: loại clip không mặt / mặt quá nhỏ (CHỈ rác rõ ràng)
   [B4] cân bằng: cap N clip/speaker, ưu tiên chất lượng + trải đều video/thời điểm
   [B5] xuất tập sạch + metadata đầy đủ
 
 Triết lý (giống bài học SNR): ĐO mọi thứ, chỉ loại rác rõ ràng, giữ phần còn lại
 làm metadata. Luôn chạy --calibrate trước để XEM phân bố rồi mới đặt ngưỡng.
 
-⚠️ Đối xứng real/fake: nếu áp gate sync/chất lượng cho tập REAL thì PHẢI áp y hệt
-cho tập FAKE (hoặc không gate cho tập nào). Gate một phía sẽ bơm tín hiệu nhãn
-("sync thấp = fake") -> model học tắt, rò rỉ chính đặc trưng PAMF phải tự học.
+⚠️ Chỉ chạy curation trên real nguồn trước khi sinh fake. Mọi fake sau này kế thừa
+quyết định của source real; không chạy ASD/gate riêng trên fake.
 
-sync_conf / embed_consistency: nếu CSV có thì tự đưa vào quality score; không có thì bỏ qua.
-motion_median (từ 02b_motion_score.py): CHỈ dùng làm gate tùy chọn --motion_floor, KHÔNG
-đưa vào quality score (tránh âm thầm đổi thành phần tập đã xuất).
+sync_conf, ASD score và full-frame motion chỉ là metadata/chẩn đoán, không làm gate liên tục
+hay quality score. Temporal policy chỉ đi vào như quyết định nhị phân đã qua locked validation.
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
-  python 04_curate.py --calibrate   # 1) xem phân bố, chọn ngưỡng
-  python 04_curate.py               # 2) export -> data/02_curate/manifests/all_clean.csv
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/04_curate.py --calibrate   # 1) xem phân bố, chọn ngưỡng
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/04_curate.py               # 2) export -> data/02_curate/manifests/all_clean.csv
   -> tự đọc data/02_curate/measurements/tier1_scored_all.csv + embeddings_all.npy
 
 Ví dụ tùy chỉnh / KAGGLE:
   # 1) Xem phân bố + số cụm ở vài ngưỡng (không xuất gì)
-  python 04_curate.py --scored_csv tier1_scored_tier1.csv --emb embeddings_tier1.npy --calibrate
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/04_curate.py --scored_csv tier1_scored_tier1.csv --emb embeddings_tier1.npy --calibrate
 
   # 2) Chốt ngưỡng rồi xuất
-  python 04_curate.py --scored_csv ... --emb ... \\
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/04_curate.py --scored_csv ... --emb ... \\
       --cluster_dist 0.5 --min_det_ratio 0.6 --min_face_area 0.01 --cap_per_speaker 12 \\
       --out tier1_clean.csv
 """
@@ -71,6 +69,69 @@ def sha256_file(path):
     return digest.hexdigest()
 
 
+def load_temporal_scores(df, scores_path, policy_path):
+    """Validate and attach exactly one temporal decision per source-real clip."""
+    if bool(scores_path) != bool(policy_path):
+        raise ValueError("--temporal_scores and --temporal_policy must be provided together")
+    if not scores_path:
+        return df, None
+    scores = pd.read_csv(scores_path)
+    required = {
+        "clip_id", "temporal_decision", "temporal_reason", "config_hash",
+        "voiced_ms", "visible_active_speech_ratio", "unexplained_speech_ratio",
+        "longest_unexplained_speech_ms", "static_speech_ratio",
+        "asd_disagreement_ratio",
+    }
+    missing = sorted(required - set(scores.columns))
+    if missing or scores.empty:
+        raise ValueError(f"Invalid temporal score CSV; missing={missing}")
+    if scores["clip_id"].isna().any() or scores["clip_id"].duplicated().any():
+        raise ValueError("Temporal scores require non-empty unique clip_id")
+    expected = set(df["clip_id"].astype(str))
+    actual = set(scores["clip_id"].astype(str))
+    if expected != actual or len(scores) != len(df):
+        raise ValueError(
+            f"Temporal coverage mismatch: expected={len(expected)}, actual={len(actual)}, "
+            f"missing={len(expected-actual)}, extra={len(actual-expected)}"
+        )
+    config_hashes = set(scores["config_hash"].astype(str))
+    if len(config_hashes) != 1:
+        raise ValueError("Temporal scores contain multiple config hashes")
+    run_config_path = os.path.join(os.path.dirname(os.path.abspath(scores_path)), "run_config.json")
+    if not os.path.isfile(run_config_path):
+        raise FileNotFoundError(f"Missing run_config.json beside temporal scores: {run_config_path}")
+    with open(run_config_path, encoding="utf-8") as handle:
+        run_config = json.load(handle)
+    if not run_config.get("coverage_passed", False):
+        raise ValueError("Temporal run did not pass coverage")
+    if str(run_config.get("config_hash")) != next(iter(config_hashes)):
+        raise ValueError("Temporal run_config/CSV config hash mismatch")
+    with open(policy_path, encoding="utf-8") as handle:
+        policy = json.load(handle)
+    if policy.get("schema") != "active_speaker_policy_v1":
+        raise ValueError("Unknown temporal policy schema")
+    if policy.get("policy") != run_config.get("policy"):
+        raise ValueError("Scoring policy differs from supplied calibrated policy")
+    valid = {"pass", "reject", "manual"}
+    unknown = sorted(set(scores["temporal_decision"].astype(str)) - valid)
+    if unknown:
+        raise ValueError(f"Unknown temporal decisions: {unknown}")
+    keep_columns = [column for column in scores.columns if column != "model_versions"]
+    merged = df.merge(scores[keep_columns], on="clip_id", how="left", validate="one_to_one")
+    provenance = {
+        "scores": os.path.abspath(scores_path),
+        "scores_sha256": sha256_file(scores_path),
+        "run_config": run_config_path,
+        "run_config_sha256": sha256_file(run_config_path),
+        "policy": os.path.abspath(policy_path),
+        "policy_sha256": sha256_file(policy_path),
+        "config_hash": next(iter(config_hashes)),
+        "gate_passed": bool(policy.get("gate_passed", False)),
+        "publish_mode": policy.get("publish_mode", "manual_priority_only"),
+    }
+    return merged, provenance
+
+
 # ----------------------------- Helpers -----------------------------
 def norm_pctile(s, lo=0.05, hi=0.95):
     """Chuẩn hóa về [0..1] theo phân vị p5..p95 (bền với outlier hơn min-max thuần)."""
@@ -106,15 +167,13 @@ def quality_score(df):
     """
     Điểm chất lượng [0..1] để chọn clip tốt khi cân bằng.
     Thành phần chuẩn hóa NHẤT QUÁN theo phân vị p5..p95 (tránh outlier kéo lệch).
-    Tự thêm sync_conf và embed_consistency nếu có; tự chia lại trọng số cho đủ 1.0.
+    Chỉ dùng face quality và embed consistency. Sync/ASD score là metadata chẩn đoán,
+    không được dùng liên tục để xếp hạng real.
     """
     det = df["det_ratio"].clip(0, 1)
     fa_norm = norm_pctile(df["mean_face_area"])
 
     parts = [(0.4, det), (0.3, fa_norm)]
-    if "sync_conf" in df.columns:
-        sc = df["sync_conf"].fillna(df["sync_conf"].median())
-        parts.append((0.3, norm_pctile(sc)))
     if "embed_consistency" in df.columns:
         parts.append((0.15, df["embed_consistency"].clip(0, 1)))
 
@@ -201,7 +260,7 @@ def calibrate(df, emb):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scored_csv", default="data/02_curate/measurements/tier1_scored_all.csv",
-                    help="output của 02_score_clips (mặc định local)")
+                    help="output của 02_scoring/01_face_quality.py (mặc định local)")
     ap.add_argument("--emb", default="data/02_curate/measurements/embeddings_all.npy")
     ap.add_argument("--calibrate", action="store_true", help="chỉ in phân bố, không xuất")
     ap.add_argument("--cluster_dist", type=float, default=0.6, help="cosine distance threshold")
@@ -210,20 +269,28 @@ def main():
     ap.add_argument("--min_consistency", type=float, default=0.3,
                     help="gate: embed_consistency tối thiểu (0 = tắt). Loại clip lẫn nhiều người.")
     ap.add_argument("--sync_floor", type=float, default=None,
-                    help="gate sync: loại clip RÁC RÕ RÀNG (LSE-C < floor HOẶC sync fail = "
-                         "không ai nói). MẶC ĐỊNH None = không động tới sync. CHỈ đặt giá trị "
-                         "CỰC THẤP lấy từ calibrate, và PHẢI áp y hệt cho tập fake (đối xứng).")
+                    help="DEPRECATED: SyncNet chỉ còn là metadata/chẩn đoán")
     ap.add_argument("--motion_floor", type=float, default=None,
-                    help="gate motion: loại clip ảnh TĨNH (motion_median < floor HOẶC không "
-                         "đo được). MẶC ĐỊNH None = không động tới motion. Chỉ áp cho tập "
-                         "REAL NGUỒN trước khi sinh fake — KHÔNG lọc motion trên fake đã sinh "
-                         "(anonymization làm mờ -> motion giảm -> loại lệch riêng kênh đó).")
+                    help="DEPRECATED: full-frame motion không được dùng làm auto gate")
+    ap.add_argument("--temporal_scores", default="",
+                    help="asd_clip_scores.csv có coverage đúng 100%% scored input")
+    ap.add_argument("--temporal_policy", default="",
+                    help="active_speaker_policy_v1 JSON; chỉ auto gate khi gate_passed=true")
     ap.add_argument("--cap_per_speaker", type=int, default=30)
     ap.add_argument("--out", default="data/02_curate/manifests/all_clean.csv")
     ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
 
+    if args.sync_floor is not None or args.motion_floor is not None:
+        raise ValueError(
+            "--sync_floor/--motion_floor are disabled: keep SyncNet and full-frame "
+            "motion as diagnostics, not automatic gates"
+        )
+
     df, emb = load(args.scored_csv, args.emb)
+    df, temporal_provenance = load_temporal_scores(
+        df, args.temporal_scores, args.temporal_policy
+    )
 
     if args.calibrate:
         calibrate(df, emb)
@@ -243,33 +310,43 @@ def main():
             + ", ".join(existing)
         )
 
-    # [B2] speaker_id
-    df = cluster_speakers(df, emb, args.cluster_dist)
+    # [B2] temporal gate runs before identity clustering/face gate. Rejected
+    # source clips cannot influence agglomerative linkage among survivors.
+    temporal_reject = pd.Series(False, index=df.index)
+    if temporal_provenance:
+        if temporal_provenance["gate_passed"]:
+            temporal_reject = df["temporal_decision"].eq("reject")
+            print(f"[B2] temporal gate: loại {int(temporal_reject.sum())} clip; "
+                  f"manual={int(df['temporal_decision'].eq('manual').sum())}")
+        else:
+            print("[B2] temporal policy chưa đạt validation: chỉ dùng ưu tiên manual, "
+                  "không auto-reject")
+    survivor_mask = ~temporal_reject
+    clustered = cluster_speakers(
+        df.loc[survivor_mask].copy(), emb[survivor_mask.to_numpy()], args.cluster_dist
+    )
+    df["speaker_id"] = -1
+    df.loc[survivor_mask, "speaker_id"] = clustered["speaker_id"].to_numpy()
     n_spk = df.loc[df.speaker_id != -1, "speaker_id"].nunique()
-    print(f"[B2] {n_spk} speaker từ {df['source_video'].nunique()} video")
+    print(f"[B2] {n_spk} speaker từ {df.loc[survivor_mask, 'source_video'].nunique()} video còn lại")
 
     # [B3] gate — chỉ loại rác rõ ràng
     before = len(df)
     df["quality"] = quality_score(df)
-    gate = (df["has_embedding"]) & \
+    face_gate = (df["has_embedding"]) & \
            (df["det_ratio"] >= args.min_det_ratio) & \
            (df["mean_face_area"] >= args.min_face_area)
     if "embed_consistency" in df.columns and args.min_consistency > 0:
-        gate = gate & (df["embed_consistency"] >= args.min_consistency)
-    if "sync_conf" in df.columns and args.sync_floor is not None:
-        # CHỈ cắt đuôi rác cực thấp (không ai nói): sync fail (NaN) hoặc LSE-C < floor.
-        # KHÔNG dùng để siết clip biên. Nhớ áp y hệt floor này cho tập fake.
-        sync_garbage = df["sync_conf"].isna() | (df["sync_conf"] < args.sync_floor)
-        gate = gate & ~sync_garbage
-        print(f"[B3] sync gate (floor={args.sync_floor}): loại thêm {int(sync_garbage.sum())} "
-              f"clip rác sync (NHỚ áp cùng floor cho tập fake để đối xứng)")
-    if "motion_median" in df.columns and args.motion_floor is not None:
-        # Ảnh tĩnh / B-roll: frame_reverse và temporal_desync trên clip này ra fake
-        # KHÔNG phân biệt được với real -> cặp nhãn là nhiễu thuần túy.
-        static_garbage = df["motion_median"].isna() | (df["motion_median"] < args.motion_floor)
-        gate = gate & ~static_garbage
-        print(f"[B3] motion gate (floor={args.motion_floor}): loại thêm "
-              f"{int(static_garbage.sum())} clip tĩnh/không đo được")
+        face_gate = face_gate & (df["embed_consistency"] >= args.min_consistency)
+    gate = ~temporal_reject & face_gate
+    df["gate_stage"] = "pass"
+    df["gate_reason"] = ""
+    df.loc[temporal_reject, "gate_stage"] = "temporal"
+    if temporal_provenance:
+        df.loc[temporal_reject, "gate_reason"] = df.loc[temporal_reject, "temporal_reason"]
+    face_reject = ~temporal_reject & ~face_gate
+    df.loc[face_reject, "gate_stage"] = "face_quality"
+    df.loc[face_reject, "gate_reason"] = "face_quality"
     rejected = df[~gate].copy()
     gated = df[gate].copy()
     print(f"[B3] gate: giữ {len(gated)}/{before}, loại {len(rejected)} "
@@ -306,6 +383,7 @@ def main():
             "scored_csv_sha256": sha256_file(args.scored_csv),
             "embeddings": os.path.abspath(args.emb),
             "embeddings_sha256": sha256_file(args.emb),
+            "temporal": temporal_provenance,
         },
         "parameters": {
             "cluster_dist": args.cluster_dist,
@@ -314,11 +392,18 @@ def main():
             "min_consistency": args.min_consistency,
             "sync_floor": args.sync_floor,
             "motion_floor": args.motion_floor,
+            "temporal_auto_gate": bool(
+                temporal_provenance and temporal_provenance["gate_passed"]
+            ),
             "cap_per_speaker": args.cap_per_speaker,
         },
         "counts": {
             "scored": before,
             "gate_rejected": len(rejected),
+            "temporal_rejected": int(temporal_reject.sum()),
+            "face_quality_rejected": int(face_reject.sum()),
+            "temporal_manual": int(df["temporal_decision"].eq("manual").sum())
+                               if temporal_provenance else 0,
             "balance_dropped": len(balance_dropped),
             "clean": len(df),
         },

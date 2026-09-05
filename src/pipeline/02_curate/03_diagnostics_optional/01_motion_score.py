@@ -1,5 +1,5 @@
 """
-02b_motion_score.py — Đo ĐỘ ĐỘNG của khung hình — chạy sau 02, trước 04
+01_motion_score.py — chẩn đoán ĐỘ ĐỘNG của khung hình — tùy chọn trước 04
 
 Vì sao cần: gate hiện tại (det_ratio / speech_ratio / embed_consistency) KHÔNG thấy
 được clip là ảnh tĩnh. Đo trên mẫu 100 clip của all_clean.csv:
@@ -15,9 +15,9 @@ Clip tĩnh làm hỏng nhãn: frame_reverse(ảnh tĩnh) == ảnh tĩnh -> cặp
   frac_near_static  tỉ lệ cặp khung gần trùng (|diff| < 1.0)
 
 Trình tự bộ script:
-  02_score_clips.py   (đo mặt + embedding)
-  02b_motion_score.py (đo độ động)                 <-- file này
-  03_sync_score.py    (đo độ khớp môi-tiếng, tùy chọn)
+  02_scoring/01_face_quality.py                    (đo mặt + embedding)
+  03_diagnostics_optional/01_motion_score.py       (đo độ động) <-- file này
+  03_diagnostics_optional/02_sync_score.py         (đo sync, tùy chọn)
   04_curate.py        (cluster -> gate -> cân bằng -> xuất tập sạch)
 
 Giữ NGUYÊN số dòng và thứ tự dòng của input (04_curate assert len(csv) == len(npy)).
@@ -27,7 +27,7 @@ Giữ NGUYÊN số dòng và thứ tự dòng của input (04_curate assert len(
 fake đã sinh: anonymization làm mờ -> frame-diff giảm -> sẽ loại lệch riêng kênh đó.
 
 CÁCH DÙNG (từ thư mục gốc dự án):
-  python src/pipeline/02_curate/02b_motion_score.py \
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/03_diagnostics_optional/01_motion_score.py \
       --input_csv data/02_curate/measurements/tier1_scored_all.csv \
       --out data/02_curate/measurements/tier1_scored_motion.csv
 """

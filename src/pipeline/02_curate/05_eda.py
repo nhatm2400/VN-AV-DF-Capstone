@@ -2,7 +2,7 @@
 05_eda.py — PHÂN TÍCH KHÁM PHÁ DỮ LIỆU (EDA) — bước CUỐI của stage 02_curate
 
 Đọc output các bước trước rồi xuất hình + bảng markdown sẵn cho báo cáo Data Tasks:
-  - tier1_scored_all.csv  (từ 02_score_clips: face stats cho TOÀN BỘ ~6888 clip)
+  - tier1_scored_all.csv  (từ 02_scoring/01_face_quality.py: face stats cho TOÀN BỘ ~6888 clip)
   - all_clean.csv         (từ 04_curate: tập sạch sau gate + cân bằng, có speaker_id)  [tùy chọn]
 
 Sinh ra:
@@ -20,12 +20,12 @@ Triết lý EDA ở đây = mô tả CHÍNH bộ real clip đã thu thập + là
 Chỉ dùng pandas + numpy + matplotlib -> chạy được trên Kaggle lẫn máy.
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
-  python 05_eda.py
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/05_eda.py
   -> đọc data/02_curate/measurements/tier1_scored_all.csv
      + data/02_curate/manifests/all_clean.csv, xuất data/02_curate/eda_figs/
 
 Ví dụ tùy chỉnh / KAGGLE:
-  python 05_eda.py --scored_csv tier1_scored_all.csv --clean_csv all_clean.csv \\
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/05_eda.py --scored_csv tier1_scored_all.csv --clean_csv all_clean.csv \\
       --out_dir /kaggle/working/eda_figs
 """
 
@@ -256,7 +256,7 @@ def build_summary_md(scored, clean, figs):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scored_csv", default="data/02_curate/measurements/tier1_scored_all.csv",
-                    help="output 02_score_clips: face stats toàn bộ clip (mặc định local)")
+                    help="output 02_scoring/01_face_quality.py: face stats toàn bộ clip (mặc định local)")
     ap.add_argument("--clean_csv", default="data/02_curate/manifests/all_clean.csv",
                     help="output 04_curate: tập sạch có speaker_id (tùy chọn)")
     ap.add_argument("--out_dir", default="data/02_curate/eda_figs")

@@ -5,7 +5,7 @@ Mỗi clip calibration xuất hiện trong assignment của mọi reviewer. Các
 chỉ xuất hiện trong đúng một assignment và được cân bằng theo tier.
 
 Ví dụ:
-  python src/tools/build_review_assignments.py \
+  D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_review_assignments.py \
       --reviewers nguyenminhnhat reviewer_b reviewer_c
 """
 
@@ -39,10 +39,12 @@ def read_rows(path):
 
 def calibration_ids(path):
     rows = read_rows(path)
-    ids = []
-    for row in rows:
-        if row.get("decision") in {"keep", "reject", "uncertain"}:
-            ids.append(row["clip_id"])
+    is_selection_manifest = (
+        "calibration_split" in rows[0]
+        or all(row.get("assignment_role") == "calibration" for row in rows)
+    )
+    ids = [row["clip_id"] for row in rows if is_selection_manifest or
+           row.get("decision") in {"keep", "reject", "uncertain"}]
     if not ids:
         raise SystemExit(f"[LỖI] Không có quyết định calibration hợp lệ trong {path}")
     return ids
@@ -76,13 +78,15 @@ def write_csv(path, rows, fields):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest",
-                    default="data/02_curate/manifests/all_clean_review.csv")
+                    default="data/02_curate/calibration/active_speaker_450_v3.csv")
     ap.add_argument("--calibration",
-                    default="data/02_curate/manual/manual_all_clean_review_v2.csv",
-                    help="CSV chứa tập calibration chung đã được reviewer đầu tiên đánh dấu")
+                    default="data/02_curate/calibration/active_speaker_450_v3.csv",
+                    help="CSV chọn tập calibration chung; không cần có decision")
+    ap.add_argument("--no_shared_calibration", action="store_true",
+                    help="chia scope manual cuối sau khi calibration đã hoàn tất")
     ap.add_argument("--reviewers", nargs="+", required=True,
                     help="Ba reviewer ID ổn định, không dùng tên thay đổi giữa các máy")
-    ap.add_argument("--out_dir", default="data/02_curate/assignments/v2")
+    ap.add_argument("--out_dir", default="data/02_curate/assignments/v3/calibration_450")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()
@@ -93,7 +97,7 @@ def main():
 
     rows = read_rows(args.manifest)
     by_id = {r["clip_id"]: r for r in rows}
-    cal_ids = calibration_ids(args.calibration)
+    cal_ids = [] if args.no_shared_calibration else calibration_ids(args.calibration)
     missing = sorted(set(cal_ids) - set(by_id))
     if missing:
         raise SystemExit(f"[LỖI] {len(missing)} clip calibration không thuộc manifest")
@@ -140,7 +144,8 @@ def main():
     summary = {
         "schema": "manual_review_assignment_v1",
         "manifest": args.manifest.replace("\\", "/"),
-        "calibration_source": args.calibration.replace("\\", "/"),
+        "calibration_source": None if args.no_shared_calibration else
+                              args.calibration.replace("\\", "/"),
         "seed": args.seed,
         "reviewers": reviewers,
         "manifest_clips": len(rows),

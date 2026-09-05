@@ -8,6 +8,7 @@ Tài liệu ở root chỉ giữ vai trò quy tắc và điểm vào. Nội dung
 
 ## Báo cáo hiện tại
 
+- [ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md](reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md) — tầng lọc temporal trước manual review, rubric v3, policy calibration 300/150, batch contract và trạng thái triển khai/chưa chạy.
 - [CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md](reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md) — audit lỗi giải mã ở Stage 04 Cut Clips, phạm vi dữ liệu bị ảnh hưởng và thứ tự dựng lại toàn bộ downstream.
 - [PILOT_REPORT.md](reports/PILOT_REPORT.md) — báo cáo chi tiết quá trình pilot V1.
 - [PILOT_V1_REVIEW_AND_V2_PLAN.md](reports/PILOT_V1_REVIEW_AND_V2_PLAN.md) — review V1 sau pilot, fact-check, blocking issue và kế hoạch V2.

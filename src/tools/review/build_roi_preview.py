@@ -18,9 +18,9 @@ làm mỗi clip chờ vài giây, xem hàng nghìn clip thì không dùng đư�
 
 CÁCH DÙNG (từ thư mục gốc dự án):
   # đo chi phí trước trên mẫu nhỏ
-  python src/tools/build_roi_preview.py --limit 30
+  D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_roi_preview.py --limit 30
   # rồi dựng cả lô
-  python src/tools/build_roi_preview.py
+  D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_roi_preview.py
 """
 
 import argparse
@@ -33,7 +33,9 @@ import time
 
 import cv2
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)
+))))
 _STAGE04 = os.path.join(_ROOT, "src", "pipeline", "04_extract_features",
                         "01_extract_features.py")
 

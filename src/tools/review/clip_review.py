@@ -8,12 +8,12 @@ nên không đụng tới output của pipeline tự động.
 Không cần cài gì thêm — chỉ dùng thư viện chuẩn Python + trình duyệt.
 
 CÁCH DÙNG (chạy từ thư mục gốc dự án):
-    python src/tools/build_review_manifest.py     # dựng manifest (chạy 1 lần)
-    python src/tools/build_roi_preview.py         # dựng ô ROI (chạy 1 lần, ~85 phút)
-    python src/tools/clip_review.py               # rồi mở http://127.0.0.1:8000
+    D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_review_manifest.py  # dựng manifest (chạy 1 lần)
+    D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_roi_preview.py      # dựng ô ROI (chạy 1 lần, ~85 phút)
+    D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/clip_review.py            # rồi mở http://127.0.0.1:8000
 
     # mẻ hiệu chuẩn: N clip chia đều 3 tầng theo một cột đo được
-    python src/tools/clip_review.py --sample 60 --stratify motion_median --reviewer nhat
+    D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/clip_review.py --sample 60 --stratify motion_median --reviewer nhat
 
 Ô ROI (quan trọng nhất): cạnh video gốc có ô phát CHUỖI ROI THẬT mà stage 04 cắt ra,
 ghép với AUDIO GỐC. Video gốc bị tắt tiếng để không vọng đôi. Nhìn miệng + nghe tiếng
@@ -82,14 +82,14 @@ except Exception:
 
 # ----- rubric -----
 # Đổi nội dung/ý nghĩa lý do -> TĂNG version, vì quyết định cũ không còn so sánh được.
-RUBRIC_VERSION = "v2"
+RUBRIC_VERSION = "v3"
 REASONS = [
     ("static",     "Ảnh tĩnh / miệng không động"),
     ("voiceover",  "Người trong hình không nói — tiếng của người ngoài hình"),
     ("dubbed",     "Lồng tiếng — môi không ăn nhịp / khác ngôn ngữ"),
     ("wrong_face", "ROI cắt nhầm người (không phải người đang nói)"),
     ("mouth",      "Miệng bị che / nghiêng quá / ra khỏi ô ROI"),
-    ("cut",        "Cắt cảnh / đổi người / B-roll chèn"),
+    ("cut",        "Có chuyển cảnh (chỉ mô tả; thêm static/voiceover nếu đúng)"),
     ("broken",     "Lỗi file / audio hỏng / quá ít tiếng nói"),
 ]
 REASON_KEYS = [k for k, _ in REASONS]
@@ -102,6 +102,7 @@ FILEPATH_BY_ID = {}   # clip_id -> file_path (từ toàn bộ manifest)
 ORDER_BY_ID = {}      # clip_id -> thứ tự gốc trong manifest (để ghi CSV ổn định)
 DECISIONS = {}        # clip_id -> "keep"/"reject"/"uncertain"  (giữ MỌI quyết định)
 REASON = {}           # clip_id -> mã lý do (chỉ có nghĩa khi decision == reject)
+BAD_INTERVALS = {}    # clip_id -> list[{start_ms,end_ms,reason}]
 TS = {}               # clip_id -> timestamp string
 REVIEWER = {}         # clip_id -> mã người review
 RUBRIC = {}           # clip_id -> rubric version lúc đánh dấu
@@ -116,7 +117,64 @@ LOCK = threading.Lock()
 META_FIELDS = ["tier", "source_video", "duration", "snr", "det_ratio",
                "mean_face_area", "embed_consistency", "face_ratio", "speech_ratio",
                "motion_median", "frac_near_static", "n_faces_med", "ratio_med",
-               "sync_conf"]
+               "sync_conf", "voiced_ms", "temporal_decision", "temporal_reason",
+               "unexplained_speech_ratio", "longest_unexplained_speech_ms"]
+
+
+def normalize_bad_intervals(value):
+    """Validate rubric-v3 intervals and return a canonical, sorted list."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value or "[]")
+        except json.JSONDecodeError as error:
+            raise ValueError("bad_intervals_json không phải JSON hợp lệ") from error
+    if value is None:
+        value = []
+    if not isinstance(value, list):
+        raise ValueError("bad_intervals phải là một danh sách")
+    output = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("mỗi interval phải là object")
+        reason = str(item.get("reason", ""))
+        if reason not in REASON_KEYS:
+            raise ValueError(f"lý do interval không hợp lệ: {reason}")
+        try:
+            start_ms = int(round(float(item["start_ms"])))
+            end_ms = int(round(float(item["end_ms"])))
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("interval thiếu start_ms/end_ms hợp lệ") from error
+        if start_ms < 0 or end_ms <= start_ms:
+            raise ValueError("interval phải có 0 <= start_ms < end_ms")
+        output.append({"start_ms": start_ms, "end_ms": end_ms, "reason": reason})
+    output.sort(key=lambda item: (item["start_ms"], item["end_ms"], item["reason"]))
+    return output
+
+
+def longest_interval_reason(intervals):
+    if not intervals:
+        return ""
+    longest = max(intervals, key=lambda item: (item["end_ms"] - item["start_ms"],
+                                               -item["start_ms"]))
+    return longest["reason"]
+
+
+def intervals_are_material(intervals, voiced_ms):
+    """Rubric v3: >=800 ms continuous, or >=500 ms total and >=20% voiced."""
+    if not intervals:
+        return False
+    spans = sorted((item["start_ms"], item["end_ms"]) for item in intervals)
+    merged = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    lengths = [end - start for start, end in merged]
+    total = sum(lengths)
+    return max(lengths) >= 800 or (
+        total >= 500 and voiced_ms > 0 and total / voiced_ms >= 0.20
+    )
 
 
 def roi_path(clip_id):
@@ -156,7 +214,7 @@ def index_media(root):
 
     `file_path` trong manifest là đường dẫn tuyệt đối trên máy dựng manifest
     (E:\\FPTU\\PRJ\\...), nên reviewer đặt media ở đâu khác là hỏng hết. Tên file
-    lại đúng bằng `<clip_id>.mp4` và duy nhất trong toàn bộ 3.001 clip, nên tra
+    lại đúng bằng `<clip_id>.mp4` và phải duy nhất trong manifest đang review, nên tra
     theo tên file bền hơn hẳn việc ghép lại tiền tố: reviewer muốn sắp xếp thư
     mục thế nào cũng được, miễn media nằm đâu đó dưới `root`.
     """
@@ -204,6 +262,12 @@ def load_decisions(out_path):
                     )
                 DECISIONS[cid] = dec
                 REASON[cid] = r.get("reason", "") or ""
+                try:
+                    BAD_INTERVALS[cid] = normalize_bad_intervals(
+                        r.get("bad_intervals_json", "") or "[]"
+                    )
+                except ValueError as error:
+                    raise SystemExit(f"[LỖI] {cid}: {error}") from error
                 TS[cid] = r.get("ts", "")
                 REVIEWER[cid] = r.get("reviewer_id", "") or ""
                 rv = r.get("rubric_version", "") or ""
@@ -247,12 +311,15 @@ def save_decisions():
     items = sorted(DECISIONS.items(), key=lambda kv: ORDER_BY_ID.get(kv[0], 1 << 30))
     with open(tmp, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["clip_id", "file_path", "decision", "reason",
+        w.writerow(["clip_id", "file_path", "decision", "reason", "bad_intervals_json",
                     "reviewer_id", "rubric_version", "ts"])
         for cid, d in items:
             if d:
                 w.writerow([cid, FILEPATH_BY_ID.get(cid, ""), d,
-                            REASON.get(cid, ""), REVIEWER.get(cid, ""),
+                            REASON.get(cid, ""),
+                            json.dumps(BAD_INTERVALS.get(cid, []), ensure_ascii=False,
+                                       separators=(",", ":")),
+                            REVIEWER.get(cid, ""),
                             RUBRIC.get(cid, ""), TS.get(cid, "")])
     os.replace(tmp, OUT)
 
@@ -359,29 +426,53 @@ class Handler(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(n) or b"{}")
             i = int(data.get("i", -1))
             dec = data.get("decision")
-            reason = data.get("reason", "") or ""
             if not (0 <= i < len(CLIPS)):
                 self._json({"ok": False, "err": "index"}, 400)
                 return
-            if dec == "reject" and reason not in REASON_KEYS:
-                self._json({"ok": False, "err": "reject phải kèm lý do hợp lệ"}, 400)
+            try:
+                intervals = normalize_bad_intervals(data.get("bad_intervals", []))
+            except ValueError as error:
+                self._json({"ok": False, "err": str(error)}, 400)
+                return
+            if dec == "reject" and not intervals:
+                self._json({"ok": False, "err": "rubric v3: reject phải có ít nhất một interval lỗi"}, 400)
+                return
+            duration_ms = 0
+            try:
+                duration_ms = int(round(float(CLIPS[i].get("duration", 0)) * 1000))
+            except (TypeError, ValueError):
+                pass
+            if duration_ms and any(item["end_ms"] > duration_ms + 200 for item in intervals):
+                self._json({"ok": False, "err": "interval vượt quá thời lượng clip (+200 ms tolerance)"}, 400)
+                return
+            try:
+                voiced_ms = int(round(float(CLIPS[i].get("voiced_ms", 0))))
+            except (TypeError, ValueError):
+                voiced_ms = 0
+            if not voiced_ms:
+                voiced_ms = duration_ms
+            if dec == "reject" and not intervals_are_material(intervals, voiced_ms):
+                self._json({"ok": False, "err": "đoạn lỗi chưa đạt 800 ms liên tục hoặc 500 ms + 20% voiced"}, 400)
                 return
             cid = CLIPS[i]["clip_id"]
             with LOCK:
                 if dec in DECISIONS_VALID:
                     DECISIONS[cid] = dec
-                    REASON[cid] = reason if dec == "reject" else ""
+                    BAD_INTERVALS[cid] = intervals if dec == "reject" else []
+                    REASON[cid] = longest_interval_reason(intervals) if dec == "reject" else ""
                     TS[cid] = now()
                     REVIEWER[cid] = REVIEWER_ID
                     RUBRIC[cid] = RUBRIC_VERSION
                 elif dec == "unset":
-                    for d in (DECISIONS, REASON, TS, REVIEWER, RUBRIC):
+                    for d in (DECISIONS, REASON, BAD_INTERVALS, TS, REVIEWER, RUBRIC):
                         d.pop(cid, None)
                 else:
                     self._json({"ok": False, "err": "decision"}, 400)
                     return
                 save_decisions()
-            self._json({"ok": True, "counts": counts()})
+            self._json({"ok": True, "counts": counts(),
+                        "reason": REASON.get(cid, ""),
+                        "bad_intervals": BAD_INTERVALS.get(cid, [])})
         else:
             self.send_error(404)
 
@@ -393,7 +484,8 @@ class Handler(BaseHTTPRequestHandler):
                     "exists": os.path.isfile(c["_abspath"]),
                     "has_roi": bool(ROI_DIR) and os.path.isfile(roi_path(cid)),
                     "dec": DECISIONS.get(cid, ""),
-                    "reason": REASON.get(cid, "")}
+                    "reason": REASON.get(cid, ""),
+                    "bad_intervals": BAD_INTERVALS.get(cid, [])}
             for k in META_FIELDS:
                 if k in c:
                     item[k] = c[k]
@@ -496,6 +588,10 @@ button{cursor:pointer;border:0;border-radius:8px;padding:11px 14px;font-size:14p
 .rgrid button{background:#3a2422;border:1px solid var(--rej);color:#f2b3ae;font-size:13px;font-weight:500;text-align:left;padding:9px 11px}
 .rgrid button:hover{background:var(--rej);color:#fff}
 .rgrid button i{font-style:normal;color:#fff;background:var(--rej);border-radius:4px;padding:0 6px;margin-right:7px;font-weight:700}
+.interval-tools{border:1px solid #39404d;border-radius:8px;padding:10px;margin-top:10px}
+.interval-list{font-size:12px;color:#cfd6e4;margin:7px 0;line-height:1.7}
+.interval-list button{padding:2px 7px;background:#4a2a28;font-size:11px;margin-left:7px}
+.reject-final{background:var(--rej);width:100%;margin-top:7px}
 .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700}
 .b-keep{background:rgba(46,158,91,.18);color:#67d699;border:1px solid #2e9e5b}
 .b-rej{background:rgba(214,69,61,.18);color:#f08a84;border:1px solid #d6453d}
@@ -545,11 +641,21 @@ label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px
       <button class="nav" onclick="go(1)">Sau →</button>
       <button class="ghost" onclick="mark('unset')">Bỏ đánh dấu (U)</button>
     </div>
-    <div class="rgrid" id="rgrid"></div>
+    <div class="interval-tools">
+      <div class="row">
+        <button class="ghost" onclick="setBoundary('start')">Đặt đầu đoạn (A)</button>
+        <button class="ghost" onclick="setBoundary('end')">Đặt cuối đoạn (B)</button>
+        <span id="draft">chưa chọn đoạn</span>
+      </div>
+      <div class="rgrid" id="rgrid"></div>
+      <div class="interval-list" id="intervals">Chưa có interval lỗi.</div>
+      <button class="reject-final" onclick="mark('reject')">Reject với các interval đã đánh dấu</button>
+    </div>
     <div class="kbd">
-      <b>K</b> keep · <b>C</b> chưa chắc · <b>1</b>–<b id="nreason">7</b> reject kèm lý do ·
+      <b>K</b> keep · <b>C</b> chưa chắc · <b>A</b>/<b>B</b> đặt biên ·
+      <b>1</b>–<b id="nreason">7</b> thêm interval theo lý do ·
       <b>U</b> bỏ · <b>←</b>/<b>→</b> chuyển · <b>Space</b> phát lại<br>
-      Reject BẮT BUỘC có lý do — không có nút reject trống.
+      Reject BẮT BUỘC có interval đạt quy tắc thời lượng của rubric v3.
     </div>
     <div class="warn" id="missing" style="display:none">⚠ Không tìm thấy file trên đĩa.</div>
   </div>
@@ -569,7 +675,7 @@ label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px
   </div>
 </main>
 <script>
-let S={clips:[],i:0,has_compare:false,reasons:[]};
+let S={clips:[],i:0,has_compare:false,reasons:[],draftStart:null,draftEnd:null,intervals:[]};
 function fmt(v,d=3){if(v===undefined||v===null||v==="")return "—";let n=Number(v);return isNaN(n)?v:n.toFixed(d);}
 async function load(){
   let r=await fetch('/api/state');let j=await r.json();
@@ -579,7 +685,7 @@ async function load(){
   document.getElementById('who').textContent=j.reviewer||'(không đặt)';
   document.getElementById('rub').textContent=j.rubric;
   document.getElementById('rgrid').innerHTML=S.reasons.map((p,k)=>
-    `<button onclick="mark('reject','${p[0]}')"><i>${k+1}</i>${p[1]}</button>`).join('');
+    `<button onclick="addInterval('${p[0]}')"><i>${k+1}</i>Thêm đoạn: ${p[1]}</button>`).join('');
   document.getElementById('nreason').textContent=S.reasons.length;  // theo rubric, khong hard-code
   setCounts(j.counts);render();
 }
@@ -592,6 +698,8 @@ function setCounts(c){
 }
 function render(){
   let c=S.clips[S.i];if(!c)return;
+  S.intervals=Array.isArray(c.bad_intervals)?JSON.parse(JSON.stringify(c.bad_intervals)):[];
+  S.draftStart=null;S.draftEnd=null;renderIntervals();
   document.getElementById('pos').textContent=S.i+1;
   document.getElementById('jump').value=S.i+1;
   let v=document.getElementById('vid');
@@ -628,15 +736,41 @@ function render(){
   else if(d==='uncertain'){b.className='badge b-unc';b.textContent='CHƯA CHẮC';}
   else{b.className='badge b-none';b.textContent='chưa đánh dấu';}
 }
-async function mark(dec,reason){
+function setBoundary(which){
+  let v=document.getElementById('roivid');
+  if(!v.src||!isFinite(v.currentTime))v=document.getElementById('vid');
+  let ms=Math.max(0,Math.round((v.currentTime||0)*1000));
+  if(which==='start')S.draftStart=ms;else S.draftEnd=ms;
+  renderIntervals();
+}
+function addInterval(reason){
+  if(S.draftStart===null||S.draftEnd===null||S.draftEnd<=S.draftStart){
+    alert('Hãy phát video, đặt đầu đoạn (A) rồi đặt cuối đoạn (B).');return;
+  }
+  S.intervals.push({start_ms:S.draftStart,end_ms:S.draftEnd,reason});
+  S.intervals.sort((a,b)=>a.start_ms-b.start_ms);S.draftStart=null;S.draftEnd=null;
+  renderIntervals();
+}
+function removeInterval(index){S.intervals.splice(index,1);renderIntervals();}
+function renderIntervals(){
+  let draft=(S.draftStart===null?'?':(S.draftStart/1000).toFixed(2))+'s → '+
+            (S.draftEnd===null?'?':(S.draftEnd/1000).toFixed(2))+'s';
+  document.getElementById('draft').textContent=draft;
+  let labels=Object.fromEntries(S.reasons);
+  document.getElementById('intervals').innerHTML=S.intervals.length?S.intervals.map((x,i)=>
+    `${(x.start_ms/1000).toFixed(2)}–${(x.end_ms/1000).toFixed(2)}s · ${labels[x.reason]||x.reason}`+
+    `<button onclick="removeInterval(${i})">xóa</button>`).join('<br>'):'Chưa có interval lỗi.';
+}
+async function mark(dec){
   let c=S.clips[S.i];if(!c)return;
   let r=await fetch('/api/mark',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({i:S.i,decision:dec,reason:reason||''})});
+        body:JSON.stringify({i:S.i,decision:dec,bad_intervals:dec==='reject'?S.intervals:[]})});
   let j=await r.json();
   if(!j.ok){alert(j.err||'lỗi');return;}
   if(j.counts)setCounts(j.counts);
   c.dec=(dec==='unset')?'':dec;
-  c.reason=(dec==='reject')?reason:'';
+  c.bad_intervals=j.bad_intervals||[];
+  c.reason=j.reason||'';
   if(dec!=='unset'&&document.getElementById('auto').checked){go(1);}else{render();}
 }
 function go(d){let n=S.i+d;if(n<0||n>=S.clips.length)return;S.i=n;render();}
@@ -668,7 +802,9 @@ async function doCompare(){
 }
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;
-  if(e.key>='1'&&e.key<='9'){let k=parseInt(e.key)-1;if(k<S.reasons.length)mark('reject',S.reasons[k][0]);return;}
+  if(e.key>='1'&&e.key<='9'){let k=parseInt(e.key)-1;if(k<S.reasons.length)addInterval(S.reasons[k][0]);return;}
+  if(e.key==='a'||e.key==='A'){setBoundary('start');return;}
+  if(e.key==='b'||e.key==='B'){setBoundary('end');return;}
   if(e.key==='k'||e.key==='K')mark('keep');
   else if(e.key==='c'||e.key==='C')mark('uncertain');
   else if(e.key==='u'||e.key==='U')mark('unset');
@@ -839,7 +975,7 @@ def main():
     print(f"ROI      : {n_roi}/{len(CLIPS)} clip có preview"
           + ("" if not ROI_DIR else f"  ({ROI_DIR})"))
     if ROI_DIR and n_roi < len(CLIPS):
-        print("           -> chạy src/tools/build_roi_preview.py để dựng phần còn thiếu")
+        print("           -> chạy src/tools/review/build_roi_preview.py để dựng phần còn thiếu")
     if args.order == "diverse":
         vtot = len({c.get("source_video", "") for c in CLIPS})
         v300 = len({c.get("source_video", "") for c in CLIPS[:300]})

@@ -20,7 +20,7 @@ rằng mọi mô hình active-speaker / lip-sync (SyncNet, TalkNet, Light-ASD) �
 những mô hình đó so khớp ở mức âm vị, không phải mức năng lượng thô.
 
 CÁCH DÙNG (từ thư mục gốc dự án):
-  python src/tools/measure_lip_audio_corr.py
+  D:/Anaconda/envs/vn_av_df/python.exe src/tools/diagnostics/measure_lip_audio_corr.py
 """
 import argparse
 import csv

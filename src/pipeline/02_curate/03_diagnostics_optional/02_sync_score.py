@@ -1,5 +1,5 @@
 """
-03_sync_score.py — Tính LSE-C / LSE-D (Sync Confidence) — chạy GIỮA trong bộ 02/03/04
+02_sync_score.py — Tính LSE-C / LSE-D (Sync Confidence) — chẩn đoán tùy chọn
 
 Đây là bước DUY NHẤT nối hình với tiếng: so cử động môi với sóng âm theo thời gian.
 (Khác bước cắt 04_cut_clips: ở đó VAD chỉ kiểm "có tiếng" và YOLO chỉ kiểm "có mặt"
@@ -14,8 +14,8 @@ Hai chế độ:
   --full       : chạy toàn bộ CSV, thêm cột sync_conf + sync_min_dist + sync_flag_reject
 
 Trình tự bộ script:
-  02_score_clips.py  (đo mặt + embedding)
-  03_sync_score.py   (đo độ khớp môi-tiếng)        <-- file này
+  02_scoring/01_face_quality.py                    (đo mặt + embedding)
+  03_diagnostics_optional/02_sync_score.py         (đo sync) <-- file này
   04_curate.py       (cluster -> gate -> cân bằng -> xuất tập sạch)
 
 SETUP (chạy 1 lần trước khi dùng script này):
@@ -27,19 +27,19 @@ SETUP (chạy 1 lần trước khi dùng script này):
 
 LOCAL (TÙY CHỌN — sync khó dựng trên Windows; có thể BỎ, bước 04/05 vẫn chạy):
   cần repo syncnet_python trên máy, truyền --syncnet_dir <đường dẫn local>:
-  python 03_sync_score.py --input_csv data/02_curate/measurements/tier1_scored_all.csv \\
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/03_diagnostics_optional/02_sync_score.py --input_csv data/02_curate/measurements/tier1_scored_all.csv \\
       --syncnet_dir <repo_local> --calibrate
   # input mặc định không trỏ sẵn -> luôn truyền --input_csv (và --syncnet_dir).
 
 Ví dụ (KAGGLE):
   # Calibrate trên 20 clip ngẫu nhiên (KHÔNG đặt ngưỡng — chỉ xem phân bố)
-  python 03_sync_score.py \\
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/03_diagnostics_optional/02_sync_score.py \\
       --input_csv tier1_scored_tier1.csv \\
       --syncnet_dir /kaggle/working/syncnet_python \\
       --calibrate --n_samples 20
 
   # Chạy toàn bộ, thêm sync_conf vào CSV (workers=1 cho an toàn VRAM trên 1 GPU)
-  python 03_sync_score.py \\
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/03_diagnostics_optional/02_sync_score.py \\
       --input_csv tier1_scored_tier1.csv \\
       --syncnet_dir /kaggle/working/syncnet_python \\
       --full --out tier1_scored_sync.csv --workers 1 --lse_c_threshold <từ calibrate>

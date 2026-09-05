@@ -9,7 +9,7 @@ là không dựng lại được. Script này thay thế hoàn toàn cách làm 
 
 Nguồn ghép vào (đều KHÔNG bắt buộc — thiếu cái nào thì bỏ cột đó, có cảnh báo):
   measurements/tier1_scored_motion.csv   motion_median, motion_p90, frac_near_static
-      (02b_motion_score.py — phát hiện ảnh tĩnh / B-roll)
+      (03_diagnostics_optional/01_motion_score.py — chẩn đoán ảnh tĩnh / B-roll)
   measurements/face_ambiguity.json       n_faces_med, ratio_med, ...
       (scan_face_ambiguity.py — luật "mặt to nhất" của stage 04 có đáng tin không)
   01_collect/youtube_tier*_urls.csv      channel
@@ -22,7 +22,7 @@ FAIL nếu ghép làm đổi số dòng, hoặc nếu một nguồn phủ dướ
 0.95) — thà dừng còn hơn xuất manifest thiếu cột mà không ai biết.
 
 CÁCH DÙNG (từ thư mục gốc dự án):
-  python src/tools/build_review_manifest.py
+  D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_review_manifest.py
 """
 
 import argparse
@@ -130,7 +130,10 @@ def main():
         if n:
             print(f"  {n}")
     print(f"\n-> {args.out}  ({len(df)} dòng, {len(df.columns)} cột)")
-    print("Tiếp theo: python src/tools/clip_review.py")
+    print(
+        "Tiếp theo: D:\\Anaconda\\envs\\vn_av_df\\python.exe "
+        "src/tools/review/clip_review.py"
+    )
 
 
 if __name__ == "__main__":

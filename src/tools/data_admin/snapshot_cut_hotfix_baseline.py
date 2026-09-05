@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT = ROOT / "archive" / "cut_clips_v1_decode_bug"
 
 HASH_INPUTS = (
@@ -30,11 +30,11 @@ HASH_INPUTS = (
     "src/pipeline/01_collect/tier1/04_cut_clips.ipynb",
     "src/pipeline/01_collect/tier3/04_cut_clips.ipynb",
     "src/pipeline/02_curate",
-    "src/tools/build_review_manifest.py",
-    "src/tools/build_review_assignments.py",
-    "src/tools/build_roi_preview.py",
-    "src/tools/export_review_batch.py",
-    "src/tools/merge_review_results.py",
+    "src/tools/review/build_review_manifest.py",
+    "src/tools/review/build_review_assignments.py",
+    "src/tools/review/build_roi_preview.py",
+    "src/tools/review/export_review_batch.py",
+    "src/tools/review/merge_review_results.py",
 )
 
 MEDIA_ROOTS = (

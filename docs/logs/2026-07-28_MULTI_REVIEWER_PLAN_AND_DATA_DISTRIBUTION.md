@@ -143,7 +143,7 @@ Lý do phải gom: 3.001 clip nằm rải trong `data/01_collect/cut_clips/` (23
 | `data/02_curate/assignments/v2/` | 1,3 MiB |
 | **Tổng** | **~7,3 GiB** |
 
-Mỗi người tải cả bộ, chỉ dùng file assignment của mình. Nếu reviewer chưa clone repo thì gửi kèm `src/tools/clip_review.py` (chỉ dùng thư viện chuẩn Python, không cần cài gì).
+Mỗi người tải cả bộ, chỉ dùng file assignment của mình. Nếu reviewer chưa clone repo thì gửi kèm `src/tools/review/clip_review.py` (chỉ dùng thư viện chuẩn Python, không cần cài gì).
 
 ### 5.3 Phải gửi cả clip gốc lẫn ROI
 
@@ -163,23 +163,23 @@ Ba bước dưới đây **đã chạy xong** trong phiên này; ghi lại để
 
 ```powershell
 # 1) Dựng manifest review (gộp motion + face ambiguity + channel vào all_clean)
-D:\Anaconda\envs\vn_av_df\python.exe src/tools/build_review_manifest.py
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/build_review_manifest.py
 
 # 2) Dựng ROI preview — ~84 phút cho 3.001 clip, chạy nền
-D:\Anaconda\envs\vn_av_df\python.exe src/tools/build_roi_preview.py --skip_existing
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/build_roi_preview.py --skip_existing
 
 # 3) Gom clip gốc ra một thư mục phẳng — ~36 giây
-D:\Anaconda\envs\vn_av_df\python.exe src/tools/export_review_batch.py `
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/export_review_batch.py `
     --out_dir data/01_collect/final_clips_batch1
 
 # 4) Chia assignment cho ba reviewer
-D:\Anaconda\envs\vn_av_df\python.exe src/tools/build_review_assignments.py `
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/build_review_assignments.py `
     --reviewers nguyenminhnhat nguyenvanlinh nguyenlamanh
 ```
 
 Bước 4 fail nếu assignment đã tồn tại — cố ý, tránh chia lại giữa chừng làm hỏng công đã review. Muốn chia lại thật thì thêm `--overwrite`.
 
-Sau đó upload lên Drive ba thư mục ở mục 5.2, kèm `src/tools/clip_review.py` nếu reviewer chưa clone repo.
+Sau đó upload lên Drive ba thư mục ở mục 5.2, kèm `src/tools/review/clip_review.py` nếu reviewer chưa clone repo.
 
 ### 6.2 Reviewer — cài đặt
 
@@ -266,7 +266,7 @@ data/02_curate/manual/manual_assignment_<tên>_v2_<tên>.csv
 Đặt ba file kết quả vào một thư mục rồi:
 
 ```powershell
-D:\Anaconda\envs\vn_av_df\python.exe src/tools/merge_review_results.py `
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/merge_review_results.py `
     --assignments "data/02_curate/assignments/v2/assignment_*.csv" `
     --results "<thư mục kết quả>/*.csv" `
     --allow_partial

@@ -9,7 +9,7 @@ Copy theo `clip_id`, đặt tên `<clip_id>.mp4` phẳng — khớp cách `clip_
 --media_root` tra file, nên reviewer để thư mục ở đâu cũng chạy.
 
 CÁCH DÙNG (từ thư mục gốc dự án):
-  python src/tools/export_review_batch.py --out_dir data/01_collect/final_clips_batch1
+  D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/export_review_batch.py --out_dir data/01_collect/final_clips_batch1
 """
 
 import argparse

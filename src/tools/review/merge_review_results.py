@@ -3,7 +3,7 @@ Audit và gộp kết quả multi-reviewer.
 
 Clip primary có đúng một reviewer. Clip calibration phải có kết quả của mọi reviewer;
 nếu không đồng thuận hoặc có nhãn uncertain thì được đưa vào needs_adjudication.csv.
-Script chỉ xuất manual_clean_v2.csv khi coverage hoàn tất và không còn clip cần phân xử.
+Script chỉ xuất manual_clean_v3.csv khi coverage hoàn tất và không còn clip cần phân xử.
 """
 
 import argparse
@@ -21,6 +21,70 @@ except Exception:
 
 
 VALID = {"keep", "reject", "uncertain"}
+REASONS = {"static", "voiceover", "dubbed", "wrong_face", "mouth", "cut", "broken"}
+
+
+def parse_intervals(row, field="bad_intervals_json"):
+    try:
+        values = json.loads(row.get(field, "") or "[]")
+    except json.JSONDecodeError as error:
+        raise SystemExit(f"[LỖI] bad_intervals_json không hợp lệ: {row.get('clip_id')}") from error
+    if not isinstance(values, list):
+        raise SystemExit(f"[LỖI] bad_intervals_json không phải list: {row.get('clip_id')}")
+    output = []
+    for item in values:
+        try:
+            start, end, reason = int(item["start_ms"]), int(item["end_ms"]), item["reason"]
+        except (KeyError, TypeError, ValueError) as error:
+            raise SystemExit(f"[LỖI] Interval sai schema: {row.get('clip_id')}") from error
+        if start < 0 or end <= start or reason not in REASONS:
+            raise SystemExit(f"[LỖI] Interval sai giá trị: {row.get('clip_id')}")
+        output.append({"start_ms": start, "end_ms": end, "reason": reason})
+    return sorted(output, key=lambda item: (item["start_ms"], item["end_ms"], item["reason"]))
+
+
+def intervals_agree(rows, tolerance_ms=200):
+    parsed = [parse_intervals(row) for row in rows]
+    if not parsed:
+        return True, []
+    reference = parsed[0]
+    for values in parsed[1:]:
+        if len(values) != len(reference):
+            return False, []
+        for left, right in zip(reference, values):
+            if (left["reason"] != right["reason"]
+                    or abs(left["start_ms"] - right["start_ms"]) > tolerance_ms
+                    or abs(left["end_ms"] - right["end_ms"]) > tolerance_ms):
+                return False, []
+    consensus = []
+    for index in range(len(reference)):
+        consensus.append({
+            "start_ms": round(sum(values[index]["start_ms"] for values in parsed) / len(parsed)),
+            "end_ms": round(sum(values[index]["end_ms"] for values in parsed) / len(parsed)),
+            "reason": reference[index]["reason"],
+        })
+    return True, consensus
+
+
+def intervals_are_material(intervals, voiced_ms):
+    spans = sorted((item["start_ms"], item["end_ms"]) for item in intervals)
+    merged = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    lengths = [end - start for start, end in merged]
+    total = sum(lengths)
+    return bool(lengths) and (max(lengths) >= 800 or (
+        total >= 500 and voiced_ms > 0 and total / voiced_ms >= 0.20
+    ))
+
+
+def longest_reason(intervals):
+    return max(intervals, key=lambda item: (
+        item["end_ms"] - item["start_ms"], -item["start_ms"]
+    ))["reason"] if intervals else ""
 
 
 def read_csv(path):
@@ -52,12 +116,12 @@ def main():
     ap.add_argument("--results", nargs="+", required=True)
     ap.add_argument("--manifest",
                     default="data/02_curate/manifests/all_clean_review.csv")
-    ap.add_argument("--rubric", default="v2")
-    ap.add_argument("--out_dir", default="data/02_curate/manual/merged_v2")
+    ap.add_argument("--rubric", default="v3")
+    ap.add_argument("--out_dir", default="data/02_curate/manual/merged_v3")
     ap.add_argument("--adjudication", default="",
                     help="needs_adjudication.csv đã điền final_decision/final_reason/adjudicator")
     ap.add_argument("--final_clean",
-                    default="data/02_curate/manifests/manual_clean_v2.csv")
+                    default="data/02_curate/manifests/manual_clean_v3.csv")
     ap.add_argument("--allow_partial", action="store_true",
                     help="cho phép xuất manifest khi CHỦ Ý dừng sớm (đã đủ keep). "
                          "Chỉ gộp clip đã có phán quyết; summary ghi partial=true. "
@@ -78,6 +142,8 @@ def main():
             key = (reviewer, cid)
             if not cid or not reviewer or role not in {"primary", "calibration"}:
                 raise SystemExit(f"[LỖI] Assignment sai schema: {path}")
+            if cid not in manifest_by_id:
+                raise SystemExit(f"[LỖI] Assignment có clip ngoài manifest: {cid}")
             if key in expected:
                 raise SystemExit(f"[LỖI] Assignment trùng {reviewer}/{cid}")
             expected[key] = role
@@ -99,6 +165,23 @@ def main():
                 raise SystemExit(f"[LỖI] Decision không hợp lệ: {reviewer}/{cid}")
             if row.get("rubric_version") != args.rubric:
                 raise SystemExit(f"[LỖI] Sai rubric: {reviewer}/{cid}")
+            intervals = parse_intervals(row)
+            if decision == "reject" and not intervals:
+                raise SystemExit(f"[LỖI] Reject rubric v3 thiếu interval: {reviewer}/{cid}")
+            if decision == "reject" and row.get("reason", "") != longest_reason(intervals):
+                raise SystemExit(f"[LỖI] reason không khớp interval dài nhất: {reviewer}/{cid}")
+            source = manifest_by_id[cid]
+            try:
+                voiced_ms = int(round(float(source.get("voiced_ms", 0))))
+            except (TypeError, ValueError):
+                voiced_ms = 0
+            if not voiced_ms:
+                try:
+                    voiced_ms = int(round(float(source.get("duration", 0)) * 1000))
+                except (TypeError, ValueError):
+                    voiced_ms = 0
+            if decision == "reject" and not intervals_are_material(intervals, voiced_ms):
+                raise SystemExit(f"[LỖI] Reject chưa đạt duration rule v3: {reviewer}/{cid}")
             actual[key] = row
 
     missing = sorted(set(expected) - set(actual))
@@ -118,7 +201,9 @@ def main():
                                 calibration_reviewers[cid])
         if not rows:
             continue
-        if "uncertain" in decisions or len(decisions) != 1 or not complete_calibration:
+        interval_match, consensus_intervals = intervals_agree(rows)
+        if ("uncertain" in decisions or len(decisions) != 1 or not complete_calibration
+                or (decisions == {"reject"} and not interval_match)):
             pending.append({
                 "clip_id": cid,
                 "file_path": manifest_by_id[cid].get("file_path", ""),
@@ -127,13 +212,17 @@ def main():
                 "reviewers": ";".join(sorted(r["reviewer_id"] for r in rows)),
                 "decisions": ";".join(f"{r['reviewer_id']}={r['decision']}" for r in rows),
                 "reasons": ";".join(f"{r['reviewer_id']}={r.get('reason', '')}" for r in rows),
+                "bad_intervals_by_reviewer_json": json.dumps({
+                    r["reviewer_id"]: parse_intervals(r) for r in rows
+                }, ensure_ascii=False, separators=(",", ":")),
                 "final_decision": "",
                 "final_reason": "",
+                "final_bad_intervals_json": "",
                 "adjudicator": "",
             })
         else:
             decision = next(iter(decisions))
-            resolved[cid] = (decision, rows[0].get("reason", ""))
+            resolved[cid] = (decision, rows[0].get("reason", ""), consensus_intervals)
 
     adjudicated = 0
     if args.adjudication:
@@ -147,7 +236,25 @@ def main():
             final = adjudication.get(row["clip_id"], {})
             decision = final.get("final_decision", "")
             if decision in {"keep", "reject"} and final.get("adjudicator", ""):
-                resolved[row["clip_id"]] = (decision, final.get("final_reason", ""))
+                intervals = parse_intervals(final, "final_bad_intervals_json")
+                if decision == "reject" and not intervals:
+                    unresolved.append(row)
+                    continue
+                source = manifest_by_id[row["clip_id"]]
+                try:
+                    voiced_ms = int(round(float(source.get("voiced_ms", 0))))
+                except (TypeError, ValueError):
+                    voiced_ms = 0
+                if not voiced_ms:
+                    try:
+                        voiced_ms = int(round(float(source.get("duration", 0)) * 1000))
+                    except (TypeError, ValueError):
+                        voiced_ms = 0
+                if decision == "reject" and not intervals_are_material(intervals, voiced_ms):
+                    unresolved.append(row)
+                    continue
+                reason = longest_reason(intervals) if decision == "reject" else ""
+                resolved[row["clip_id"]] = (decision, reason, intervals)
                 adjudicated += 1
             else:
                 unresolved.append(row)
@@ -157,7 +264,8 @@ def main():
     pending_path = os.path.join(args.out_dir, "needs_adjudication.csv")
     write_csv(pending_path, pending, [
         "clip_id", "file_path", "assignment_role", "reviewers", "decisions",
-        "reasons", "final_decision", "final_reason", "adjudicator",
+        "reasons", "bad_intervals_by_reviewer_json", "final_decision", "final_reason",
+        "final_bad_intervals_json", "adjudicator",
     ])
     # Dừng sớm vì đã đủ keep là ý định hợp lệ, nhưng phải GHI RÕ là partial —
     # manifest partial không đại diện cho toàn manifest, nên mọi tỉ lệ tính từ nó
@@ -172,7 +280,7 @@ def main():
         "resolved_clips": len(resolved),
         "needs_adjudication": len(pending),
         "adjudicated_clips": adjudicated,
-        "decisions_resolved": dict(Counter(d for d, _ in resolved.values())),
+        "decisions_resolved": dict(Counter(value[0] for value in resolved.values())),
     }
     if partial:
         summary["reviewed_by_reviewer"] = dict(Counter(
@@ -197,6 +305,16 @@ def main():
     if os.path.exists(args.final_clean):
         raise SystemExit(f"[LỖI] Final manifest đã tồn tại: {args.final_clean}")
     write_csv(args.final_clean, clean, list(manifest[0]))
+    consensus_path = os.path.join(args.out_dir, "consensus_labels_v3.csv")
+    consensus_rows = [{
+        "clip_id": cid,
+        "decision": decision,
+        "reason": reason,
+        "bad_intervals_json": json.dumps(intervals, ensure_ascii=False, separators=(",", ":")),
+        "rubric_version": args.rubric,
+    } for cid, (decision, reason, intervals) in sorted(resolved.items())]
+    write_csv(consensus_path, consensus_rows,
+              ["clip_id", "decision", "reason", "bad_intervals_json", "rubric_version"])
     if partial:
         print(f"[PARTIAL] {len(reviewed_ids)}/{len(manifest)} clip đã có phán quyết; "
               f"{len(missing)} phán quyết còn thiếu.")

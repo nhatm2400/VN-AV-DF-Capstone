@@ -6,7 +6,7 @@ Dự án phát hiện **Deepfake âm thanh-hình ảnh tiếng Việt** (Vietnam
 
 Mô hình hiện đã chạy pilot: **AVSP-Net V1** — mouth ROI + Wav2Vec + prosody, hợp nhất bằng Cross-Attention. Kiến trúc mục tiêu mới là **AVSP-Net V2**, gồm V2a (local temporal core, giữ cùng loại feature nhưng repaired pilot dùng store mới) và V2b (mở rộng để tổng quát hóa sang deepfake thực tế), xem [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
 
-Trạng thái hiện tại: **Stage 04 Cut Clips đã dựng lại xong và đạt Gate C; đang chờ P4 curation mới, sau đó P5 tạo assignment review**. Ba quality manifest gồm `472/292/2.274 = 3.038` video nguồn đều có terminal status. Output hiện có `65.622` accepted clip khớp 1–1 với `65.622` MP4, không thiếu/mồ côi/trùng `clip_id`; `120.187` cửa sổ bị reject có lý do. Tổng media sau khi downscale trực tiếp 1.200 clip 4K xuống 1080p là `155,277 GiB`. `all_manifest.csv` mới **chưa được dựng**, vì vậy manual review mới, sinh fake, extract feature và train vẫn **NO-GO**. Ba file `all_clean*.csv` còn lại trong `data/02_curate/manifests/` thuộc population cũ `6.888 → 3.001`, chỉ có giá trị lịch sử và không được dùng làm nguồn real mới. Xem [kế hoạch hotfix và rebuild](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md) và [nhật ký Stage 04 ngày 2026-08-29](docs/logs/2026-08-29_STAGE04_REBUILD_AND_STORAGE_NORMALIZATION.md).
+Trạng thái hiện tại: **Stage 04 Cut Clips đã dựng lại xong và đạt Gate C; P4.1 `all_manifest.csv` đã dựng đủ 65.622 clip; code Temporal Active-Speaker P4 đã triển khai và smoke end-to-end 1 clip thật, nhưng chưa chạy LASER/calibrate**. Ba quality manifest gồm `472/292/2.274 = 3.038` video nguồn đều có terminal status. Output có `65.622` accepted clip khớp 1–1 với `65.622` MP4, không thiếu/mồ côi/trùng `clip_id`; `120.187` cửa sổ bị reject có lý do. Tổng media sau khi downscale trực tiếp 1.200 clip 4K xuống 1080p là `155,277 GiB`. Auto gate vẫn **NO-GO** cho đến khi có 450 clip rubric v3, policy đạt locked validation và smoke GPU 300 clip đủ ba tier; manual review mới, sinh fake, extract feature và train cũng chưa được mở. Ba file `all_clean*.csv` còn lại trong `data/02_curate/manifests/` thuộc population cũ `6.888 → 3.001`, chỉ có giá trị lịch sử. Xem [triển khai Active-Speaker](docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md), [kế hoạch hotfix](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md) và [nhật ký Stage 04](docs/logs/2026-08-29_STAGE04_REBUILD_AND_STORAGE_NORMALIZATION.md).
 
 Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng sinh 12.004 fake**, **PILOT V1 đã chạy xong** trên 2.700 clip với test AUC **0.809**, bốn generator V2/SNVSM/timeline contract đã implement/test, và stratified smoke `v2r6` đã đạt metadata gate max AUC 0,546. Các con số này không chứng minh tập nguồn hiện tại đã sạch và không được dùng để bỏ qua hotfix. Sau khi cut → curate → manual review được dựng lại, lộ trình tiếp tục từ fake V2/SNVSM/Stage 05/metadata gate đến repaired pilot V2a; full training vẫn **NO-GO**. Xem [báo cáo Phase 0](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) và [đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
 
@@ -27,10 +27,21 @@ Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng s
 │   │   │   ├── tier1/                  # YouTube CC: fetch, download, quality gate
 │   │   │   ├── tier2/                  # YouTube Std: fetch, download/retry/cleanup
 │   │   │   └── tier3/                  # TikTok: fetch, download, quality gate
-│   │   ├── 02_curate/                  # Lọc clip tự động (dùng chung mọi tier) — file phẳng
+│   │   ├── 02_curate/                  # Lọc clip tự động (dùng chung mọi tier)
 │   │   │   ├── 01_prep_manifest.py     # remap path + gộp tier -> all_manifest.csv
-│   │   │   ├── 02_score_clips.py       # đo mặt + embedding 512-d (InsightFace buffalo_l)
-│   │   │   ├── 03_sync_score.py        # đo khớp môi-tiếng (SyncNet) — tùy chọn
+│   │   │   ├── 02_scoring/             # các phép đo bắt buộc, không tự loại clip
+│   │   │   │   ├── 01_face_quality.py  # mặt + embedding 512-d (InsightFace buffalo_l)
+│   │   │   │   └── 02_active_speaker/  # VAD + face track + Light-ASD/LASER
+│   │   │   │       ├── 01_score.py
+│   │   │   │       ├── 02_merge_shards.py
+│   │   │   │       ├── 03_export_laser_requests.py
+│   │   │   │       ├── 04_apply_laser_scores.py
+│   │   │   │       ├── 05_build_calibration_manifest.py
+│   │   │   │       ├── 06_calibrate.py
+│   │   │   │       └── policy.py       # policy thuần, dùng chung và test độc lập
+│   │   │   ├── 03_diagnostics_optional/ # motion/SyncNet chỉ để chẩn đoán
+│   │   │   │   ├── 01_motion_score.py
+│   │   │   │   └── 02_sync_score.py
 │   │   │   ├── 04_curate.py            # cluster speaker -> gate rác -> cân bằng
 │   │   │   ├── 05_eda.py               # thống kê + xuất eda_figs/
 │   │   │   └── README.md
@@ -46,14 +57,20 @@ Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng s
 │   │   └── 05_build_labels/
 │   │       └── 01_build_labels.py      # gộp real+fake -> labels.csv + split SPEAKER-DISJOINT
 │   ├── tools/
-│   │   ├── build_review_manifest.py    # all_clean + motion + face_ambiguity + channel -> all_clean_review.csv
-│   │   ├── build_review_assignments.py # chia calibration chung + primary riêng cho từng reviewer
-│   │   ├── build_roi_preview.py        # dựng ô ROI+tiếng (chạy đúng detect_and_crop của stage 04)
-│   │   ├── merge_review_results.py     # audit coverage, disagreement -> manual_clean_v2.csv
-│   │   ├── scan_face_ambiguity.py      # luật "mặt to nhất" của stage 04 có đáng tin không
-│   │   ├── measure_lip_audio_corr.py   # kiểm giả thuyết tự động hoá (đã đo: AUC 0,544 = vô dụng)
-│   │   ├── clip_review.py              # Web tool lọc tay clip (stdlib http.server) + so sánh với lọc code
-│   │   └── download_data.py            # tải dataset từ Google Drive (gdown, stream-zip, resume) — tiện ích nhóm
+│   │   ├── review/                     # manifest, preview, assignment, UI và merge review
+│   │   │   ├── build_review_manifest.py
+│   │   │   ├── build_review_assignments.py
+│   │   │   ├── build_roi_preview.py
+│   │   │   ├── export_review_batch.py
+│   │   │   ├── clip_review.py
+│   │   │   └── merge_review_results.py
+│   │   ├── diagnostics/                # phép đo thử nghiệm, không phải gate chính
+│   │   │   ├── scan_face_ambiguity.py
+│   │   │   └── measure_lip_audio_corr.py
+│   │   └── data_admin/                 # download, recovery và snapshot provenance
+│   │       ├── download_data.py
+│   │       ├── recover_cut_input_inventory.py
+│   │       └── snapshot_cut_hotfix_baseline.py
 │   ├── model/
 │   │   └── avsp_net.py                 # AVSP-Net: mouth-CNN+Transformer, prosody BiGRU, cross-attn, 2 head
 │   ├── train/
@@ -69,7 +86,7 @@ Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng s
 │   │   ├── tier1_quality_gate_passed.csv, tier2_quality_gate_passed.csv
 │   │   └── cut_clips/                  # Stage 04 mới: 65.622 MP4 + metadata/checksum theo batch
 │   │       ├── tier1/ tier2/ tier3/    # accepted_clips.csv, video_status.csv, SHA256SUMS, media/
-│   │       └── all_manifest.csv        # chưa dựng; P4 sẽ tạo từ accepted CSV mới
+│   │       └── all_manifest.csv        # đã dựng đủ 65.622 clip; input canonical P4
 │   ├── 02_curate/
 │   │   ├── measurements/               # P4 sẽ dựng lại score/embedding cho population mới
 │   │   ├── manifests/                  # bảng quyết định của curation
@@ -113,15 +130,15 @@ Chạy theo đúng thứ tự từ **root repo**. Stage `data/` khớp số vớ
 
 **Fetch URLs (theo tier):**
 ```bash
-python src/pipeline/01_collect/tier1/01_fetch_youtube_urls.py   # tier1 (YouTube CC)
-python src/pipeline/01_collect/tier2/01_fetch_youtube_urls.py   # tier2 (YouTube Std)
-python src/pipeline/01_collect/tier3/01_fetch_tiktok_urls.py    # tier3 (TikTok)
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/01_collect/tier1/01_fetch_youtube_urls.py   # tier1 (YouTube CC)
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/01_collect/tier2/01_fetch_youtube_urls.py   # tier2 (YouTube Std)
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/01_collect/tier3/01_fetch_tiktok_urls.py    # tier3 (TikTok)
 ```
 Yêu cầu `YOUTUBE_API_KEY` trong `.env`. Script ghi mặc định ra `data/…_urls.csv`; output cuối đã gom vào `data/01_collect/`.
 
 **Download:**
 ```bash
-python src/pipeline/01_collect/tier{N}/02_download.py     # yt-dlp -> data/raw/tier{N}/
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/01_collect/tier{N}/02_download.py     # yt-dlp -> data/raw/tier{N}/
 ```
 
 **Quality Gate** (`03_quality_gate.py`) — video phải pass cả 3:
@@ -137,38 +154,49 @@ Output: `data/01_collect/tier{N}_quality_gate_passed.csv`. (Ngưỡng SNR/face t
 
 ### 02_curate — Curation tự động (`src/pipeline/02_curate/`)
 
-Lọc ~6.9k clip thay cho lọc tay. Triết lý: **đo mọi thứ, chỉ loại rác rõ ràng, giữ phần còn lại làm metadata; calibrate trước khi đặt ngưỡng**. Chạy tuần tự:
+Lọc population mới 65.622 clip trước manual review. Triết lý: **đo mọi thứ, chỉ loại rác rõ ràng, giữ phần còn lại làm metadata; calibrate trước khi đặt ngưỡng**. Temporal Active-Speaker được đặt sau `all_manifest.csv` và trước `04_curate.py`; không recut media.
 
 ```bash
 # 1) Gộp accepted CSV ba tier + remap file_path về đĩa thật + verify ffprobe
-python src/pipeline/02_curate/01_prep_manifest.py
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/01_prep_manifest.py
 # -> data/01_collect/cut_clips/all_manifest.csv; kỳ vọng 65.622 dòng
 # 2) Đo mặt + embedding (GPU, InsightFace) -> data/02_curate/measurements/
-python src/pipeline/02_curate/02_score_clips.py \
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/01_face_quality.py \
     --input_csv data/01_collect/cut_clips/all_manifest.csv --tag all
-# 3) Đo khớp môi-tiếng (SyncNet) — tùy chọn; calibrate trước
-python src/pipeline/02_curate/03_sync_score.py \
+# 3) Temporal ASD: VAD 200 ms + face track + mouth motion + Light-ASD;
+#    chạy candidate/calibration trước, chưa chạy full khi policy chưa pass.
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/01_score.py ...
+# 3b) Chạy LASER cho bin laser_requested, rồi enrich thành run bất biến mới
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/04_apply_laser_scores.py ...
+# 4) Tạo 450 clip source-disjoint; 300 tune + 150 locked validation; review rubric v3
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/05_build_calibration_manifest.py ...
+# 5) Grid-search tune, sau đó gate validation khóa
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/02_scoring/02_active_speaker/06_calibrate.py ...
+# Chẩn đoán khớp môi-tiếng (SyncNet) — tùy chọn, không phải quality gate chính
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/03_diagnostics_optional/02_sync_score.py \
     --input_csv data/02_curate/measurements/tier1_scored_all.csv \
     --syncnet_dir <repo> --calibrate
-# 4) Quyết định: cluster speaker -> gate rác -> cân bằng -> manifests/all_clean.csv
-python src/pipeline/02_curate/04_curate.py --calibrate
-# 5) EDA: thống kê + xuất data/02_curate/eda_figs/
-python src/pipeline/02_curate/05_eda.py
+# 6) Chỉ sau policy pass: temporal gate -> face gate -> cân bằng
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/04_curate.py \
+    --temporal_scores data/02_curate/runs/<run_id>/asd_clip_scores.csv \
+    --temporal_policy data/02_curate/calibration/<policy>.json
+# 7) EDA: thống kê + xuất data/02_curate/eda_figs/
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/02_curate/05_eda.py
 ```
 
 **Ngưỡng chính:** cluster_dist=0.6, min_det_ratio=0.6, min_face_area=0.01, min_consistency=0.3, cap_per_speaker=30; `quality_score = 0.4·det + 0.3·norm(face_area) + 0.15·consistency` (chuẩn hóa p5–p95).
 
-⚠️ **Chống leakage:** không siết ngưỡng sync cho tập real (đẩy real về "sync cao" → model học tắt). Mọi gate sync/chất lượng phải áp **đối xứng** real/fake. Các script này thiết kế chạy trên **Kaggle** (GPU, path mặc định `/kaggle/working`).
+⚠️ **Chống leakage:** active-speaker gate chỉ chạy trên real nguồn trước khi sinh fake. Fake sinh sau đó kế thừa đúng quyết định của `source_clip`; không chạy ASD riêng trên fake và không đưa curation score vào feature model. Đây là cách áp quyết định đối xứng theo cặp real–fake. Các script inference full chạy trên **Kaggle GPU**.
 
-**Lọc tay (BẮT BUỘC trước khi sinh fake):** gate tự động **không** xác nhận được người nhìn thấy có phải người phát ra tiếng hay không. Batch hiệu chuẩn 60 clip (rubric v2) loại **34/60** — chủ yếu `dubbed` (14), `cut` (7), `static` (6). Đây là false-accept nghiêm trọng của curation tự động, đủ để chặn pilot.
+**Lọc tay (BẮT BUỘC trước khi sinh fake):** 60 clip rubric v2 lịch sử từng loại **34/60** — chủ yếu `dubbed` (14), `cut` (7), `static` (6), cho thấy gate cũ false-accept nghiêm trọng. Mẫu này chỉ là development seed. Calibration mới phải có 450 clip rubric v3, hai reviewer độc lập và người thứ ba phân xử.
 
 ```bash
-python src/tools/build_review_manifest.py   # 1) gộp số đo -> manifests/all_clean_review.csv
-python src/tools/build_roi_preview.py       # 2) dựng ô ROI+tiếng cho all_clean mới
-python src/tools/clip_review.py             # 3) mở http://127.0.0.1:8000
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/build_review_manifest.py   # 1) gộp số đo -> manifests/all_clean_review.csv
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/build_roi_preview.py       # 2) dựng ô ROI+tiếng cho all_clean mới
+D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/clip_review.py             # 3) mở http://127.0.0.1:8000
 ```
 
-Ô ROI phát **chuỗi mouth-ROI thật của stage 04 ghép audio gốc** — nhìn miệng + nghe tiếng cùng lúc mới lộ được lồng tiếng / voice-over / cắt nhầm mặt. Phím `1`–`7` reject kèm lý do, `K` keep, `C` chưa chắc; quyết định ghi kèm `reviewer_id` + `rubric_version`.
+`clip_review.py` rubric v3 cho phép đặt đầu/cuối từng interval lỗi và chọn `static`, `voiceover`, `wrong_face`, `dubbed`...; output thêm `bad_intervals_json`. Hai biên reviewer lệch tối đa 200 ms vẫn có thể đồng thuận, còn khác reason/decision được đưa sang adjudication.
 
 **Đã thử và thất bại** (đừng làm lại): `motion_median` và số khuôn mặt không dự báo được keep/reject (60% vs 55%); tương quan pixel-motion ROI với audio RMS cho **AUC 0,544**. Lọc theo kênh chỉ nên dùng để **phân tầng/ưu tiên**, không auto-reject — mẫu theo kênh quá nhỏ (Fisher exact p≈0,12 cho kênh tệ nhất).
 
@@ -186,10 +214,10 @@ V1 lịch sử đã sinh bốn method vào `data/03_fake/labels.csv`; không dù
 ```bash
 # Mặc định V2: media -> data/03_fake/temporal_v2/
 #               manifest -> data/03_fake/manifests/v2/temporal_desync.csv
-python src/pipeline/03_fake/01_temporal_desync.py
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/03_fake/01_temporal_desync.py
 
 # Tạo master composition không còn temporal V1; mọi media V2 phải qua paired contract
-python src/pipeline/03_fake/06_build_fake_manifest_v2.py
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/03_fake/06_build_fake_manifest_v2.py
 # -> data/03_fake/manifests/v2/fake_all.csv
 ```
 
@@ -210,9 +238,9 @@ python src/pipeline/03_fake/06_build_fake_manifest_v2.py
 
 ```bash
 # REAL và FAKE cùng --crfs/--preset -> H.264 + AAC 128k/16 kHz/mono cùng pipeline
-python src/pipeline/03_fake/05_snvsm_compress.py --input_csv data/02_curate/manifests/all_clean.csv \
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/03_fake/05_snvsm_compress.py --input_csv data/02_curate/manifests/all_clean.csv \
     --out_dir data/03_fake/snvsm_v2/real --out_manifest data/03_fake/snvsm_v2/real_snvsm.csv
-python src/pipeline/03_fake/05_snvsm_compress.py --input_csv data/03_fake/manifests/v2/fake_all.csv \
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/03_fake/05_snvsm_compress.py --input_csv data/03_fake/manifests/v2/fake_all.csv \
     --out_dir data/03_fake/snvsm_v2/fake --out_manifest data/03_fake/snvsm_v2/fake_snvsm.csv
 # rồi 04/05 trỏ vào manifest SNVSM:
 #   ...05_build_labels/01_build_labels.py --real_csv .../real_snvsm.csv --fake_labels .../fake_snvsm.csv
@@ -231,8 +259,8 @@ Theo data contract V1 đã triển khai: **KHÔNG dùng full-frame** (giảm lea
 - `prosody`: float32 `[T,4]` — f0_z, delta_f0, energy_z, voiced @100Hz (parselmouth, fallback librosa.pyin)
 
 ```bash
-python src/pipeline/04_extract_features/01_extract_features.py            # full (GPU khuyến nghị)
-python src/pipeline/04_extract_features/01_extract_features.py --limit 5 --no_w2v   # test nhanh
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/04_extract_features/01_extract_features.py            # full (GPU khuyến nghị)
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/04_extract_features/01_extract_features.py --limit 5 --no_w2v   # test nhanh
 ```
 
 Feature không phụ thuộc split, nhưng với SNVSM V2 phải chạy Stage 05 trước như contract gate để không tốn extraction trên manifest thiếu/lệch. Index: `data/04_features/features_index.csv`.
@@ -240,7 +268,7 @@ Feature không phụ thuộc split, nhưng với SNVSM V2 phải chạy Stage 05
 ### 05_build_labels — Data contract + split speaker-disjoint
 
 ```bash
-python src/pipeline/05_build_labels/01_build_labels.py    # -> data/05_labels/labels.csv
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/05_build_labels/01_build_labels.py    # -> data/05_labels/labels.csv
 ```
 
 V1 mặc định gộp real `all_clean.csv` + fake `data/03_fake/labels.csv`. Run V2 **phải truyền rõ** hai manifest `snvsm_v2`; không dùng default V1. Quy tắc chia 70/15/15:
@@ -255,13 +283,13 @@ Kiến trúc đang có trong code là **AVSP-Net V1**: audio Query × mouth-ROI 
 
 ```bash
 # Baselines §7 (chạy đủ trước khi claim fusion tốt):
-python src/train/train.py --branches audio                    # 1. audio-only
-python src/train/train.py --branches visual                   # 2. visual-only (mouth ROI)
-python src/train/train.py --branches audio,visual             # 3. AV fusion
-python src/train/train.py --branches audio,visual,prosody     # 4. AVSP-Net full (mặc định)
+D:\Anaconda\envs\vn_av_df\python.exe src/train/train.py --branches audio                    # 1. audio-only
+D:\Anaconda\envs\vn_av_df\python.exe src/train/train.py --branches visual                   # 2. visual-only (mouth ROI)
+D:\Anaconda\envs\vn_av_df\python.exe src/train/train.py --branches audio,visual             # 3. AV fusion
+D:\Anaconda\envs\vn_av_df\python.exe src/train/train.py --branches audio,visual,prosody     # 4. AVSP-Net full (mặc định)
 # -> experiments/avsp_<branches>/{best.pt,last.pt,history.json} (best theo val AUC, early stop)
 
-python src/eval/evaluate.py --ckpt experiments/avsp_audio_visual_prosody/best.pt
+D:\Anaconda\envs\vn_av_df\python.exe src/eval/evaluate.py --ckpt experiments/avsp_audio_visual_prosody/best.pt
 # -> acc/precision/recall/F1/ROC-AUC + method-wise recall/F1/AUC + FPR real -> eval_test.json
 ```
 
@@ -276,15 +304,15 @@ Pilot = subset **speaker/video-disjoint** 540 real + 2160 fake (4 method ghép c
 ```bash
 # manifest pilot: data/03_fake/snvsm/pilot_{real,fake}_snvsm.csv + data/05_labels/labels_pilot.csv
 # (KHÔNG dùng --limit: code append toàn bộ real trước rồi mới slice -> ra 2700 real, không ghép cặp)
-python src/pipeline/04_extract_features/01_extract_features.py \
+D:\Anaconda\envs\vn_av_df\python.exe src/pipeline/04_extract_features/01_extract_features.py \
     --real_csv data/03_fake/snvsm/pilot_real_snvsm.csv \
     --fake_labels data/03_fake/snvsm/pilot_fake_snvsm.csv \
     --out_dir data/04_features_pilot --detect_every 4        # ~1h, 2700/2700 ok, 0 fail
-python src/train/train.py --labels data/05_labels/labels_pilot.csv \
+D:\Anaconda\envs\vn_av_df\python.exe src/train/train.py --labels data/05_labels/labels_pilot.csv \
     --features data/04_features_pilot --run_name pilot_v1_<timestamp>_<git-sha>_<config-hash> --epochs 30 --amp
 # Không tái dùng run ID đã hoàn tất. Pilot V1 lịch sử hiện được khóa tại:
 # experiments/pilot_v1_20260720-214741_467f606_b8c61ed7/
-python src/eval/evaluate.py --ckpt experiments/pilot_v1_20260720-214741_467f606_b8c61ed7/best.pt \
+D:\Anaconda\envs\vn_av_df\python.exe src/eval/evaluate.py --ckpt experiments/pilot_v1_20260720-214741_467f606_b8c61ed7/best.pt \
     --labels data/05_labels/labels_pilot.csv --features data/04_features_pilot --split test
 ```
 
@@ -385,6 +413,7 @@ Cần bổ sung ít nhất **4 metrics** vào báo cáo (xem docs). **Cosine sim
 | [docs/reports/PILOT_REPORT.md](docs/reports/PILOT_REPORT.md) | Báo cáo chi tiết quá trình pilot gốc |
 | [docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md) | Review V1 sau pilot, fact-check và quyết định NO-GO/roadmap V2 |
 | [docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) | Bằng chứng sửa generator temporal và smoke Phase 0 |
+| [docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md](docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md) | Thiết kế, code contract, validation gate và trạng thái Temporal Active-Speaker P4 |
 | [src/pipeline/timeline_contract.py](src/pipeline/timeline_contract.py) | Schema/validator timeline dùng chung và fixed-common-window policy |
 | [src/pipeline/fake_media_contract.py](src/pipeline/fake_media_contract.py) | Probe/validator atomic cho paired frame/FPS/duration/audio target của generator V2 |
 | [src/pipeline/03_fake/01_temporal_desync.py](src/pipeline/03_fake/01_temporal_desync.py) | Generator temporal V2 sample-exact, manifest riêng và structured valid-range |
@@ -392,9 +421,9 @@ Cần bổ sung ít nhất **4 metrics** vào báo cáo (xem docs). **Cosine sim
 | [src/pipeline/03_fake/07_metadata_shortcut_gate.py](src/pipeline/03_fake/07_metadata_shortcut_gate.py) | Group-disjoint baseline chỉ dùng metadata media/container để chặn shortcut trước extract/train |
 | [src/model/avsp_net.py](src/model/avsp_net.py) | AVSP-Net (cross-attn + prosody + 2 head) + compute_losses |
 | [src/pipeline/05_build_labels/01_build_labels.py](src/pipeline/05_build_labels/01_build_labels.py) | Data contract + split speaker-disjoint + verify leakage |
-| [src/tools/clip_review.py](src/tools/clip_review.py) | Web tool lọc tay (ô ROI+tiếng) + so sánh với lọc code |
-| [src/tools/build_review_manifest.py](src/tools/build_review_manifest.py) | Dựng `all_clean_review.csv` (tái lập được) |
+| [src/tools/review/clip_review.py](src/tools/review/clip_review.py) | Web tool lọc tay (ô ROI+tiếng) + so sánh với lọc code |
+| [src/tools/review/build_review_manifest.py](src/tools/review/build_review_manifest.py) | Dựng `all_clean_review.csv` (tái lập được) |
 | [yolov8n-face.pt](yolov8n-face.pt) | Face detection model (root) |
 | `data/01_collect/cut_clips/tier{1,2,3}/**/accepted_clips.csv` | Nguồn chân lý Stage 04 hiện tại; tổng 65.622 clip |
-| `data/01_collect/cut_clips/all_manifest.csv` | Output P4 chưa tạo; sẽ gộp accepted CSV và remap path local |
+| `data/01_collect/cut_clips/all_manifest.csv` | Input canonical P4 đã dựng đủ 65.622 clip real nguồn |
 | [data/02_curate/manifests/all_clean.csv](data/02_curate/manifests/all_clean.csv) | Manifest lịch sử 3.001 clip; không dùng cho population mới |

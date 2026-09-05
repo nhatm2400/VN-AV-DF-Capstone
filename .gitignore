@@ -9,6 +9,7 @@ data/03_fake/*
 data/04_features/*
 !data/04_features/.gitkeep
 data/04_features_pilot/
+data/02_curate/runs/
 data/05_labels/*
 !data/05_labels/.gitkeep
 !data/05_labels/labels.csv
@@ -72,6 +73,7 @@ docs/reports/*
 !docs/reports/PILOT_REPORT.md
 !docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md
 !docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md
+!docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md
 !docs/logs/
 docs/logs/*
 !docs/logs/*.md

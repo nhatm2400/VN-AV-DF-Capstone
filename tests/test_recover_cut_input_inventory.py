@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "src" / "tools" / "recover_cut_input_inventory.py"
+SCRIPT = ROOT / "src" / "tools" / "data_admin" / "recover_cut_input_inventory.py"
 SPEC = importlib.util.spec_from_file_location("recover_cut_inventory", SCRIPT)
 RECOVER = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = RECOVER

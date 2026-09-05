@@ -120,7 +120,7 @@ có lý do đưa sinh fake, feature hay train vào phạm vi chạy lại hiện
 
 - `src/pipeline/01_collect/` — thu thập, quality gate, Stage 04 Cut Clips theo tier.
 - `src/pipeline/02_curate/` — manifest, face/embedding, motion, sync, curate, EDA.
-- `src/tools/` — face ambiguity, ROI preview, review manifest, chia và merge reviewer.
+- `src/tools/diagnostics/` và `src/tools/review/` — face ambiguity, ROI preview, review manifest, chia và merge reviewer.
 - Các stage fake/labels/feature/model chỉ được rà để xác định ranh giới ảnh
   hưởng; không thuộc các bước thực thi P0–P5 của kế hoạch này.
 
@@ -220,7 +220,7 @@ Hotfix cần đổi accepted CSV thành nguồn chân lý, yêu cầu mọi dòn
 lệ, và fail nếu có media mồ côi, CSV mồ côi, clip ID trùng hoặc
 `has_cut_meta != 1`.
 
-### 4.2 `02_score_clips.py` và tên artifact
+### 4.2 `02_scoring/01_face_quality.py` và tên artifact
 
 - Default input còn là `data/clips/all_manifest.csv`.
 - Tên `tier1_scored_all.csv` gây hiểu nhầm dù file chứa cả ba tier.
@@ -485,9 +485,9 @@ cho output Stage 03 đã đúng, không phải thay đổi tập dữ liệu.
 Thứ tự bắt buộc:
 
 1. `01_prep_manifest.py`
-2. `02_score_clips.py`
-3. `02b_motion_score.py`
-4. `03_sync_score.py --calibrate` nếu tiếp tục dùng SyncNet; không dùng sync
+2. `02_scoring/01_face_quality.py`
+3. `03_diagnostics_optional/01_motion_score.py`
+4. `03_diagnostics_optional/02_sync_score.py --calibrate` nếu tiếp tục dùng SyncNet; không dùng sync
    threshold làm gate riêng cho real
 5. `04_curate.py --calibrate`
 6. chốt config curate có log, rồi chạy `04_curate.py`

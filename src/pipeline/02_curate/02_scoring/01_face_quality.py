@@ -1,5 +1,5 @@
 """
-02_score_clips.py — BƯỚC ĐO (measurement pass) — chạy ĐẦU TIÊN trong bộ 02/03/04
+01_face_quality.py — đo chất lượng mặt + embedding trong stage 02_scoring
 
 Đọc tier*_v3_clips_*.csv, với mỗi clip lấy K frame rải đều, chạy InsightFace để:
   - đếm số frame phát hiện được mặt        -> det_ratio
@@ -13,17 +13,18 @@ Quyết định (cluster / gate / cân bằng) để 04_curate.py xử lý.
 Chạy trên Kaggle T4 (ctx_id=0). Clip ngắn nên decode rẻ -> không cần NVDEC ở đây.
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, từ thư mục gốc dự án):
-  python 02_score_clips.py
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/02_scoring/01_face_quality.py
   -> đọc data/01_collect/cut_clips/all_manifest.csv, xuất
      data/02_curate/measurements/tier1_scored_all.csv + embeddings_all.npy
   GPU Windows: file đã gọi onnxruntime.preload_dlls() để onnxruntime-gpu thấy CUDA;
      cần env có onnxruntime-gpu + nvidia-cudnn-cu12==9.8.0.87 (xem memory env). Không
      có GPU -> tự lùi về CPU (chậm ~6x). Đo: GPU ~32ms/frame, CPU ~195ms/frame.
-KAGGLE: python 02_score_clips.py --input_csv /kaggle/working/all_manifest.csv --out_dir /kaggle/working
+KAGGLE: python src/pipeline/02_curate/02_scoring/01_face_quality.py --input_csv /kaggle/working/all_manifest.csv --out_dir /kaggle/working
 
 Trình tự bộ script:
-  02_score_clips.py  (đo mặt + embedding)          <-- file này
-  03_sync_score.py   (đo độ khớp môi-tiếng, sync)
+  02_scoring/01_face_quality.py                    <-- file này
+  02_scoring/02_active_speaker/                    (temporal active speaker)
+  03_diagnostics_optional/                         (motion/sync, tùy chọn)
   04_curate.py       (cluster speaker -> gate -> cân bằng -> xuất tập sạch)
 
 Output:
@@ -285,7 +286,7 @@ def main():
         print(f"\n[CẢNH BÁO] {no_face}/{len(df)} (>50%) clip 'không mặt'. "
               "Kiểm tra lại đường dẫn / video lỗi trước khi tin kết quả.")
 
-    print("\nTiếp theo: 03_sync_score.py (đo sync) hoặc thẳng 04_curate.py --calibrate.")
+    print("\nTiếp theo: active-speaker scoring, diagnostics tùy chọn, rồi 04_curate.py.")
 
 
 if __name__ == "__main__":

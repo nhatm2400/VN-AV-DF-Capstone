@@ -272,8 +272,8 @@ Artifact real sạch cuối cùng là [`data/02_curate/manifests/all_clean.csv`]
 Code curation nằm trong [`src/pipeline/02_curate/`](../../src/pipeline/02_curate/):
 
 - `01_prep_manifest.py`: hợp nhất manifest và xác minh file trên đĩa;
-- `02_score_clips.py`: detect/score mặt, sinh embedding nhận dạng speaker;
-- `03_sync_score.py`: đo lip-sync khi cần calibrate;
+- `02_scoring/01_face_quality.py`: detect/score mặt, sinh embedding nhận dạng speaker;
+- `03_diagnostics_optional/02_sync_score.py`: đo lip-sync khi cần calibrate;
 - `04_curate.py`: gate rác rõ ràng, cluster `speaker_id`, cap số clip/speaker;
 - `05_eda.py`: thống kê và EDA.
 

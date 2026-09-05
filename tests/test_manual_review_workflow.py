@@ -15,8 +15,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = ROOT / "src/tools/build_review_assignments.py"
-MERGE = ROOT / "src/tools/merge_review_results.py"
+BUILD = ROOT / "src/tools/review/build_review_assignments.py"
+MERGE = ROOT / "src/tools/review/merge_review_results.py"
 
 
 def write_csv(path, rows, fields):
@@ -52,7 +52,8 @@ class ManualReviewWorkflowTest(unittest.TestCase):
             write_csv(manifest, rows, list(rows[0]))
             cal_rows = [{
                 "clip_id": f"c{i}", "decision": "keep", "reason": "",
-                "reviewer_id": "r1", "rubric_version": "v2", "ts": "",
+                "bad_intervals_json": "[]", "reviewer_id": "r1",
+                "rubric_version": "v3", "ts": "",
             } for i in range(3)]
             write_csv(calibration, cal_rows, list(cal_rows[0]))
 
@@ -97,8 +98,12 @@ class ManualReviewWorkflowTest(unittest.TestCase):
                         "file_path": row["file_path"],
                         "decision": decision,
                         "reason": "static" if decision == "reject" else "",
+                        "bad_intervals_json": (
+                            '[{"start_ms":1000,"end_ms":2000,"reason":"static"}]'
+                            if decision == "reject" else "[]"
+                        ),
                         "reviewer_id": reviewer,
-                        "rubric_version": "v2",
+                        "rubric_version": "v3",
                         "ts": "",
                     })
                 write_csv(result, output, list(output[0]))
@@ -119,6 +124,7 @@ class ManualReviewWorkflowTest(unittest.TestCase):
             self.assertEqual([r["clip_id"] for r in pending], ["c1"])
 
             pending[0]["final_decision"] = "keep"
+            pending[0]["final_bad_intervals_json"] = "[]"
             pending[0]["adjudicator"] = "lead"
             write_csv(pending_path, pending, list(pending[0]))
             subprocess.run(
@@ -130,6 +136,8 @@ class ManualReviewWorkflowTest(unittest.TestCase):
             self.assertEqual(summary["missing_judgements"], 0)
             self.assertEqual(summary["needs_adjudication"], 0)
             self.assertEqual(summary["adjudicated_clips"], 1)
+            consensus = read_csv(merge_dir / "consensus_labels_v3.csv")
+            self.assertEqual(len(consensus), 9)
 
 
 if __name__ == "__main__":

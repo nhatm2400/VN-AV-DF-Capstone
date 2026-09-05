@@ -21,19 +21,19 @@ bước 02) là CẤP VIDEO, KHÔNG phải clip CSV — đừng dùng làm input
 Chỉ dùng thư viện chuẩn + ffprobe trong PATH -> chạy mọi nơi, không cần pandas.
 
 LOCAL (mặc định — chạy KHÔNG cần tham số, chạy từ thư mục gốc dự án):
-  python 01_prep_manifest.py
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/01_prep_manifest.py
   -> tự gộp 3 tier trong data/01_collect/cut_clips/ (glob ** quét mọi batch),
      verify ffprobe, xuất data/01_collect/cut_clips/all_manifest.csv
 
 Dùng tùy chỉnh / KAGGLE (truyền path /kaggle/input/...):
-  python 01_prep_manifest.py \\
+  D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/01_prep_manifest.py \\
     --add tier1 "data/01_collect/cut_clips/tier1/**/accepted_clips.csv" "data/01_collect/cut_clips/tier1" \\
     --add tier2 "data/01_collect/cut_clips/tier2/**/accepted_clips.csv" "data/01_collect/cut_clips/tier2" \\
     --add tier3 "data/01_collect/cut_clips/tier3/**/accepted_clips.csv" "data/01_collect/cut_clips/tier3" \\
     --out data/01_collect/cut_clips/all_manifest.csv
   # thêm --no_verify nếu muốn bỏ qua bước ffprobe (nhanh hơn, kém an toàn)
 
-Tiếp theo: python 02_score_clips.py --input_csv <manifest> --tag <tag>
+Tiếp theo: D:/Anaconda/envs/vn_av_df/python.exe src/pipeline/02_curate/02_scoring/01_face_quality.py --input_csv <manifest> --tag <tag>
 """
 
 import os
@@ -187,7 +187,11 @@ def main():
     print(f"Tong: {len(all_rows)} clip -> {args.out}")
     if not verify:
         print("  (CHUA verify ffprobe — co the con file hong)")
-    print(f"Tiep theo: python 02_score_clips.py --input_csv {args.out} --tag all")
+    print(
+        "Tiep theo: D:\\Anaconda\\envs\\vn_av_df\\python.exe "
+        "src/pipeline/02_curate/02_scoring/01_face_quality.py "
+        f"--input_csv {args.out} --tag all"
+    )
 
 
 if __name__ == "__main__":
