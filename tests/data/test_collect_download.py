@@ -83,7 +83,8 @@ class CollectDownloadTests(unittest.TestCase):
             factory = Mock()
             factory.return_value.__enter__ = Mock(return_value=client)
             factory.return_value.__exit__ = Mock(return_value=False)
-            with patch.dict(sys.modules, {'yt_dlp': Mock(YoutubeDL=factory)}), patch.object(
+            with patch('src.data.preparation.download.shutil.which', return_value='node'), patch(
+                    'src.data.preparation.download.valid_media', side_effect=lambda path: path.is_file()), patch.dict(sys.modules, {'yt_dlp': Mock(YoutubeDL=factory)}), patch.object(
                     sys, 'argv', ['download', '--videos', str(source), '--out_dir', str(output)]):
                 with self.assertRaises(SystemExit) as error:
                     download_main()
@@ -92,6 +93,25 @@ class CollectDownloadTests(unittest.TestCase):
             self.assertEqual([row['status'] for row in results], ['downloaded', 'failed'])
             self.assertEqual(results[1]['error'], 'mock network failure')
             self.assertNotIn('research_allowed', results[0])
+            self.assertEqual(factory.call_args.args[0]['js_runtimes'], {'node': {'path': 'node'}})
+
+            client.download.reset_mock()
+            client.download.side_effect = lambda urls: (output / 'abcdefghijk.mp4').write_bytes(b'fixture')
+            with patch('src.data.preparation.download.shutil.which', return_value='node'), patch(
+                    'src.data.preparation.download.valid_media', side_effect=lambda path: path.is_file()), patch.dict(
+                    sys.modules, {'yt_dlp': Mock(YoutubeDL=factory)}), patch.object(
+                    sys, 'argv', ['download', '--videos', str(source), '--out_dir', str(output)]):
+                download_main()
+            client.download.assert_called_once_with(['https://www.youtube.com/watch?v=abcdefghijk'])
+            self.assertEqual([row['status'] for row in read_rows(output / 'download_results.csv')],
+                             ['downloaded', 'downloaded'])
+
+            other = root / 'changed.csv'
+            write_rows(other, [{'video_id': '12345678901'}])
+            with patch('src.data.preparation.download.shutil.which', return_value='node'), patch.object(
+                    sys, 'argv', ['download', '--videos', str(other), '--out_dir', str(output)]):
+                with self.assertRaisesRegex(ValueError, 'Source list changed'):
+                    download_main()
 
 
 if __name__ == '__main__':

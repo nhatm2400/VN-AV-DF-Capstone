@@ -10,7 +10,7 @@ Cập nhật 13/09/2026. Hướng hiện hành: **lip-sync audio–visual tiến
 - Công cụ cắt/review/quality được giữ, cập nhật đường dẫn. Preview không còn import bộ feature AVSP-Net.
 - Split real theo nhóm người/nguồn được tách riêng, bỏ điều kiện đủ bốn fake. Có kiểm tra nguồn audio và generator giữ riêng cho biến thể.
 - Nén dùng media primitives được giữ lại, CLI mới dùng output bất biến, CRF tường minh, nhãn/split/provenance và log lỗi.
-- Đã tạo khung generators/features/models/training và tài liệu evaluation. Đây là bố trí thư mục, chưa phải triển khai generator, backbone, detector hoặc train loop; xem [src/README.md](src/README.md).
+- Đã tạo generators/features và bản detector/train_step/predict tối thiểu. Kiểm tra bằng tensor giả lập, chưa tích hợp generator/backbone/dataset thật; xem [src/README.md](src/README.md).
 
 ## Bảng tiến trình
 
@@ -24,7 +24,7 @@ Cập nhật 13/09/2026. Hướng hiện hành: **lip-sync audio–visual tiến
 | Nén real/fake | Có CLI và smoke bằng media tổng hợp, không phải kết quả nghiên cứu. |
 | Generator Wav2Lip/MuseTalk/ứng viên giữ riêng | Đề xuất; chưa tích hợp và benchmark. |
 | AV-HuBERT | Ứng viên; chưa nạp checkpoint trên luồng mới. |
-| Detector Y và cải tiến X | Thiết kế; chưa triển khai/train. |
+| Detector Y và cải tiến X | Có detector tối thiểu và train_step dùng chung, X thêm consistency; chỉ smoke giả lập, chưa train nghiên cứu. |
 | Final test và demo detector | Chưa thực hiện. |
 
 ## Quyết định nghiên cứu

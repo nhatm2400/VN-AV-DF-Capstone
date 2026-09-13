@@ -1,6 +1,10 @@
 # Models — cấu trúc detector
 
-Trạng thái: mới tạo khung thư mục, chưa triển khai detector Y/X hoặc nạp AV-HuBERT.
+Trạng thái: có detector tối thiểu trong `detector.py`; chưa nạp AV-HuBERT hoặc train trên dữ liệu thật.
+
+Mở `01_smoke_test.py` rồi Run để kiểm tra cả model, một vài bước train Y/X và dự đoán bằng feature giả lập. Test này không đọc video, không tải weights và không tạo kết quả nghiên cứu.
+
+Đầu vào: audio `[batch, thời_gian, số_đặc_trưng_audio]`, visual `[batch, thời_gian, số_đặc_trưng_visual]` và lengths là số bước thời gian hợp lệ. Hai luồng phải được căn cùng cửa sổ và thời gian từ trước. Model chiếu mỗi luồng qua một lớp Linear, ghép chúng, chạy GRU và tạo một logit cho fake. Padding cuối chuỗi được bỏ qua. Đổi logit sang score bằng sigmoid; score chưa được hiệu chỉnh thành xác suất đáng tin cậy.
 
 Chứa phần định nghĩa/nạp backbone, kết hợp đặc trưng audio và hình ảnh, xử lý thông tin theo thời gian và tạo điểm dự đoán real/fake. Khởi đầu dự kiến là backbone giữ nguyên và bộ phân loại nhỏ; AV-HuBERT vẫn là ứng viên cần kiểm chứng.
 

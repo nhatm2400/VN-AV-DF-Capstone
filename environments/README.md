@@ -5,6 +5,7 @@
 | Công việc | Cần gì |
 |---|---|
 | CSV/split/quyền sử dụng dry-run | Phần lớn thư viện chuẩn Python. |
+| Tải YouTube | yt-dlp[default] (gồm EJS), Node.js >= 22 trên PATH, FFmpeg/FFprobe. Đã thử tải thực tế với yt-dlp 2026.8.19, EJS 0.8.0 và Node 24.11.0; Python 3.10 vẫn chạy nhưng yt-dlp đã cảnh báo ngừng hỗ trợ trong tương lai. |
 | Review, kiểm tra media và test | Dependency trong requirements; FFmpeg/FFprobe. |
 | Cắt có VAD/YOLO, tạo ROI thực | Thêm Torch, Ultralytics và weights/local VAD. Môi trường hiện có Torch 2.12.0+cu126, Ultralytics 8.4.53; chưa cài lại/chạy full trong đợt này. |
 | Face embedding / active speaker tùy chọn | InsightFace/ONNX runtime và repo/model ngoài theo CLI. Không tự tải/chạy từ smoke test. |

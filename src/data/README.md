@@ -32,9 +32,13 @@ Bước 01 chỉ gọi mạng khi mở rộng playlist. Video riêng được ch
 
 ## Chạy lại và giới hạn
 
-Manifest/run đầu ra đã tồn tại được bảo vệ. Khi chỉ sửa danh sách đầu vào và chưa tải, có thể tự bỏ `selected_videos.csv` cũ rồi chạy lại 01. Với đợt tải/cắt mới, đổi DOWNLOAD_RUN/CUT_RUN trong settings; không đổi tên dataset chỉ vì thêm một đợt tải. Đầu ra clips.csv/split đã tạo cần phiên bản mới hoặc chủ động xử lý bản cũ trước khi chạy lại, không tự ghi đè.
+Chạy lại 02 sẽ tiếp tục trong cùng DOWNLOAD_RUN: bỏ qua MP4 đã có cả hình và tiếng, tiếp tục file .part, thử lại video lỗi và cập nhật download_results.csv sau từng video. download_sources.csv khóa danh sách nguồn của đợt tải; khi đổi danh sách, dùng DOWNLOAD_RUN mới. Không chạy đồng thời hai bước 02 vào cùng một thư mục.
 
-Bước 03 dừng nếu batch có video tải thất bại. Chưa có cơ chế tự retry/resume cả pipeline. Mỗi bước do bạn chủ động chạy, không tự mở job tiếp theo. Kiểm tra giấy phép vẫn có ở `src/data/preparation/check_licenses.py`, nhưng không nằm trong chuỗi bắt buộc.
+Khi chỉ sửa danh sách đầu vào và chưa tải, có thể tự bỏ selected_videos.csv cũ rồi chạy lại 01. Với đợt cắt mới, đổi CUT_RUN; không đổi tên dataset chỉ vì thêm một đợt tải. Manifest clip/split đã tạo vẫn được bảo vệ, không tự ghi đè.
+
+Bước 03 dừng nếu batch còn video failed/pending. Bước 02 có --limit 1 để thử một video chưa hoàn tất; chạy bình thường sẽ xử lý phần còn lại. Mỗi bước do bạn chủ động chạy, không tự mở job tiếp theo. Kiểm tra giấy phép vẫn có ở `src/data/preparation/check_licenses.py`, nhưng không nằm trong chuỗi bắt buộc.
+
+Tải YouTube cần Node.js >= 22 trên PATH và yt-dlp[default] (gồm EJS); downloader bật Node tường minh. Python 3.10 hiện còn chạy được nhưng yt-dlp đã cảnh báo ngừng hỗ trợ trong tương lai; chưa thay môi trường Python của nhóm.
 
 Ngoài cùng `src/data/` chỉ có các file Python có số để chạy. `preparation/` chứa toàn bộ code hỗ trợ, settings.py và nhánh quality; không cần chạy lần lượt các file trong đó. Các bước model/train/evaluate mới chưa triển khai; model AVSP-Net/bốn pseudo-fake cũ ở backup, không phải phần còn chạy của luồng này.
 

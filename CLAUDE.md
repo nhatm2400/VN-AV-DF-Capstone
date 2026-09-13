@@ -105,7 +105,7 @@ Read [PROJECT.md](PROJECT.md) before changing the pipeline or models. Start with
 - Keep only numbered Python entry points at the top level of `src/data/`. Put supporting code, settings, and quality utilities in `src/data/preparation/`. Do not introduce a separate pipeline directory.
 - `src/generators/` is for lip-sync fake generation; `src/features/` is for model input preparation and feature extraction; `src/models/` is for detector architecture.
 - `src/training/` is for dataset loading, training, losses, and checkpoints; `src/evaluation/` is for predictions, metrics, and protocol-specific reports.
-- The new model-related directories currently contain scaffolding only. `src/evaluation/check_shortcuts.py` is an existing metadata diagnostic, not a complete detector evaluator. Do not describe directory creation as model integration.
+- The model prototype has a feature-based detector, a shared Y/X train step, and batch prediction, tested with synthetic tensors only. AV-HuBERT, feature extraction, generators, real-data training, and protocol evaluation are not integrated. `src/evaluation/check_shortcuts.py` is a metadata diagnostic, not the main detector evaluator.
 - Store generated data, feature caches, weights, and experiment outputs outside `src/`, in their respective data, cache, weights, and experiments directories.
 
 ## Jobs and Git

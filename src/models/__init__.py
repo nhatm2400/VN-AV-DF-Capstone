@@ -1,1 +1,1 @@
-"""Scaffold for audio-visual detectors; baseline Y and method X are not implemented."""
+"""Minimal audio-visual detector over prepared features; no backbone integration yet."""

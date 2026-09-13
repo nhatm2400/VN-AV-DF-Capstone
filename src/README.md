@@ -10,10 +10,10 @@
 | [tools/review/](tools/review/README.md) | Xem/nghe clip, phân công và gộp review | Có code và file chạy có số |
 | [generators/](generators/README.md) | Tạo lip-sync fake | Khung thư mục |
 | [features/](features/README.md) | Chuẩn bị audio/vùng miệng, trích đặc trưng cho model | Khung thư mục |
-| [models/](models/README.md) | Cấu trúc detector và backbone | Khung thư mục |
-| [training/](training/README.md) | Đọc batch, train, validation, lưu checkpoint | Khung thư mục |
-| [evaluation/](evaluation/README.md) | Đánh giá theo protocol | Có check_shortcuts.py; evaluator detector chưa có |
+| [models/](models/README.md) | Detector nhận audio/visual features | Có detector.py và 01_smoke_test.py; backbone chưa có |
+| [training/](training/README.md) | Học nhãn và consistency cho X/Y | Có train_step; loader/epoch/checkpoint chưa có |
+| [evaluation/](evaluation/README.md) | Dự đoán và đánh giá | Có predict_batch, check_shortcuts.py; metrics/protocol chưa có |
 
-Luồng dự kiến của phần model: dữ liệu đã chia split → tạo fake → tạo các bản nén → chuẩn bị audio/visual → train detector → đánh giá. Các thư mục vừa tạo chỉ có README và __init__.py; chưa có model giả, checkpoint hay kết quả train.
+Luồng dự kiến: dữ liệu đã chia split → tạo fake → tạo các bản nén → chuẩn bị audio/visual → train detector → đánh giá. Hiện chỉ kiểm tra đoạn detector/train_step/predict bằng feature giả lập; generator, extractor và thí nghiệm thật chưa có.
 
 Video ở `data/`, đặc trưng tính sẵn ở `cache/`, weights tải về ở `weights/`, đầu ra train/eval ở `experiments/`. Các đường dẫn này nằm ở root repo, không nằm trong `src/`.

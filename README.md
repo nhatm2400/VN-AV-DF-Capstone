@@ -40,13 +40,13 @@ python src/tools/review/clip_review.py --help
 | `src/data/preparation/quality/` | Đo mặt, gom người và active-speaker tùy chọn; cần kiểm chứng ngưỡng trên nguồn mới. |
 | `src/tools/review/` | Preview miệng có tiếng, review, chia/gộp công việc. |
 | `src/generators/`, `src/features/` | Khung cho tạo lip-sync fake và chuẩn bị/trích đặc trưng audio–visual. |
-| `src/models/`, `src/training/` | Khung cho cấu trúc detector và huấn luyện X/Y; chưa có implementation. |
+| `src/models/`, `src/training/` | Detector audio–visual tối thiểu, train_step Y/X và smoke giả lập; chưa nối backbone/dataset thật. |
 | `src/evaluation/check_shortcuts.py` | Chẩn đoán metadata trên nhóm người/nguồn, không phải detector chính. |
 | `configs/`, `environments/` | Mẫu đầu vào và hướng dẫn môi trường. |
 | `data/`, `cache/`, `weights/`, `experiments/` | Vùng dữ liệu mới, cache, weights local và run mới; media không commit. |
 | `docs/` | Nghiên cứu hiện hành, planning, báo cáo và archive cũ. |
 
-Model/train/eval AVSP-Net cũ nằm trong backup và lịch sử Git, không còn trong src hiện hành. Đã tạo khung `src/features/`, `src/generators/`, `src/models/`, `src/training/` với README và __init__.py; chưa triển khai model mới. `src/evaluation/` hiện chỉ có chẩn đoán shortcut, chưa có evaluator detector mới. Xem [vai trò từng thư mục source](src/README.md).
+Model/train/eval AVSP-Net cũ nằm trong backup và lịch sử Git. Bản model mới tối thiểu có detector, train_step và predict_batch; mở [01_smoke_test.py](src/models/01_smoke_test.py) rồi Run bằng môi trường có PyTorch để thử luồng bằng tensor giả lập. Generator, AV-HuBERT/extractor, loader dataset thật và evaluator theo protocol chưa tích hợp. Môi trường model tối thiểu được ghi ở [requirements-model.txt](environments/requirements-model.txt); chưa thử cài mới từ đầu. Xem [vai trò từng thư mục source](src/README.md).
 
 ## Dữ liệu và báo cáo
 

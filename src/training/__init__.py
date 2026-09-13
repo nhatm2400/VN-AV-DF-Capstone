@@ -1,1 +1,1 @@
-"""Scaffold for detector training; no new training loop is implemented yet."""
+"""Minimal shared training step for baseline Y and consistency method X."""

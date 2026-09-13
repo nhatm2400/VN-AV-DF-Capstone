@@ -2,7 +2,7 @@
 from pathlib import Path
 
 DATASET_VERSION = 'dataset_v1'
-DOWNLOAD_RUN = 'download_001'  # Change for a new download batch; existing output is protected.
+DOWNLOAD_RUN = 'download_001'  # Rerun to resume; change when selecting a different source list.
 CUT_RUN = 'cut_001'
 SOURCE_GROUP = 'podcast'  # Fallback when a video has no tier; not a license label.
 REVIEWERS = ['member_1', 'member_2', 'member_3']
