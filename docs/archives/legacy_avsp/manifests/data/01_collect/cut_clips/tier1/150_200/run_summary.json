@@ -1,0 +1,24 @@
+{
+  "schema": "cut_clips_run_v1",
+  "run_id": "cutfix_full_tier1_20260729_01",
+  "tier": "tier1",
+  "input_total_tier": 472,
+  "batch_start": 150,
+  "batch_end": 200,
+  "batch_inputs": 50,
+  "terminal_statuses": 50,
+  "accepted_clips": 3213,
+  "rejected_windows": 7282,
+  "terminal_reasons": {
+    "completed": 45,
+    "completed_no_clips": 5
+  },
+  "decode_backends": {
+    "cuda": 50
+  },
+  "cut_backends": {
+    "nvenc": 3213
+  },
+  "elapsed_seconds": 3957.968,
+  "coverage_passed": true
+}

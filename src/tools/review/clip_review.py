@@ -2,18 +2,18 @@
 clip_review.py — Công cụ LỌC TAY clip (manual QA) chạy trong trình duyệt.
 
 Mục đích: review clip bằng mắt người, đánh KEEP / REJECT(+lý do) / UNCERTAIN, để so sánh
-"lọc tay" với "lọc bằng code" (04_curate -> all_clean.csv). Kết quả ghi sang FOLDER RIÊNG
+"lọc tay" với "lọc bằng code" (04_curate -> curated.csv). Kết quả ghi sang FOLDER RIÊNG
 nên không đụng tới output của pipeline tự động.
 
 Không cần cài gì thêm — chỉ dùng thư viện chuẩn Python + trình duyệt.
 
 CÁCH DÙNG (chạy từ thư mục gốc dự án):
-    D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_review_manifest.py  # dựng manifest (chạy 1 lần)
-    D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_roi_preview.py      # dựng ô ROI (chạy 1 lần, ~85 phút)
-    D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/clip_review.py            # rồi mở http://127.0.0.1:8000
+    python src/tools/review/build_review_manifest.py  # dựng manifest (chạy 1 lần)
+    python src/tools/review/build_roi_preview.py      # dựng ô ROI (chạy 1 lần, ~85 phút)
+    python src/tools/review/clip_review.py            # rồi mở http://127.0.0.1:8000
 
     # mẻ hiệu chuẩn: N clip chia đều 3 tầng theo một cột đo được
-    D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/clip_review.py --sample 60 --stratify motion_median --reviewer nhat
+    python src/tools/review/clip_review.py --sample 60 --stratify motion_median --reviewer nhat
 
 Ô ROI (quan trọng nhất): cạnh video gốc có ô phát CHUỖI ROI THẬT mà stage 04 cắt ra,
 ghép với AUDIO GỐC. Video gốc bị tắt tiếng để không vọng đôi. Nhìn miệng + nghe tiếng
@@ -21,13 +21,13 @@ cùng lúc là lộ ngay cả ba lỗi: cắt nhầm mặt (miệng đứng im k
 tiếng (môi lệch nhịp), ảnh tĩnh (miệng đóng băng). Dựng trước bằng build_roi_preview.py.
 
 Tùy chọn:
-    --csv       manifest cần review     (mặc định manifests/all_clean_review.csv)
-    --roi_dir   thư mục preview ROI+tiếng (mặc định data/02_curate/roi_preview)
+    --csv       manifest cần review     (mặc định manifests/review.csv)
+    --roi_dir   thư mục preview ROI+tiếng (mặc định cache/previews/dataset_v1)
     --media_root  thư mục chứa clip gốc TRÊN MÁY NÀY — quét đệ quy, tra theo tên file
                   <clip_id>.mp4. BẮT BUỘC khi review trên máy khác máy dựng manifest,
                   vì file_path trong manifest là đường dẫn tuyệt đối của máy đó.
     --out       file ghi quyết định     (mặc định tự sinh theo --csv + rubric + reviewer)
-    --compare   file code GIỮ để đối chiếu     (mặc định manifests/all_clean.csv)
+    --compare   file code GIỮ để đối chiếu     (mặc định manifests/curated.csv)
     --rejects   file code GATE-REJECT          (mặc định manifests/all_clean_rejects.csv)
     --order     diverse (mặc định) = vòng tròn qua từng video | manifest = thứ tự gốc
     --exclude_channel  bỏ qua kênh, ngăn cách bằng ';' — áp TRƯỚC --sample
@@ -50,7 +50,7 @@ KHÔNG auto-reject theo kênh. `--exclude_channel` là công cụ thủ công đ
 đo trên mẫu nhỏ có khoảng tin cậy rất rộng.
 
 OUTPUT TỰ ĐỘNG VERSION THEO SCOPE: mặc định ghi ra
-    data/02_curate/manual/manual_<tên-csv>_<rubric>_<reviewer>.csv
+    data/manifests/dataset_v1/reviews/manual_<tên-csv>_<rubric>_<reviewer>.csv
 Mỗi manifest + mỗi phiên bản rubric có file riêng, nên KHÔNG bao giờ trộn nhầm quyết định
 của hai scope khác nhau (file manual_review.csv cũ thuộc scope tier1_scored_all và chỉ có
 3/47 dòng nằm trong all_clean — đừng tái sử dụng).
@@ -106,7 +106,7 @@ BAD_INTERVALS = {}    # clip_id -> list[{start_ms,end_ms,reason}]
 TS = {}               # clip_id -> timestamp string
 REVIEWER = {}         # clip_id -> mã người review
 RUBRIC = {}           # clip_id -> rubric version lúc đánh dấu
-CODE_KEEP = set()     # clip_id code GIỮ (all_clean.csv)
+CODE_KEEP = set()     # clip_id code GIỮ (curated.csv)
 CODE_GATE = set()     # clip_id code GATE-REJECT (all_clean_rejects.csv) = rác
 OUT = ""
 PATH_COL = "file_path"
@@ -861,16 +861,16 @@ def safe_reviewer_name(value):
 
 def default_out(csv_path, reviewer):
     stem = os.path.splitext(os.path.basename(csv_path))[0]
-    return os.path.join("data", "02_curate", "manual",
+    return os.path.join("data", "manifests", "dataset_v1", "reviews",
                         f"manual_{stem}_{RUBRIC_VERSION}_{safe_reviewer_name(reviewer)}.csv")
 
 
 def main():
     global OUT, PATH_COL, REVIEWER_ID
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", default="data/02_curate/manifests/all_clean_review.csv",
+    ap.add_argument("--csv", default="data/manifests/dataset_v1/review.csv",
                     help="manifest cần review (bản gộp: + motion + face ambiguity)")
-    ap.add_argument("--roi_dir", default="data/02_curate/roi_preview",
+    ap.add_argument("--roi_dir", default="cache/previews/dataset_v1",
                     help="thư mục preview ROI+tiếng (build_roi_preview.py); '' = tắt")
     ap.add_argument("--media_root", default="",
                     help="thư mục chứa clip gốc TRÊN MÁY NÀY — quét đệ quy, tra theo "
@@ -883,9 +883,9 @@ def main():
                     help="bỏ qua kênh (ngăn cách bằng ';'). VD kênh phóng sự lời bình.")
     ap.add_argument("--out", default=None,
                     help="file ghi quyết định (mặc định tự sinh theo --csv + rubric)")
-    ap.add_argument("--compare", default="data/02_curate/manifests/all_clean.csv",
+    ap.add_argument("--compare", default="data/manifests/dataset_v1/curated.csv",
                     help="file code GIỮ để đối chiếu (để '' nếu không cần)")
-    ap.add_argument("--rejects", default="data/02_curate/manifests/all_clean_rejects.csv",
+    ap.add_argument("--rejects", default="data/manifests/dataset_v1/all_clean_rejects.csv",
                     help="file code GATE-REJECT (rác) để đối chiếu 3 trạng thái")
     ap.add_argument("--sample", type=int, default=0,
                     help="chỉ review N clip ngẫu nhiên (0 = toàn bộ)")

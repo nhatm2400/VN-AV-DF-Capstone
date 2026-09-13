@@ -118,13 +118,13 @@ def main():
     ap.add_argument("--assignments", nargs="+", required=True)
     ap.add_argument("--results", nargs="+", required=True)
     ap.add_argument("--manifest",
-                    default="data/02_curate/manifests/all_clean_review.csv")
+                    default="data/manifests/dataset_v1/review.csv")
     ap.add_argument("--rubric", default="v3")
-    ap.add_argument("--out_dir", default="data/02_curate/manual/merged_v3")
+    ap.add_argument("--out_dir", default="data/manifests/dataset_v1/reviews/merged_v3")
     ap.add_argument("--resolution", "--adjudication", dest="resolution", default="",
                     help="needs_resolution.csv đã điền final_decision/final_reason/resolved_by")
     ap.add_argument("--final_clean",
-                    default="data/02_curate/manifests/manual_clean_v3.csv")
+                    default="data/manifests/dataset_v1/manual_clean_v3.csv")
     ap.add_argument("--allow_partial", action="store_true",
                     help="cho phép xuất manifest khi CHỦ Ý dừng sớm (đã đủ keep). "
                          "Chỉ gộp clip đã có phán quyết; summary ghi partial=true. "
@@ -308,7 +308,9 @@ def main():
              if row["clip_id"] in reviewed_ids and resolved[row["clip_id"]][0] == "keep"]
     if os.path.exists(args.final_clean):
         raise SystemExit(f"[LỖI] Final manifest đã tồn tại: {args.final_clean}")
-    write_csv(args.final_clean, clean, list(manifest[0]))
+    clean = [dict(row, decision="keep") for row in clean]
+    fields = list(dict.fromkeys([*manifest[0], "decision"]))
+    write_csv(args.final_clean, clean, fields)
     labels_path = os.path.join(args.out_dir, "review_labels_v3.csv")
     label_rows = [{
         "clip_id": cid,

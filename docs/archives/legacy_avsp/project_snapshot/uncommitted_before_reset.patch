@@ -1,0 +1,227 @@
+diff --git a/PROJECT.md b/PROJECT.md
+index 6309a96..c7663a0 100644
+--- a/PROJECT.md
++++ b/PROJECT.md
+@@ -6,7 +6,7 @@ Dự án phát hiện **Deepfake âm thanh-hình ảnh tiếng Việt** (Vietnam
+ 
+ Mô hình hiện đã chạy pilot: **AVSP-Net V1** — mouth ROI + Wav2Vec + prosody, hợp nhất bằng Cross-Attention. Kiến trúc mục tiêu mới là **AVSP-Net V2**, gồm V2a (local temporal core, giữ cùng loại feature nhưng repaired pilot dùng store mới) và V2b (mở rộng để tổng quát hóa sang deepfake thực tế), xem [MODEL_PROPOSAL.md](docs/architecture/MODEL_PROPOSAL.md).
+ 
+-Trạng thái hiện tại: **Stage 04 Cut Clips đã dựng lại xong và đạt Gate C; P4.1 `all_manifest.csv` đã dựng đủ 65.622 clip; candidate pool 750 clip đã preliminary-score và enrich bằng Light-ASD + LoCoNet/LASER với coverage 100%; manifest calibration 450 clip source-disjoint đã tạo xong và đang chờ một reviewer duy nhất gán nhãn rubric v3**. Light-ASD phủ `750/750` clip và `16.039` bin; LASER chấm đủ `3.856/3.856` bin được yêu cầu, không thiếu score. Một clip lỗi Light-ASD được chuyển `manual/inference_failure` đúng fail-closed. Calibration gồm 150 clip/tier, chia 300 tune + 150 locked validation và không thiếu media. Đây vẫn chỉ là kiểm tra kỹ thuật, chưa phải bằng chứng accuracy. Ba quality manifest gồm `472/292/2.274 = 3.038` video nguồn đều có terminal status. Output có `65.622` accepted clip khớp 1–1 với `65.622` MP4, không thiếu/mồ côi/trùng `clip_id`; `120.187` cửa sổ bị reject có lý do. Tổng media sau khi downscale trực tiếp 1.200 clip 4K xuống 1080p là `155,277 GiB`. Auto gate vẫn **NO-GO** cho đến khi reviewer hoàn tất 450 clip, policy đạt locked validation và smoke GPU 300 clip đủ ba tier; sinh fake, extract feature và train cũng chưa được mở. Ba file `all_clean*.csv` còn lại trong `data/02_curate/manifests/` thuộc population cũ `6.888 → 3.001`, chỉ có giá trị lịch sử. Xem [triển khai Active-Speaker](docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md), [kế hoạch hotfix](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md) và [nhật ký Stage 04](docs/logs/2026-08-29_STAGE04_REBUILD_AND_STORAGE_NORMALIZATION.md).
++Trạng thái hiện tại: **Stage 04 Cut Clips đã dựng lại xong và đạt Gate C; P4.1 `all_manifest.csv` đã dựng đủ 65.622 clip; candidate pool 750 clip đã preliminary-score và enrich bằng Light-ASD + LoCoNet/LASER với coverage 100%; manifest calibration 450 clip source-disjoint và ROI preview kèm audio đã sẵn sàng cho một reviewer duy nhất gán nhãn rubric v3**. Light-ASD phủ `750/750` clip và `16.039` bin; LASER chấm đủ `3.856/3.856` bin được yêu cầu, không thiếu score. Một clip lỗi Light-ASD được chuyển `manual/inference_failure` đúng fail-closed. Calibration gồm 150 clip/tier, chia 300 tune + 150 locked validation và không thiếu media. ROI preview phủ `450/450`, trong đó bốn clip thật sự không có mặt dùng slate `NO FACE ROI / AUDIO ONLY`; tất cả file đều có video + audio, không rỗng/thừa. Đây vẫn chỉ là kiểm tra kỹ thuật, chưa phải bằng chứng accuracy. Ba quality manifest gồm `472/292/2.274 = 3.038` video nguồn đều có terminal status. Output có `65.622` accepted clip khớp 1–1 với `65.622` MP4, không thiếu/mồ côi/trùng `clip_id`; `120.187` cửa sổ bị reject có lý do. Tổng media sau khi downscale trực tiếp 1.200 clip 4K xuống 1080p là `155,277 GiB`. Auto gate vẫn **NO-GO** cho đến khi reviewer hoàn tất 450 clip, policy đạt locked validation và smoke GPU 300 clip đủ ba tier; sinh fake, extract feature và train cũng chưa được mở. Ba file `all_clean*.csv` còn lại trong `data/02_curate/manifests/` thuộc population cũ `6.888 → 3.001`, chỉ có giá trị lịch sử. Xem [triển khai Active-Speaker](docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md), [kế hoạch hotfix](docs/reports/CUT_CLIPS_HOTFIX_AND_REBUILD_PLAN.md) và [nhật ký Stage 04](docs/logs/2026-08-29_STAGE04_REBUILD_AND_STORAGE_NORMALIZATION.md).
+ 
+ Các kết quả lịch sử vẫn được giữ nguyên: **03_fake V1 từng sinh 12.004 fake**, **PILOT V1 đã chạy xong** trên 2.700 clip với test AUC **0.809**, bốn generator V2/SNVSM/timeline contract đã implement/test, và stratified smoke `v2r6` đã đạt metadata gate max AUC 0,546. Các con số này không chứng minh tập nguồn hiện tại đã sạch và không được dùng để bỏ qua hotfix. Sau khi cut → curate → manual review được dựng lại, lộ trình tiếp tục từ fake V2/SNVSM/Stage 05/metadata gate đến repaired pilot V2a; full training vẫn **NO-GO**. Xem [báo cáo Phase 0](docs/reports/TEMPORAL_DESYNC_PHASE0_SMOKE.md) và [đánh giá V1/V2](docs/reports/PILOT_V1_REVIEW_AND_V2_PLAN.md).
+ 
+diff --git a/docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md b/docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md
+index 828c8d3..a55b1d0 100644
+--- a/docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md
++++ b/docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md
+@@ -3,7 +3,7 @@
+ **Ngày cập nhật:** 2026-09-05
+ 
+ **Phạm vi dữ liệu:** 65.622 clip real nguồn trong `data/01_collect/cut_clips/all_manifest.csv`
+-**Trạng thái:** code và contract đã triển khai; candidate pool 750 clip đã preliminary-score và enrich đủ coverage; manifest 450 clip đã tạo; workflow hiện dùng **một reviewer duy nhất**, nhưng **chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
++**Trạng thái:** code và contract đã triển khai; candidate pool 750 clip đã preliminary-score và enrich đủ coverage; manifest cùng ROI preview 450/450 đã sẵn sàng; workflow hiện dùng **một reviewer duy nhất**, nhưng **chưa có 450 nhãn chuẩn, chưa khóa ngưỡng, auto gate vẫn NO-GO**.
+ 
+ ## 1. Vấn đề cần giải quyết
+ 
+@@ -159,7 +159,7 @@ Mọi lệnh Python phải dùng `D:\Anaconda\envs\vn_av_df\python.exe` ở loca
+ 
+ ## 8. Kiểm thử đã chạy
+ 
+-Ngày 2026-09-05, `unittest discover` pass 70 test, skip 1 smoke dữ liệu thật có chủ đích. Các case policy tổng hợp đã cover:
++Ngày 2026-09-05, `unittest discover` pass 71 test, skip 1 smoke dữ liệu thật có chủ đích. Các case policy tổng hợp đã cover:
+ 
+ 1. người nói liên tục → pass;
+ 2. 3 giây nói + 2 giây miệng tĩnh còn tiếng → reject `static`;
+@@ -186,6 +186,8 @@ LASER run `smoke_laser_loconet_candidate30_20260905_01` chấm đủ 228/228 bin
+ 
+ Run candidate đầy đủ `preliminary_asd_candidate750_20260905_01` phủ 750/750 clip và 16.039 bin trong 2.344,878 giây. Một clip `7472219282072472840_s0000000000_e0000005000` lỗi `light_asd_track_too_short`; pipeline vẫn tạo summary và chuyển clip đó sang `manual/inference_failure`. LASER run `preliminary_laser_loconet_candidate750_20260905_01` chấm đủ 3.856/3.856 bin trong 2.472,522 giây, `missing_bins=0`, `failure_rows=0`. Run enrich `preliminary_asd_laser_candidate750_20260905_01` giữ đủ 750 summary và 16.039 bin. Manifest `active_speaker_450_v3.csv` sau đó được tạo đủ 450 clip/450 source, 150 clip mỗi tier, 300 tune + 150 locked validation; phân tầng gồm 126 `clean_candidate`, 104 `mixed`, 124 `multiple_faces`, 37 `static`, 59 `voiceover`, không thiếu media hay file 0 byte.
+ 
++ROI run `roi_preview/calibration_450_v3` tạo 446 mouth preview thông thường và bốn slate `NO FACE ROI / AUDIO ONLY` cho các clip voice-over mà cả InsightFace lẫn YOLO đều xác nhận không có mặt. Audit cuối đạt 450/450 file, tất cả có video H.264 + audio AAC, không file rỗng/thừa, tổng 74,97 MiB; sai lệch duration lớn nhất so với manifest là 0,023 giây. Slate không giả lập mouth crop: nó chỉ cung cấp audio gốc để reviewer nghe đồng thời với video gốc bên trái và thể hiện đúng rằng model không nhận được face ROI.
++
+ Các bài test và smoke trên chỉ xác nhận đường chạy, contract và fail-closed, **không phải bằng chứng accuracy của pretrained model trên data thật**. Bằng chứng đó chỉ có sau calibration 450 và smoke 300 clip đủ ba tier.
+ 
+ ## 9. Chống leakage
+diff --git a/src/pipeline/02_curate/README.md b/src/pipeline/02_curate/README.md
+index a5f84ce..8d9129e 100644
+--- a/src/pipeline/02_curate/README.md
++++ b/src/pipeline/02_curate/README.md
+@@ -209,6 +209,9 @@ repo SyncNet + model (`syncnet_v2.model`, `sfd_face.pth`).
+ Reviewer đánh dấu từng khoảng lỗi bằng `start_ms`, `end_ms`, `reason`; reason cấp clip là lý do
+ của interval dài nhất. Một reviewer duy nhất gán toàn bộ 450 clip. Không có bước consensus
+ hay người thứ ba adjudicate; reviewer phải mở lại và chốt mọi nhãn `uncertain`.
++Preview thông thường hiển thị mouth ROI kèm audio. Nếu cả YOLO và Active-Speaker đều xác nhận
++clip không có khuôn mặt, builder tạo slate `NO FACE ROI / AUDIO ONLY`; đây là case voice-over
++hợp lệ để reviewer nghe audio trong khi xem hình gốc, không phải mouth crop giả.
+ 
+ Không chia trực tiếp bằng vị trí dòng hoặc tự copy CSV. Dùng builder để giữ đúng coverage:
+ 
+@@ -229,7 +232,8 @@ Reviewer chạy đúng file mang reviewer ID của mình:
+ ```bash
+ D:\Anaconda\envs\vn_av_df\python.exe src/tools/review/clip_review.py \
+   --csv data/02_curate/assignments/v3/calibration_450/assignment_nguyenminhnhat.csv \
+-  --reviewer nguyenminhnhat
++  --reviewer nguyenminhnhat \
++  --roi_dir data/02_curate/roi_preview/calibration_450_v3
+ ```
+ 
+ `clip_review.py` dừng ngay nếu `--reviewer` không khớp assignment. Output mặc định chứa
+diff --git a/src/tools/README.md b/src/tools/README.md
+index 8dc5c1d..dcc2a0a 100644
+--- a/src/tools/README.md
++++ b/src/tools/README.md
+@@ -12,7 +12,7 @@ dẫn đầy đủ ở [nhật ký 2026-07-28](../../docs/logs/2026-07-28_MULTI_
+ | Thứ tự | File | Việc |
+ |---|---|---|
+ | 1 | `review/build_review_manifest.py` | Gộp `all_clean.csv` với các phép đo phụ (motion, nhập nhằng nhiều mặt, kênh) → `manifests/all_clean_review.csv`. Tái lập được, fail nếu một nguồn phủ dưới 95%. |
+-| 2 | `review/build_roi_preview.py` | Dựng video preview vùng miệng **kèm audio gốc**, dùng đúng `detect_and_crop` của stage 04. Đây là thứ để lộ lồng tiếng / cắt nhầm mặt / ảnh tĩnh. ~1,7 giây/clip. |
++| 2 | `review/build_roi_preview.py` | Dựng video preview vùng miệng **kèm audio gốc**, dùng đúng `detect_and_crop` của stage 04. Clip thật sự không có mặt nhận slate `NO FACE ROI / AUDIO ONLY` thay vì bị mất audio. Đây là thứ để lộ lồng tiếng / cắt nhầm mặt / ảnh tĩnh. ~1,7 giây/clip. |
+ | 3 | `review/export_review_batch.py` | Gom clip gốc của manifest vào một thư mục phẳng `<clip_id>.mp4` để phát cho reviewer. |
+ | 4 | `../pipeline/02_curate/02_scoring/02_active_speaker/06_build_calibration_manifest.py` | Chọn 450 clip source-disjoint, cân bằng 3 tier và nhóm rủi ro; khóa 300 tune + 150 validation. Đây là bước pipeline nên không còn nằm trong `tools/`. |
+ | 5 | `review/build_review_assignments.py` | Tạo assignment cho một hoặc nhiều reviewer. Calibration hiện tại dùng một reviewer duy nhất cho đủ 450 clip. |
+diff --git a/src/tools/review/build_roi_preview.py b/src/tools/review/build_roi_preview.py
+index 93ebba0..7169250 100644
+--- a/src/tools/review/build_roi_preview.py
++++ b/src/tools/review/build_roi_preview.py
+@@ -26,12 +26,14 @@ CÁCH DÙNG (từ thư mục gốc dự án):
+ import argparse
+ import csv
+ import importlib.util
++import math
+ import os
+ import subprocess
+ import sys
+ import time
+ 
+ import cv2
++import numpy as np
+ 
+ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+     os.path.abspath(__file__)
+@@ -49,34 +51,72 @@ def load_stage04():
+     return mod
+ 
+ 
+-def build_one(stage04, yolo, src_mp4, out_mp4, fps, size, scale, detect_every, conf):
+-    boxes, mouth = stage04.detect_and_crop(yolo, src_mp4, fps, size, detect_every, conf)
+-    if mouth is None:
+-        return "khong bat duoc mat"
+-
+-    tmp = out_mp4 + ".silent.mp4"
+-    vw = cv2.VideoWriter(tmp, cv2.VideoWriter_fourcc(*"mp4v"), fps,
+-                         (size * scale, size * scale))
+-    if not vw.isOpened():
+-        return "khong mo duoc VideoWriter"
+-    for g in mouth:                      # mouth: [T, size, size] grayscale
+-        big = cv2.resize(g, (size * scale, size * scale),
+-                         interpolation=cv2.INTER_NEAREST)
+-        vw.write(cv2.cvtColor(big, cv2.COLOR_GRAY2BGR))
+-    vw.release()
+-
+-    # ghép audio GỐC vào — đây mới là thứ làm lộ lồng tiếng / cắt nhầm mặt
++def mux_original_audio(silent_mp4, src_mp4, out_mp4):
+     proc = subprocess.run(
+-        ["ffmpeg", "-v", "error", "-y", "-i", tmp, "-i", src_mp4,
++        ["ffmpeg", "-v", "error", "-y", "-i", silent_mp4, "-i", src_mp4,
+          "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "veryfast",
+          "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", out_mp4],
+         capture_output=True, text=True)
+-    os.remove(tmp)
+     if proc.returncode != 0:
+         return f"ffmpeg fail: {proc.stderr[-160:]}"
+     return None
+ 
+ 
++def write_no_face_slate(src_mp4, silent_mp4, fps, side):
++    """Tạo hình báo không có ROI; audio gốc được mux ở bước kế tiếp."""
++    cap = cv2.VideoCapture(src_mp4)
++    source_fps = cap.get(cv2.CAP_PROP_FPS)
++    source_frames = cap.get(cv2.CAP_PROP_FRAME_COUNT)
++    cap.release()
++    if source_fps <= 0 or source_frames <= 0:
++        return "khong doc duoc duration de tao no-face slate"
++    frame_count = max(1, math.ceil(source_frames / source_fps * fps))
++    vw = cv2.VideoWriter(silent_mp4, cv2.VideoWriter_fourcc(*"mp4v"), fps,
++                         (side, side))
++    if not vw.isOpened():
++        return "khong mo duoc VideoWriter cho no-face slate"
++    frame = np.full((side, side, 3), 18, dtype=np.uint8)
++    lines = ("NO FACE ROI", "AUDIO ONLY")
++    for index, text in enumerate(lines):
++        font = cv2.FONT_HERSHEY_SIMPLEX
++        scale = 0.62
++        thickness = 2
++        width, height = cv2.getTextSize(text, font, scale, thickness)[0]
++        x = max(8, (side - width) // 2)
++        y = side // 2 - 10 + index * (height + 18)
++        cv2.putText(frame, text, (x, y), font, scale, (230, 230, 230),
++                    thickness, cv2.LINE_AA)
++    for _ in range(frame_count):
++        vw.write(frame)
++    vw.release()
++    return None
++
++
++def build_one(stage04, yolo, src_mp4, out_mp4, fps, size, scale, detect_every, conf):
++    boxes, mouth = stage04.detect_and_crop(yolo, src_mp4, fps, size, detect_every, conf)
++    tmp = out_mp4 + ".silent.mp4"
++    no_face = mouth is None
++    if no_face:
++        err = write_no_face_slate(src_mp4, tmp, fps, size * scale)
++        if err:
++            return err, False
++    else:
++        vw = cv2.VideoWriter(tmp, cv2.VideoWriter_fourcc(*"mp4v"), fps,
++                             (size * scale, size * scale))
++        if not vw.isOpened():
++            return "khong mo duoc VideoWriter", False
++        for g in mouth:                  # mouth: [T, size, size] grayscale
++            big = cv2.resize(g, (size * scale, size * scale),
++                             interpolation=cv2.INTER_NEAREST)
++            vw.write(cv2.cvtColor(big, cv2.COLOR_GRAY2BGR))
++        vw.release()
++
++    # ghép audio GỐC vào — đây mới là thứ làm lộ lồng tiếng / cắt nhầm mặt
++    err = mux_original_audio(tmp, src_mp4, out_mp4)
++    os.remove(tmp)
++    return err, no_face and err is None
++
++
+ def main():
+     ap = argparse.ArgumentParser()
+     ap.add_argument("--csv", default="data/02_curate/manifests/all_clean.csv")
+@@ -101,19 +141,21 @@ def main():
+     os.makedirs(args.out_dir, exist_ok=True)
+ 
+     t0 = time.time()
+-    done = skipped = 0
++    done = skipped = no_face = 0
+     errors = []
+     for i, r in enumerate(rows, 1):
+         out_mp4 = os.path.join(args.out_dir, r["clip_id"] + ".mp4")
+         if args.skip_existing and os.path.isfile(out_mp4):
+             skipped += 1
+             continue
+-        err = build_one(stage04, yolo, r["file_path"], out_mp4, args.fps,
+-                        args.size, args.scale, args.detect_every, args.conf)
++        err, used_no_face_slate = build_one(
++            stage04, yolo, r["file_path"], out_mp4, args.fps,
++            args.size, args.scale, args.detect_every, args.conf)
+         if err:
+             errors.append((r["clip_id"], err))
+         else:
+             done += 1
++            no_face += int(used_no_face_slate)
+         if i % 100 == 0:
+             el = time.time() - t0
+             print(f"  {i}/{len(rows)}  loi={len(errors)}  "
+@@ -121,7 +163,8 @@ def main():
+ 
+     el = time.time() - t0
+     print(f"\nXong {done} clip trong {el/60:.2f} phut "
+-          f"({el/max(1,done):.2f}s/clip) | bo qua {skipped} | loi {len(errors)}")
++          f"({el/max(1,done):.2f}s/clip) | bo qua {skipped} | "
++          f"no-face audio-only {no_face} | loi {len(errors)}")
+     if errors:
+         print("\n-- clip loi (10 dau) --")
+         for cid, e in errors[:10]:

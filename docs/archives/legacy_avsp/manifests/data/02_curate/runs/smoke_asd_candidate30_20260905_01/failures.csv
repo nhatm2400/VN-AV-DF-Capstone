@@ -1,0 +1,4 @@
+clip_id,file_path,error_type,error_message
+wttuvGomhr4_s0000919426_e0000923262,E:\FPTU\PRJ\VN-AV-DF-Capstone\data\01_collect\cut_clips\tier1\400_440\media\wttuvGomhr4_s0000919426_e0000923262.mp4,RuntimeError,light_asd_track_too_short
+cyi8OGHa_28_s0000277378_e0000288990,E:\FPTU\PRJ\VN-AV-DF-Capstone\data\01_collect\cut_clips\tier1\100_150\media\cyi8OGHa_28_s0000277378_e0000288990.mp4,RuntimeError,light_asd_track_too_short
+7643026650233425170_s0000042114_e0000047326,E:\FPTU\PRJ\VN-AV-DF-Capstone\data\01_collect\cut_clips\tier3\1100_1700\media\7643026650233425170_s0000042114_e0000047326.mp4,RuntimeError,light_asd_track_too_short

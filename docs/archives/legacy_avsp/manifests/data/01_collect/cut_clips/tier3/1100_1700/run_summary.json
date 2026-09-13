@@ -1,0 +1,25 @@
+{
+  "schema": "cut_clips_run_v1",
+  "run_id": "cutfix_smoke_tier3_20260729_01",
+  "tier": "tier3",
+  "input_total_tier": 2274,
+  "batch_start": 1100,
+  "batch_end": 1700,
+  "batch_inputs": 600,
+  "terminal_statuses": 600,
+  "accepted_clips": 4245,
+  "rejected_windows": 5660,
+  "terminal_reasons": {
+    "completed_no_clips": 64,
+    "completed": 509,
+    "no_speech_detected": 27
+  },
+  "decode_backends": {
+    "cuda": 573
+  },
+  "cut_backends": {
+    "nvenc": 4245
+  },
+  "elapsed_seconds": 4275.168,
+  "coverage_passed": true
+}

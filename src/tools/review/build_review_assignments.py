@@ -5,7 +5,7 @@ Mỗi clip calibration xuất hiện trong assignment của mọi reviewer. Các
 chỉ xuất hiện trong đúng một assignment và được cân bằng theo tier.
 
 Ví dụ:
-  D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_review_assignments.py \
+  python src/tools/review/build_review_assignments.py \
       --reviewers nguyenminhnhat
 """
 
@@ -83,15 +83,15 @@ def write_csv(path, rows, fields):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--manifest",
-                    default="data/02_curate/calibration/active_speaker_450_v3.csv")
+                    default="data/manifests/dataset_v1/calibration/active_speaker_calibration.csv")
     ap.add_argument("--calibration",
-                    default="data/02_curate/calibration/active_speaker_450_v3.csv",
+                    default="data/manifests/dataset_v1/calibration/active_speaker_calibration.csv",
                     help="CSV chọn tập calibration chung; không cần có decision")
     ap.add_argument("--no_shared_calibration", action="store_true",
                     help="chia scope manual cuối sau khi calibration đã hoàn tất")
     ap.add_argument("--reviewers", nargs="+", required=True,
                     help="Một hoặc nhiều reviewer ID ổn định")
-    ap.add_argument("--out_dir", default="data/02_curate/assignments/v3/calibration_450")
+    ap.add_argument("--out_dir", default="data/manifests/dataset_v1/assignments/v3/calibration_450")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--overwrite", action="store_true")
     args = ap.parse_args()

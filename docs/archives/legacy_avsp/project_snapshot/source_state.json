@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-13",
+  "commit": "0178ef43685e126e38e9a40be683db92b24452e9",
+  "branch": "codex/research-reset",
+  "pre_migration_status": [
+    " M PROJECT.md",
+    " M docs/reports/ACTIVE_SPEAKER_CURATION_IMPLEMENTATION.md",
+    " M src/pipeline/02_curate/README.md",
+    " M src/tools/README.md",
+    " M src/tools/review/build_roi_preview.py",
+    "?? KE_HOACH_DON_DEP_VA_TAI_CAU_TRUC_REPO.md",
+    "?? KE_HOACH_PILOT_LIP_SYNC_VI.md",
+    "?? data/02_curate/logs/",
+    "?? data/02_curate/manual/",
+    "?? data/02_curate/roi_preview/",
+    "?? mmb.md",
+    "?? tests/test_roi_preview.py"
+  ],
+  "backup_verified_files": 68136,
+  "backup_bytes": 167031386412,
+  "backup_critical_hash_matches": 110,
+  "backup_media_samples_verified": 3,
+  "backup_extra_missing_ref": "One 41-byte Codex capture ref only",
+  "all_media_hashed": false,
+  "legacy_data_files": 66329,
+  "legacy_data_bytes": 166872237703.0,
+  "archived_metadata_files": 214
+}

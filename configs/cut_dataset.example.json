@@ -1,0 +1,13 @@
+{
+  "tier": "podcast",
+  "dataset_dir": "__SET_VIDEO_DIRECTORY__",
+  "input_csv": "__SET_SELECTED_INPUT_CSV__",
+  "output_root": "data/real/dataset_v1",
+  "run_id": "__SET_NEW_RUN_ID__",
+  "expected_input_count": 0,
+  "num_workers": 1,
+  "use_hwaccel_decode": false,
+  "use_nvenc": false,
+  "create_zip": false,
+  "face_model": "weights/face_detector/yolov8n-face.pt"
+}

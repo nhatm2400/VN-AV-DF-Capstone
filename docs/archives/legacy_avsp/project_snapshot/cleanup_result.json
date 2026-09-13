@@ -1,0 +1,33 @@
+{
+  "date": "2026-09-13",
+  "removed_files": 66580,
+  "removed_logical_bytes": 166907383391,
+  "targets": [
+    "data",
+    "src/pipeline",
+    "src/model",
+    "src/train",
+    "src/eval",
+    "src/utils",
+    "src/pre-testing",
+    "src/tools/data_admin",
+    "src/tools/diagnostics",
+    "docs/reports",
+    "docs/architecture",
+    "docs/logs",
+    "docs/archives/2026_report_checkpoints",
+    "experiments",
+    "configs/test.py",
+    "mmb.md",
+    "KE_HOACH_PILOT_LIP_SYNC_VI.md",
+    "yolov8n-face.pt",
+    "tests/test_temporal_desync.py",
+    "tests/test_non_temporal_generators.py",
+    "tests/test_generator_rng_determinism.py",
+    "tests/test_recover_cut_input_inventory.py",
+    ".tmp/reviews",
+    ".tmp/roi_ui_smoke"
+  ],
+  "backup_modified": false,
+  "metadata_archive_hash_verified": true
+}

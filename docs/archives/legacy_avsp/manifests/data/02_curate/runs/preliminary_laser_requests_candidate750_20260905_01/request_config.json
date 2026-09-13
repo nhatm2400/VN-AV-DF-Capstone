@@ -1,0 +1,14 @@
+{
+  "schema": "laser_request_v1",
+  "source_timeline": "E:\\FPTU\\PRJ\\VN-AV-DF-Capstone\\data\\02_curate\\runs\\preliminary_asd_candidate750_20260905_01\\asd_timeline.jsonl.gz",
+  "source_timeline_sha256": "a9973d85e85faa1bf6bd1656f097f1b7ebdaacc419a93d3e2fa88257017f4bc4",
+  "manifest_sha256": "69645a92d2e3b7e5a155d0175668059490c1ab592e21760d89df627005eb7396",
+  "requested_bins": 3856,
+  "requested_clips": 643,
+  "expected_score_schema": [
+    "clip_id",
+    "bin_index",
+    "laser_score"
+  ],
+  "score_semantics": "maximum active-speaker probability over every visible face in the bin"
+}

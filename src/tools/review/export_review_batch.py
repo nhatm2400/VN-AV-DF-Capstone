@@ -9,7 +9,7 @@ Copy theo `clip_id`, đặt tên `<clip_id>.mp4` phẳng — khớp cách `clip_
 --media_root` tra file, nên reviewer để thư mục ở đâu cũng chạy.
 
 CÁCH DÙNG (từ thư mục gốc dự án):
-  D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/export_review_batch.py --out_dir data/01_collect/final_clips_batch1
+  python src/tools/review/export_review_batch.py --out_dir data/01_collect/final_clips_batch1
 """
 
 import argparse
@@ -27,7 +27,7 @@ except Exception:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csv", default="data/02_curate/manifests/all_clean_review.csv")
+    ap.add_argument("--csv", default="data/manifests/dataset_v1/review.csv")
     ap.add_argument("--out_dir", required=True)
     ap.add_argument("--col", default="file_path")
     ap.add_argument("--dry_run", action="store_true",

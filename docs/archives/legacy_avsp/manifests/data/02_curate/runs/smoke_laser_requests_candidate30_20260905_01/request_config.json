@@ -1,0 +1,14 @@
+{
+  "schema": "laser_request_v1",
+  "source_timeline": "E:\\FPTU\\PRJ\\VN-AV-DF-Capstone\\data\\02_curate\\runs\\smoke_asd_candidate30_20260905_02\\asd_timeline.jsonl.gz",
+  "source_timeline_sha256": "7e41ac1d5fc5cef3aaf5d16430f28b381cb9e1e7bdb9d779adb5ce3ad4723523",
+  "manifest_sha256": "4d58179064ad0bc3a2c8aaf6206227f3f29350e0bb745fa5b4ab06aadb224e01",
+  "requested_bins": 228,
+  "requested_clips": 30,
+  "expected_score_schema": [
+    "clip_id",
+    "bin_index",
+    "laser_score"
+  ],
+  "score_semantics": "maximum active-speaker probability over every visible face in the bin"
+}

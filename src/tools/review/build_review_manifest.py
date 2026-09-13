@@ -1,8 +1,8 @@
 """
 build_review_manifest.py — Dựng manifest cho công cụ lọc tay (tái lập được).
 
-Ghép `manifests/all_clean.csv` với các phép đo phụ trợ đã chạy sẵn, ra
-`manifests/all_clean_review.csv` — scope mặc định của `clip_review.py`.
+Ghép `manifests/curated.csv` với các phép đo phụ trợ đã chạy sẵn, ra
+`manifests/review.csv` — scope mặc định của `clip_review.py`.
 
 Trước đây file này được tạo bằng lệnh chạy tay và cột `channel` ghép one-off, nên mất
 là không dựng lại được. Script này thay thế hoàn toàn cách làm đó.
@@ -13,16 +13,16 @@ Nguồn ghép vào (đều KHÔNG bắt buộc — thiếu cái nào thì bỏ c
   measurements/face_ambiguity.json       n_faces_med, ratio_med, ...
       (scan_face_ambiguity.py — luật "mặt to nhất" của stage 04 có đáng tin không)
   01_collect/youtube_tier*_urls.csv      channel
-      (metadata kênh; clip TikTok không tra được -> '[TIKTOK]')
+      (metadata kênh; clip TikTok không tra được -> '[UNKNOWN]')
 
-KHÔNG lọc, KHÔNG sắp xếp, KHÔNG đổi số dòng — giữ nguyên `all_clean.csv`. Mọi quyết
+KHÔNG lọc, KHÔNG sắp xếp, KHÔNG đổi số dòng — giữ nguyên `curated.csv`. Mọi quyết
 định giữ/loại thuộc về người review; script này chỉ gom số liệu để người review nhìn.
 
 FAIL nếu ghép làm đổi số dòng, hoặc nếu một nguồn phủ dưới `--min_coverage` (mặc định
 0.95) — thà dừng còn hơn xuất manifest thiếu cột mà không ai biết.
 
 CÁCH DÙNG (từ thư mục gốc dự án):
-  D:/Anaconda/envs/vn_av_df/python.exe src/tools/review/build_review_manifest.py
+  python src/tools/review/build_review_manifest.py
 """
 
 import argparse
@@ -73,16 +73,15 @@ def load_channels(paths):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--clean_csv", default="data/02_curate/manifests/all_clean.csv")
+    ap.add_argument("--clean_csv", default="data/manifests/dataset_v1/curated.csv")
     ap.add_argument("--motion_csv",
-                    default="data/02_curate/measurements/tier1_scored_motion.csv")
+                    default="cache/quality/dataset_v1/tier1_scored_motion.csv")
     ap.add_argument("--face_json",
-                    default="data/02_curate/measurements/face_ambiguity.json")
+                    default="cache/quality/dataset_v1/face_ambiguity.json")
     ap.add_argument("--url_csv", nargs="*", default=[
-        "data/01_collect/youtube_tier1_urls.csv",
-        "data/01_collect/youtube_tier2_urls.csv",
+        "data/sources/dataset_v1/videos.csv",
     ])
-    ap.add_argument("--out", default="data/02_curate/manifests/all_clean_review.csv")
+    ap.add_argument("--out", default="data/manifests/dataset_v1/review.csv")
     ap.add_argument("--min_coverage", type=float, default=0.95)
     args = ap.parse_args()
 
@@ -90,7 +89,7 @@ def main():
     n0 = len(df)
     print(f"Nguồn    : {args.clean_csv}  ({n0} clip)")
     if df.clip_id.duplicated().any():
-        raise SystemExit("[LỖI] clip_id trùng lặp trong all_clean.csv")
+        raise SystemExit("[LỖI] clip_id trùng lặp trong curated.csv")
 
     notes = []
     if os.path.isfile(args.motion_csv):
@@ -116,9 +115,9 @@ def main():
         if len(df) != before:
             raise SystemExit(f"[LỖI] merge channel đổi số dòng {before} -> {len(df)}")
         n_tiktok = int(df.channel.isna().sum())
-        df["channel"] = df.channel.fillna("[TIKTOK]")
+        df["channel"] = df.channel.fillna("[UNKNOWN]")
         notes.append(f"channel: {df.channel.nunique()} kênh, "
-                     f"{n_tiktok} clip không có metadata -> '[TIKTOK]'")
+                     f"{n_tiktok} clip không có metadata -> '[UNKNOWN]'")
 
     if len(df) != n0:
         raise SystemExit(f"[LỖI] số dòng đổi {n0} -> {len(df)}")

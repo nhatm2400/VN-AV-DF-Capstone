@@ -1,0 +1,2 @@
+clip_id,file_path,decision,reason,bad_intervals_json,reviewer_id,rubric_version,ts
+-H3EY9_rfHQ_1_s0000759618_e0000762206,E:\FPTU\PRJ\VN-AV-DF-Capstone\data\01_collect\cut_clips\tier2\0_100\media\-H3EY9_rfHQ_1_s0000759618_e0000762206.mp4,reject,static,"[{""start_ms"":0,""end_ms"":2600,""reason"":""static""}]",nguyenminhnhat,v3,2026-09-05 19:59:20
