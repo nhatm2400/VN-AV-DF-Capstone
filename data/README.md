@@ -5,7 +5,7 @@
 ```text
 data/
 ├── sources/dataset_v1/
-│   ├── videos.csv                  # Bạn điền URL video/playlist đã chọn
+│   ├── videos.csv                  # Điền URL video/playlist đã chọn
 │   ├── selected_videos.csv         # Bước 01: chuẩn hóa và mở rộng playlist
 │   └── rights.csv                  # Tùy chọn, khi kiểm tra giấy phép sau này
 ├── raw/dataset_v1/download_001/
