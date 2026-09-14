@@ -23,10 +23,9 @@ tiếng (môi lệch nhịp), ảnh tĩnh (miệng đóng băng). Dựng trướ
 Tùy chọn:
     --csv       manifest cần review     (mặc định manifests/review.csv)
     --roi_dir   thư mục preview ROI+tiếng (mặc định cache/previews/dataset_v1)
-    --media_root  thư mục chứa clip gốc TRÊN MÁY NÀY — quét đệ quy, tra theo tên file
-                  <clip_id>.mp4. BẮT BUỘC khi review trên máy khác máy dựng manifest,
-                  vì file_path trong manifest là đường dẫn tuyệt đối của máy đó.
-    --out       file ghi quyết định     (mặc định tự sinh theo --csv + rubric + reviewer)
+    --media_root  thư mục chứa clip gốc trên máy này. Có thể bỏ qua nếu cạnh file CSV
+                  có thư mục media/ hoặc các file <clip_id>.mp4.
+    --out       file ghi quyết định     (mặc định review_<reviewer>.csv cạnh assignment)
     --compare   file code GIỮ để đối chiếu     (mặc định manifests/curated.csv)
     --rejects   file code GATE-REJECT          (mặc định manifests/all_clean_rejects.csv)
     --order     diverse (mặc định) = vòng tròn qua từng video | manifest = thứ tự gốc
@@ -49,11 +48,8 @@ KHÔNG auto-reject theo kênh. `--exclude_channel` là công cụ thủ công đ
 đã biết rõ định dạng; đừng dùng nó thay cho việc xem nội dung clip. Tỉ lệ keep theo kênh
 đo trên mẫu nhỏ có khoảng tin cậy rất rộng.
 
-OUTPUT TỰ ĐỘNG VERSION THEO SCOPE: mặc định ghi ra
-    data/manifests/dataset_v1/reviews/manual_<tên-csv>_<rubric>_<reviewer>.csv
-Mỗi manifest + mỗi phiên bản rubric có file riêng, nên KHÔNG bao giờ trộn nhầm quyết định
-của hai scope khác nhau (file manual_review.csv cũ thuộc scope tier1_scored_all và chỉ có
-3/47 dòng nằm trong all_clean — đừng tái sử dụng).
+OUTPUT: mặc định ghi `review_<reviewer>.csv` cạnh assignment để cả gói có thể di chuyển
+giữa các máy. Mỗi dòng vẫn ghi reviewer và rubric version để bước merge kiểm tra scope.
 
 SO SÁNH 3 TRẠNG THÁI: mỗi clip code có 1 trong 3 trạng thái — KEEP (trong all_clean),
 GATE-REJECT (trong all_clean_rejects, = rác), BALANCE-DROP (qua gate nhưng bị cắt do cân
@@ -98,7 +94,7 @@ DECISIONS_VALID = ("keep", "reject", "uncertain")
 # ----- global state -----
 CLIPS = []            # list of dict cần review (toàn bộ HOẶC mẫu sample) — index theo 'i'
 ALL_ROWS = []         # toàn bộ manifest (để tra file_path/thứ tự cho mọi clip)
-FILEPATH_BY_ID = {}   # clip_id -> file_path (từ toàn bộ manifest)
+FILEPATH_BY_ID = {}   # clip_id -> tên media portable ghi vào kết quả review
 ORDER_BY_ID = {}      # clip_id -> thứ tự gốc trong manifest (để ghi CSV ổn định)
 DECISIONS = {}        # clip_id -> "keep"/"reject"/"uncertain"  (giữ MỌI quyết định)
 REASON = {}           # clip_id -> mã lý do (chỉ có nghĩa khi decision == reject)
@@ -232,6 +228,7 @@ def index_media(root):
 
 
 def load_clips(csv_path, path_col, media_index=None):
+    csv_dir = os.path.dirname(os.path.abspath(csv_path))
     rows = []
     with open(csv_path, encoding="utf-8") as f:
         rd = csv.DictReader(f)
@@ -239,6 +236,12 @@ def load_clips(csv_path, path_col, media_index=None):
             fp = (r.get(path_col) or "").strip()
             if media_index is not None:
                 fp = media_index.get(r["clip_id"] + ".mp4", fp)
+            elif fp and not os.path.isabs(fp):
+                # Portable assignment paths are relative to the assignment CSV.
+                # Keep repo-relative manifests working when run from repo root.
+                from_cwd = os.path.abspath(fp)
+                from_csv = os.path.abspath(os.path.join(csv_dir, fp))
+                fp = from_cwd if os.path.isfile(from_cwd) else from_csv
             r["_abspath"] = fp
             rows.append(r)
     return rows
@@ -860,9 +863,10 @@ def safe_reviewer_name(value):
 
 
 def default_out(csv_path, reviewer):
-    stem = os.path.splitext(os.path.basename(csv_path))[0]
-    return os.path.join("data", "manifests", "dataset_v1", "reviews",
-                        f"manual_{stem}_{RUBRIC_VERSION}_{safe_reviewer_name(reviewer)}.csv")
+    return os.path.join(
+        os.path.dirname(os.path.abspath(csv_path)),
+        f"review_{safe_reviewer_name(reviewer)}.csv",
+    )
 
 
 def main():
@@ -902,7 +906,11 @@ def main():
     global ROI_DIR
     PATH_COL = args.col
     REVIEWER_ID = args.reviewer
-    ROI_DIR = os.path.abspath(args.roi_dir) if args.roi_dir else ""
+    roi_dir = args.roi_dir
+    portable_roi = os.path.join(os.path.dirname(os.path.abspath(args.csv)), "roi")
+    if roi_dir == "cache/previews/dataset_v1" and os.path.isdir(portable_roi):
+        roi_dir = portable_roi
+    ROI_DIR = os.path.abspath(roi_dir) if roi_dir else ""
     if not REVIEWER_ID:
         print("[LỖI] Bắt buộc truyền --reviewer để không trộn kết quả nhiều người.")
         sys.exit(1)
@@ -912,12 +920,20 @@ def main():
         print(f"[LỖI] Không thấy manifest: {args.csv}")
         sys.exit(1)
     media_index = None
-    if args.media_root:
-        if not os.path.isdir(args.media_root):
-            print(f"[LỖI] --media_root không phải thư mục: {args.media_root}")
+    media_root = args.media_root
+    if not media_root:
+        csv_dir = os.path.dirname(os.path.abspath(args.csv))
+        sibling_media = os.path.join(csv_dir, "media")
+        if os.path.isdir(sibling_media):
+            media_root = sibling_media
+        elif any(name.lower().endswith(".mp4") for name in os.listdir(csv_dir)):
+            media_root = csv_dir
+    if media_root:
+        if not os.path.isdir(media_root):
+            print(f"[LỖI] --media_root không phải thư mục: {media_root}")
             sys.exit(1)
-        media_index, dup = index_media(args.media_root)
-        print(f"Media    : quét {args.media_root} -> {len(media_index)} file .mp4"
+        media_index, dup = index_media(media_root)
+        print(f"Media    : quét {media_root} -> {len(media_index)} file .mp4"
               + (f" ({dup} tên trùng bị bỏ qua)" if dup else ""))
 
     global CLIPS, ALL_ROWS
@@ -929,7 +945,7 @@ def main():
               f"không phải reviewer '{REVIEWER_ID}'.")
         sys.exit(1)
     for i, r in enumerate(ALL_ROWS):
-        FILEPATH_BY_ID[r["clip_id"]] = r.get(PATH_COL, "")
+        FILEPATH_BY_ID[r["clip_id"]] = r["clip_id"] + ".mp4"
         ORDER_BY_ID[r["clip_id"]] = i
 
     # Lọc kênh TRƯỚC khi lấy mẫu: làm ngược lại thì --sample N kèm --exclude_channel
@@ -984,11 +1000,11 @@ def main():
     if miss:
         # Thiếu gần hết = gần như chắc chắn sai gốc đường dẫn, không phải thiếu vài file.
         print(f"[CẢNH BÁO] {miss}/{len(CLIPS)} clip không thấy trên đĩa.")
-        if not args.media_root:
+        if not media_root:
             print("           Manifest ghi đường dẫn tuyệt đối của máy dựng manifest. "
-                  "Nếu đang review trên máy khác, truyền --media_root <thư mục chứa clip>.")
+                  "Đặt media/ cạnh assignment hoặc truyền --media_root.")
         elif miss > len(CLIPS) // 2:
-            print(f"           --media_root='{args.media_root}' có thể trỏ sai chỗ, "
+            print(f"           media_root='{media_root}' có thể trỏ sai chỗ, "
                   "hoặc chưa tải đủ media của assignment này.")
     print(f"Reviewer : {REVIEWER_ID or '(chưa đặt)'} | rubric {RUBRIC_VERSION}")
     print(f"Compare  : code KEEP {len(CODE_KEEP)} | code GATE-REJECT {len(CODE_GATE)}"

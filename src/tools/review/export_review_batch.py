@@ -1,15 +1,14 @@
 """
 export_review_batch.py — Gom clip gốc của một manifest vào MỘT thư mục để phát cho reviewer.
 
-Vì sao cần: 3.001 clip trong `all_clean` nằm rải 7 thư mục tier bên trong
-`data/01_collect/cut_clips/` (23 GiB), lẫn với clip đã bị gate loại. Gửi cả ba thư
-mục tier lên Drive là tải thừa ~16 GiB clip không ai review.
+Vì sao cần: chỉ gửi đúng các clip đã giao cho một reviewer thay vì chuyển toàn bộ
+dataset cho mọi thành viên.
 
-Copy theo `clip_id`, đặt tên `<clip_id>.mp4` phẳng — khớp cách `clip_review.py
---media_root` tra file, nên reviewer để thư mục ở đâu cũng chạy.
+Copy theo `clip_id`, đặt tên `<clip_id>.mp4` phẳng và tạo một assignment portable
+ngay trong thư mục output. Người review có thể giải nén ở bất kỳ đâu.
 
 CÁCH DÙNG (từ thư mục gốc dự án):
-  python src/tools/review/export_review_batch.py --out_dir data/01_collect/final_clips_batch1
+  python src/tools/review/export_review_batch.py --csv <assignment.csv> --out_dir <reviewer_folder>
 """
 
 import argparse
@@ -71,6 +70,21 @@ def main():
     print(f"Thư mục đích: {n_out} file, {size_out / 2**30:.2f} GiB")
     if n_out != len(rows):
         raise SystemExit(f"[LỖI] Đích có {n_out} file, manifest có {len(rows)}")
+
+    portable_path = os.path.join(args.out_dir, os.path.basename(args.csv))
+    portable_rows = []
+    for row in rows:
+        portable = dict(row)
+        portable[args.col] = row["clip_id"] + ".mp4"
+        portable_rows.append(portable)
+    fields = list(rows[0])
+    partial = portable_path + ".partial"
+    with open(partial, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(portable_rows)
+    os.replace(partial, portable_path)
+    print(f"Assignment portable: {portable_path}")
 
 
 if __name__ == "__main__":

@@ -14,4 +14,4 @@ File không có số là phần xử lý mà các bước này gọi. `build_rev
 
 Trước bước 05 của pipeline, mở `data/manifests/dataset_v1/reviewed_clips.csv`, bổ sung `speaker_id` nhất quán giữa mọi tập (và speaker_ids nếu liên quan nhiều người). Giao diện hiện chỉ review chất lượng, **chưa tự gán danh tính người nói**. Giữ source_video/canonical_source_id để kiểm tra leakage. Review pass chưa đồng nghĩa clip đã sẵn sàng train.
 
-Đường dẫn kết quả nằm trong `data/manifests/dataset_v1/reviews/`; preview trong `cache/previews/dataset_v1/`. Chuyển media cho người khác không tự chuyển đường dẫn tuyệt đối của máy: giao diện hỗ trợ `--media_root <thư-mục-media>` khi cần. Bộ rubric cũ được giữ nhưng ngưỡng chất lượng phải rà trên nguồn mới.
+Đường dẫn kết quả nằm trong `data/manifests/dataset_v1/reviews/`; preview trong `cache/previews/dataset_v1/`. Bước 05 tạo assignment portable cạnh các MP4. Người nhận chỉ cần giải nén và chạy `python -m src.tools.review.clip_review --csv <folder>/assignment_<tên>.csv --reviewer <tên>`; giao diện tự tìm media và ghi `review_<tên>.csv` trong cùng folder. Bộ rubric cũ được giữ nhưng ngưỡng chất lượng phải rà trên nguồn mới.

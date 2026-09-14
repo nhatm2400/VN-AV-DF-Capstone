@@ -5,8 +5,8 @@ DATASET_VERSION = 'dataset_v1'
 DOWNLOAD_RUN = 'download_001'  # Rerun to resume; change when selecting a different source list.
 CUT_RUN = 'cut_001'
 SOURCE_GROUP = 'podcast'  # Fallback when a video has no tier; not a license label.
-REVIEWERS = ['member_1', 'member_2', 'member_3']
-REVIEWER = 'member_1'  # Set your own name before opening review.
+REVIEWERS = ['nguyenvanlinh', 'nguyenlamanh', 'nguyenminhnhat']
+REVIEWER = 'nguyenlamanh'  # Set your own name before opening review.
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCES = ROOT / 'data' / 'sources' / DATASET_VERSION
