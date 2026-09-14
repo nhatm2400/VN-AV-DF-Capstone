@@ -754,7 +754,7 @@ function render(){
   changingClip=true;
   v.pause();rv.pause();expectedSeeks.delete(v);expectedSeeks.delete(rv);
   v.src='/video?i='+S.i+'&t='+Date.now();v.load();
-  v.muted=Boolean(c.has_roi);rv.muted=false;
+  v.muted=Boolean(c.has_roi);
   rv.style.display=c.has_roi?'block':'none';
   document.getElementById('noroi').style.display=c.has_roi?'none':'block';
   if(c.has_roi){rv.src='/roi?i='+S.i+'&t='+Date.now();rv.load();}
