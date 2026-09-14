@@ -1,0 +1,51 @@
+{
+  "schema": "manual_review_assignment_v1",
+  "review_mode": "multi_reviewer",
+  "reviewer_count": 3,
+  "manifest": "E:/FPTU/PRJ/VN-AV-DF-Capstone/data/manifests/dataset_v1/clips.csv",
+  "calibration_source": null,
+  "seed": 42,
+  "reviewers": [
+    "nguyenvanlinh",
+    "nguyenlamanh",
+    "nguyenminhnhat"
+  ],
+  "manifest_clips": 2252,
+  "calibration_clips_per_reviewer": 0,
+  "primary_clips_disjoint": 2252,
+  "outputs": [
+    {
+      "reviewer": "nguyenvanlinh",
+      "path": "E:/FPTU/PRJ/VN-AV-DF-Capstone/data/manifests/dataset_v1/reviews/assignments/assignment_nguyenvanlinh.csv",
+      "calibration": 0,
+      "primary": 751,
+      "total": 751,
+      "tiers_primary": {
+        "podcast": 751
+      },
+      "sources_primary": 18
+    },
+    {
+      "reviewer": "nguyenlamanh",
+      "path": "E:/FPTU/PRJ/VN-AV-DF-Capstone/data/manifests/dataset_v1/reviews/assignments/assignment_nguyenlamanh.csv",
+      "calibration": 0,
+      "primary": 751,
+      "total": 751,
+      "tiers_primary": {
+        "podcast": 751
+      },
+      "sources_primary": 18
+    },
+    {
+      "reviewer": "nguyenminhnhat",
+      "path": "E:/FPTU/PRJ/VN-AV-DF-Capstone/data/manifests/dataset_v1/reviews/assignments/assignment_nguyenminhnhat.csv",
+      "calibration": 0,
+      "primary": 750,
+      "total": 750,
+      "tiers_primary": {
+        "podcast": 750
+      },
+      "sources_primary": 18
+    }
+  ]
+}

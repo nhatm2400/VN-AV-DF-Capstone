@@ -39,15 +39,11 @@ cache/**
 !cache/README.md
 weights/**
 !weights/README.md
-data/raw/
 data/real/
-data/generated/
-data/compressed/
-data/rights_evidence/
-data/sources/
-data/manifests/
-# Dataset manifests need an explicit review before adding to shared Git.
-# Public template headers live in configs/templates instead.
+# Share data metadata and review CSVs; media remains on Drive.
+data/**/*.zip
+data/**/*.7z
+data/**/*.rar
 experiments/**/checkpoints/
 experiments/**/*.log
 

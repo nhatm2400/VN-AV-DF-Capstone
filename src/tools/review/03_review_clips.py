@@ -6,6 +6,11 @@ from src.data.preparation._run import run
 from src.data.preparation.settings import REVIEWS, REVIEWER, PREVIEWS
 
 if __name__ == '__main__':
-    run('src.tools.review.clip_review', ['--csv', REVIEWS / 'assignments' / f'assignment_{REVIEWER}.csv',
-        '--out', REVIEWS / 'results' / f'review_{REVIEWER}.csv', '--reviewer', REVIEWER,
-        '--roi_dir', PREVIEWS])
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--reviewer', default=REVIEWER)
+    reviewer = parser.parse_known_args()[0].reviewer
+    package = REVIEWS / 'exports' / 'clips' / reviewer
+    run('src.tools.review.clip_review', ['--csv', package / f'assignment_{reviewer}.csv',
+        '--out', package / f'review_{reviewer}.csv', '--reviewer', reviewer,
+        '--roi_dir', package / 'roi' if (package / 'roi').is_dir() else PREVIEWS])

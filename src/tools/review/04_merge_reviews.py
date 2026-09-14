@@ -9,6 +9,6 @@ if __name__ == '__main__':
     run('src.tools.review.merge_review_results', [
         '--manifest', MANIFESTS / 'clips.csv',
         '--assignments', *[REVIEWS / 'assignments' / f'assignment_{name}.csv' for name in REVIEWERS],
-        '--results', *[REVIEWS / 'results' / f'review_{name}.csv' for name in REVIEWERS],
+        '--results', *[REVIEWS / 'exports' / 'clips' / name / f'review_{name}.csv' for name in REVIEWERS],
         '--out_dir', REVIEWS / 'merged', '--final_clean', MANIFESTS / 'reviewed_clips.csv'])
     print('Before data/05: fill consistent speaker_id in reviewed_clips.csv across ALL episodes.')
