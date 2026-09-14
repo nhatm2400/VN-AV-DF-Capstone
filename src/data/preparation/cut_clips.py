@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import wave
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -389,6 +390,16 @@ _READ_AUDIO = None
 _GPU_ID = 0
 
 
+def read_vad_wav(path):
+    """Read the PCM16 mono 16 kHz WAV produced by extract_audio, without TorchCodec."""
+    import torch
+    with wave.open(str(path), 'rb') as handle:
+        if (handle.getnchannels(), handle.getsampwidth(), handle.getframerate()) != (1, 2, 16000):
+            raise ValueError('VAD input must be PCM16 mono 16 kHz WAV from extract_audio')
+        samples = np.frombuffer(handle.readframes(handle.getnframes()), dtype='<i2')
+    return torch.from_numpy(samples.astype(np.float32) / 32768.0)
+
+
 def init_worker(config_dict, gpu_counter, num_gpus):
     global _CONFIG, _FACE_MODEL, _VAD_MODEL, _GET_SPEECH, _READ_AUDIO, _GPU_ID
     import torch
@@ -412,7 +423,8 @@ def init_worker(config_dict, gpu_counter, num_gpus):
         trust_repo=True,
     )
     _VAD_MODEL = vad_model.to(device).eval()
-    _GET_SPEECH, _, _READ_AUDIO, _, _ = utils
+    _GET_SPEECH = utils[0]
+    _READ_AUDIO = read_vad_wav
 
 
 def _attempts_text(attempts):
