@@ -16,6 +16,12 @@ Trước bước 05 của pipeline, mở `data/manifests/dataset_v1/reviewed_cli
 
 ## Review và đồng bộ bằng Git
 
+Ngưỡng 800 ms liên tục hoặc 500 ms + 20% thời lượng lời nói chỉ là cảnh báo:
+Reject ngắn hơn vẫn được lưu và merge nếu có interval hợp lệ cùng lý do.
+Kết quả rubric v3 cũ vẫn đọc được; thay đổi này nới điều kiện lưu, không tự đổi
+quyết định đã có. Video gốc và ROI đồng bộ tua/phát/dừng/tốc độ; A/B lấy thời gian
+video gốc. Đây là đồng bộ trình phát, không sửa lệch audio/video có sẵn trong file.
+
 Pull nhánh `codex/research-reset`. Giải nén video từ Drive vào
 `data/manifests/dataset_v1/reviews/exports/clips/<tên>/`, cạnh assignment có sẵn.
 Không tạo thêm một folder tên người bên trong folder đó. Có thể đặt video vào

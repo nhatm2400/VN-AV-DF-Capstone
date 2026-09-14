@@ -184,7 +184,7 @@ def main():
                 except (TypeError, ValueError):
                     voiced_ms = 0
             if decision == "reject" and not intervals_are_material(intervals, voiced_ms):
-                raise SystemExit(f"[LỖI] Reject chưa đạt duration rule v3: {reviewer}/{cid}")
+                print(f"[NHẮC] Reject có đoạn lỗi ngắn, vẫn chấp nhận: {reviewer}/{cid}")
             actual[key] = row
 
     missing = sorted(set(expected) - set(actual))
@@ -255,8 +255,7 @@ def main():
                     except (TypeError, ValueError):
                         voiced_ms = 0
                 if decision == "reject" and not intervals_are_material(intervals, voiced_ms):
-                    unresolved.append(row)
-                    continue
+                    print(f"[NHẮC] Phân xử Reject đoạn lỗi ngắn, vẫn chấp nhận: {row['clip_id']}")
                 reason = longest_reason(intervals) if decision == "reject" else ""
                 resolved[row["clip_id"]] = (decision, reason, intervals)
                 resolved_from_resolution += 1

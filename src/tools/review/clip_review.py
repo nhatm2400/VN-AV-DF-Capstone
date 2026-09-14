@@ -454,9 +454,9 @@ class Handler(BaseHTTPRequestHandler):
                 voiced_ms = 0
             if not voiced_ms:
                 voiced_ms = duration_ms
+            warning = ""
             if dec == "reject" and not intervals_are_material(intervals, voiced_ms):
-                self._json({"ok": False, "err": "đoạn lỗi chưa đạt 800 ms liên tục hoặc 500 ms + 20% voiced"}, 400)
-                return
+                warning = "Đã lưu Reject. Đoạn lỗi ngắn hơn ngưỡng tham khảo; hãy bảo đảm lý do loại rõ ràng."
             cid = CLIPS[i]["clip_id"]
             with LOCK:
                 if dec in DECISIONS_VALID:
@@ -474,6 +474,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 save_decisions()
             self._json({"ok": True, "counts": counts(),
+                        "warning": warning,
                         "reason": REASON.get(cid, ""),
                         "bad_intervals": BAD_INTERVALS.get(cid, [])})
         else:
@@ -658,9 +659,10 @@ label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px
       <b>K</b> keep · <b>C</b> chưa chắc · <b>A</b>/<b>B</b> đặt biên ·
       <b>1</b>–<b id="nreason">7</b> thêm interval theo lý do ·
       <b>U</b> bỏ · <b>←</b>/<b>→</b> chuyển · <b>Space</b> phát lại<br>
-      Reject BẮT BUỘC có interval đạt quy tắc thời lượng của rubric v3.
+      Reject cần đoạn lỗi và lý do. Ngưỡng 0,8s chỉ để nhắc xem lại, không chặn lưu.
     </div>
     <div class="warn" id="missing" style="display:none">⚠ Không tìm thấy file trên đĩa.</div>
+    <div class="warn" id="reviewNotice" role="status"></div>
   </div>
   <div class="side">
     <div class="row">Trạng thái: <span id="badge" class="badge b-none">chưa đánh dấu</span></div>
@@ -679,6 +681,48 @@ label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px
 </main>
 <script>
 let S={clips:[],i:0,has_compare:false,reasons:[],draftStart:null,draftEnd:null,intervals:[]};
+// Two-way controls; ignore seeking events caused by our own synchronization.
+const originalVideo=document.getElementById('vid');
+const roiVideo=document.getElementById('roivid');
+let changingClip=false;
+const expectedSeeks=new WeakMap();
+function hasRoi(){return Boolean(S.clips[S.i]?.has_roi);}
+function alignTime(source,target){
+  if(target.readyState<1)return;
+  const time=Math.min(source.currentTime,Number.isFinite(target.duration)?target.duration:source.currentTime);
+  if(Math.abs(target.currentTime-time)>0.03){
+    expectedSeeks.set(target,time);target.currentTime=time;
+  }
+}
+for(const [source,target] of [[originalVideo,roiVideo],[roiVideo,originalVideo]]){
+  source.addEventListener('seeking',()=>{
+    if(changingClip||!hasRoi())return;
+    const expected=expectedSeeks.get(source);
+    if(expected!==undefined&&Math.abs(source.currentTime-expected)<0.05)return;
+    expectedSeeks.delete(source);alignTime(source,target);
+  });
+  source.addEventListener('seeked',()=>expectedSeeks.delete(source));
+  source.addEventListener('play',()=>{
+    if(changingClip||!hasRoi())return;
+    alignTime(source,target);
+    if(target.paused)target.play().catch(()=>{});
+  });
+  source.addEventListener('pause',()=>{
+    if(!changingClip&&hasRoi()&&source.paused&&!target.paused)target.pause();
+  });
+  source.addEventListener('ratechange',()=>{
+    if(!changingClip&&hasRoi()&&target.playbackRate!==source.playbackRate)
+      target.playbackRate=source.playbackRate;
+  });
+  source.addEventListener('loadedmetadata',()=>{
+    if(!changingClip&&hasRoi())alignTime(originalVideo,roiVideo);
+  });
+}
+originalVideo.addEventListener('timeupdate',()=>{
+  if(!changingClip&&hasRoi()&&!originalVideo.paused&&!originalVideo.seeking&&!roiVideo.seeking
+      &&Math.abs(originalVideo.currentTime-roiVideo.currentTime)>0.15)
+    alignTime(originalVideo,roiVideo);
+});
 function fmt(v,d=3){if(v===undefined||v===null||v==="")return "—";let n=Number(v);return isNaN(n)?v:n.toFixed(d);}
 async function load(){
   let r=await fetch('/api/state');let j=await r.json();
@@ -706,12 +750,17 @@ function render(){
   document.getElementById('pos').textContent=S.i+1;
   document.getElementById('jump').value=S.i+1;
   let v=document.getElementById('vid');
-  v.src='/video?i='+S.i+'&t='+Date.now();v.load();v.play().catch(()=>{});
   let rv=document.getElementById('roivid');
+  changingClip=true;
+  v.pause();rv.pause();expectedSeeks.delete(v);expectedSeeks.delete(rv);
+  v.src='/video?i='+S.i+'&t='+Date.now();v.load();
+  v.muted=Boolean(c.has_roi);rv.muted=false;
   rv.style.display=c.has_roi?'block':'none';
   document.getElementById('noroi').style.display=c.has_roi?'none':'block';
-  if(c.has_roi){rv.src='/roi?i='+S.i+'&t='+Date.now();rv.load();rv.play().catch(()=>{});}
-  else{rv.removeAttribute('src');}
+  if(c.has_roi){rv.src='/roi?i='+S.i+'&t='+Date.now();rv.load();}
+  else{rv.removeAttribute('src');rv.load();}
+  changingClip=false;
+  v.play().catch(()=>{});
   document.getElementById('missing').style.display=c.exists?'none':'block';
   // motion thấp -> tô cảnh báo, nhắc người review nhìn kỹ xem có phải ảnh tĩnh
   let mm=(c.motion_median===undefined||c.motion_median==='')?null:Number(c.motion_median);
@@ -740,8 +789,7 @@ function render(){
   else{b.className='badge b-none';b.textContent='chưa đánh dấu';}
 }
 function setBoundary(which){
-  let v=document.getElementById('roivid');
-  if(!v.src||!isFinite(v.currentTime))v=document.getElementById('vid');
+  let v=document.getElementById('vid');
   let ms=Math.max(0,Math.round((v.currentTime||0)*1000));
   if(which==='start')S.draftStart=ms;else S.draftEnd=ms;
   renderIntervals();
@@ -770,6 +818,7 @@ async function mark(dec){
         body:JSON.stringify({i:S.i,decision:dec,bad_intervals:dec==='reject'?S.intervals:[]})});
   let j=await r.json();
   if(!j.ok){alert(j.err||'lỗi');return;}
+  document.getElementById('reviewNotice').textContent=j.warning?`${c.clip_id}: ${j.warning}`:'';
   if(j.counts)setCounts(j.counts);
   c.dec=(dec==='unset')?'':dec;
   c.bad_intervals=j.bad_intervals||[];

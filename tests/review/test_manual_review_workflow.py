@@ -167,7 +167,7 @@ class ManualReviewWorkflowTest(unittest.TestCase):
                         "decision": decision,
                         "reason": "static" if decision == "reject" else "",
                         "bad_intervals_json": (
-                            '[{"start_ms":1000,"end_ms":2000,"reason":"static"}]'
+                            '[{"start_ms":1000,"end_ms":1200,"reason":"static"}]'
                             if decision == "reject" else "[]"
                         ),
                         "reviewer_id": reviewer,

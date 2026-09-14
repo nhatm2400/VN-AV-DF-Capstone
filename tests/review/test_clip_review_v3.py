@@ -1,5 +1,8 @@
 import importlib.util
 import unittest
+import io
+import json
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 
@@ -15,6 +18,28 @@ def load_module():
 
 
 class ClipReviewV3Test(unittest.TestCase):
+    def test_short_reject_is_saved_with_warning_but_empty_reject_is_blocked(self):
+        module = load_module()
+        module.CLIPS = [{'clip_id': 'short', 'duration': 5}]
+        module.REVIEWER_ID = 'tester'
+        handler = object.__new__(module.Handler)
+        handler.path = '/api/mark'
+        for intervals, accepted in [([{'start_ms': 100, 'end_ms': 300, 'reason': 'mouth'}], True), ([], False)]:
+            body = json.dumps(dict(i=0, decision='reject', bad_intervals=intervals)).encode()
+            handler.headers = {'Content-Length': str(len(body))}
+            handler.rfile = io.BytesIO(body)
+            handler._json = Mock()
+            with patch.object(module, 'save_decisions') as save:
+                handler.do_POST()
+            response = handler._json.call_args.args[0]
+            self.assertEqual(response['ok'], accepted)
+            if accepted:
+                self.assertTrue(response['warning'])
+                save.assert_called_once()
+                self.assertEqual(module.DECISIONS['short'], 'reject')
+            else:
+                save.assert_not_called()
+
     def test_normalizes_intervals_and_derives_longest_reason(self):
         module = load_module()
         intervals = module.normalize_bad_intervals([
