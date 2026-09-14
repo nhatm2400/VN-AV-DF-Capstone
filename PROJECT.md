@@ -23,8 +23,8 @@ Cập nhật 13/09/2026. Hướng hiện hành: **lip-sync audio–visual tiến
 | Active-speaker / gom người tự động | Công cụ tùy chọn được giữ; chưa chạy lại model ngoài hoặc calibrate ngưỡng cho population mới. |
 | Nén real/fake | Có CLI và smoke bằng media tổng hợp, không phải kết quả nghiên cứu. |
 | Generator Wav2Lip/MuseTalk/ứng viên giữ riêng | Đề xuất; chưa tích hợp và benchmark. |
-| AV-HuBERT | Ứng viên; chưa nạp checkpoint trên luồng mới. |
-| Detector Y và cải tiến X | Có detector tối thiểu và train_step dùng chung, X thêm consistency; chỉ smoke giả lập, chưa train nghiên cứu. |
+| AV-HuBERT | Có adapter cho hai nhánh pre-fusion của model đã nạp; mới test với backbone giả lập, chưa nạp checkpoint thật hoặc xử lý media đầu vào. |
+| Detector Y và cải tiến X | Có detector, loader feature pairs, train/validation theo epoch và lưu checkpoint; X thêm consistency. Chỉ kiểm chứng bằng feature giả lập, chưa train nghiên cứu. |
 | Final test và demo detector | Chưa thực hiện. |
 
 ## Quyết định nghiên cứu

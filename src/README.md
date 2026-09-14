@@ -9,9 +9,9 @@
 | [data/](data/README.md) | Các bước chạy 01–06, settings và logic thu thập, tải, cắt, manifest, split, nén, quality | Có code |
 | [tools/review/](tools/review/README.md) | Xem/nghe clip, phân công và gộp review | Có code và file chạy có số |
 | [generators/](generators/README.md) | Tạo lip-sync fake | Khung thư mục |
-| [features/](features/README.md) | Chuẩn bị audio/vùng miệng, trích đặc trưng cho model | Khung thư mục |
+| [features/](features/README.md) | Chuẩn bị audio/vùng miệng, trích đặc trưng cho model | Adapter AV-HuBERT pre-fusion; chưa nạp checkpoint thật hoặc preprocess media |
 | [models/](models/README.md) | Detector nhận audio/visual features | Có detector.py và 01_smoke_test.py; backbone chưa có |
-| [training/](training/README.md) | Học nhãn và consistency cho X/Y | Có train_step; loader/epoch/checkpoint chưa có |
+| [training/](training/README.md) | Học nhãn và consistency cho X/Y | Loader paired features, train/validation theo epoch, best checkpoint; kiểm chứng giả lập |
 | [evaluation/](evaluation/README.md) | Dự đoán và đánh giá | Có predict_batch, check_shortcuts.py; metrics/protocol chưa có |
 
 Luồng dự kiến: dữ liệu đã chia split → tạo fake → tạo các bản nén → chuẩn bị audio/visual → train detector → đánh giá. Hiện chỉ kiểm tra đoạn detector/train_step/predict bằng feature giả lập; generator, extractor và thí nghiệm thật chưa có.

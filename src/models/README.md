@@ -10,4 +10,4 @@ Chứa phần định nghĩa/nạp backbone, kết hợp đặc trưng audio và
 
 Baseline Y và phương pháp X dùng cùng cấu trúc detector. Theo hướng hiện tại, khác biệt chính của X là thêm yêu cầu nhất quán giữa các bản nén trong lúc huấn luyện; phần đó thuộc `src/training/`, không cần tạo hai kiến trúc khác nhau chỉ vì có tên X/Y.
 
-Vòng lặp train ở `src/training/`, tính chỉ số ở `src/evaluation/`. Checkpoint tải về nằm trong `weights/`; checkpoint của từng lần train nằm trong `experiments/<run_id>/checkpoints/`.
+Vòng lặp train ở `src/training/01_train.py`, tính chỉ số ở `src/evaluation/`. Checkpoint tải về nằm trong `weights/`; CLI train lưu checkpoint tại `experiments/<run_id>/best.pt` khi chọn thư mục output tương ứng.
