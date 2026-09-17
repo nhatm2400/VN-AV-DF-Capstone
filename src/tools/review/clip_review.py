@@ -78,7 +78,7 @@ except Exception:
 
 # ----- rubric -----
 # Đổi nội dung/ý nghĩa lý do -> TĂNG version, vì quyết định cũ không còn so sánh được.
-RUBRIC_VERSION = "v3"
+RUBRIC_VERSION = "v4"
 REASONS = [
     ("static",     "Ảnh tĩnh / miệng không động"),
     ("voiceover",  "Người trong hình không nói — tiếng của người ngoài hình"),
@@ -275,7 +275,7 @@ def load_decisions(out_path):
                 REVIEWER[cid] = r.get("reviewer_id", "") or ""
                 rv = r.get("rubric_version", "") or ""
                 RUBRIC[cid] = rv
-                if rv and rv != RUBRIC_VERSION:
+                if rv and rv not in {"v3", RUBRIC_VERSION}:
                     other_rubric.add(rv)
     if other_rubric:
         print(f"[CẢNH BÁO] File output có quyết định theo rubric {sorted(other_rubric)}, "
@@ -437,8 +437,9 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self._json({"ok": False, "err": str(error)}, 400)
                 return
-            if dec == "reject" and not intervals:
-                self._json({"ok": False, "err": "rubric v3: reject phải có ít nhất một interval lỗi"}, 400)
+            reason = data.get("reason") or longest_interval_reason(intervals)
+            if dec == "reject" and reason not in REASON_KEYS:
+                self._json({"ok": False, "err": "Hãy chọn lý do Reject hợp lệ"}, 400)
                 return
             duration_ms = 0
             try:
@@ -455,14 +456,14 @@ class Handler(BaseHTTPRequestHandler):
             if not voiced_ms:
                 voiced_ms = duration_ms
             warning = ""
-            if dec == "reject" and not intervals_are_material(intervals, voiced_ms):
+            if dec == "reject" and intervals and not intervals_are_material(intervals, voiced_ms):
                 warning = "Đã lưu Reject. Đoạn lỗi ngắn hơn ngưỡng tham khảo; hãy bảo đảm lý do loại rõ ràng."
             cid = CLIPS[i]["clip_id"]
             with LOCK:
                 if dec in DECISIONS_VALID:
                     DECISIONS[cid] = dec
                     BAD_INTERVALS[cid] = intervals if dec == "reject" else []
-                    REASON[cid] = longest_interval_reason(intervals) if dec == "reject" else ""
+                    REASON[cid] = reason if dec == "reject" else ""
                     TS[cid] = now()
                     REVIEWER[cid] = REVIEWER_ID
                     RUBRIC[cid] = RUBRIC_VERSION
@@ -592,9 +593,6 @@ button{cursor:pointer;border:0;border-radius:8px;padding:11px 14px;font-size:14p
 .rgrid button{background:#3a2422;border:1px solid var(--rej);color:#f2b3ae;font-size:13px;font-weight:500;text-align:left;padding:9px 11px}
 .rgrid button:hover{background:var(--rej);color:#fff}
 .rgrid button i{font-style:normal;color:#fff;background:var(--rej);border-radius:4px;padding:0 6px;margin-right:7px;font-weight:700}
-.interval-tools{border:1px solid #39404d;border-radius:8px;padding:10px;margin-top:10px}
-.interval-list{font-size:12px;color:#cfd6e4;margin:7px 0;line-height:1.7}
-.interval-list button{padding:2px 7px;background:#4a2a28;font-size:11px;margin-left:7px}
 .reject-final{background:var(--rej);width:100%;margin-top:7px}
 .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700}
 .b-keep{background:rgba(46,158,91,.18);color:#67d699;border:1px solid #2e9e5b}
@@ -615,6 +613,9 @@ table.cmp td.mut{color:#8a93a3}
 .warn{color:#e8b339;font-size:12px;margin-top:8px}
 label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px}
 .who{font-size:11px;color:var(--mut);border-top:1px solid #262a33;margin-top:10px;padding-top:8px}
+dialog{background:var(--panel);color:#e6e9ef;border:1px solid #555;border-radius:12px;width:min(620px,95vw);max-height:90vh;overflow:auto;padding:24px}
+dialog::backdrop{background:rgba(0,0,0,.7)}
+dialog button{min-height:44px}dialog button:focus-visible{outline:3px solid #edc069;outline-offset:2px}
 </style></head><body>
 <header>
   <h1>Clip Review — lọc tay</h1>
@@ -640,26 +641,22 @@ label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px
     </div>
     <div class="btns">
       <button class="keep" onclick="mark('keep')">✓ Keep (K)</button>
+      <button class="reject-final" onclick="openReject()">Reject (R)</button>
       <button class="unc" onclick="mark('uncertain')">? Chưa chắc (C)</button>
       <button class="nav" onclick="go(-1)">← Trước</button>
       <button class="nav" onclick="go(1)">Sau →</button>
       <button class="ghost" onclick="mark('unset')">Bỏ đánh dấu (U)</button>
     </div>
-    <div class="interval-tools">
-      <div class="row">
-        <button class="ghost" onclick="setBoundary('start')">Đặt đầu đoạn (A)</button>
-        <button class="ghost" onclick="setBoundary('end')">Đặt cuối đoạn (B)</button>
-        <span id="draft">chưa chọn đoạn</span>
-      </div>
+    <dialog id="rejectDialog" aria-labelledby="rejectTitle">
+      <h2 id="rejectTitle">Chọn lý do Reject</h2>
+      <p>Chọn một lý do để lưu và chuyển sang clip tiếp theo.</p>
       <div class="rgrid" id="rgrid"></div>
-      <div class="interval-list" id="intervals">Chưa có interval lỗi.</div>
-      <button class="reject-final" onclick="mark('reject')">Reject với các interval đã đánh dấu</button>
-    </div>
+      <button class="ghost" onclick="closeReject()">Hủy (Esc)</button>
+    </dialog>
     <div class="kbd">
-      <b>K</b> keep · <b>C</b> chưa chắc · <b>A</b>/<b>B</b> đặt biên ·
-      <b>1</b>–<b id="nreason">7</b> thêm interval theo lý do ·
-      <b>U</b> bỏ · <b>←</b>/<b>→</b> chuyển · <b>Space</b> phát lại<br>
-      Reject cần đoạn lỗi và lý do. Ngưỡng 0,8s chỉ để nhắc xem lại, không chặn lưu.
+      <b>K</b> keep · <b>R</b> reject · <b>C</b> chưa chắc ·
+      <b>1</b>–<b id="nreason">7</b> chọn lý do trong popup ·
+      <b>U</b> bỏ · <b>←</b>/<b>→</b> chuyển · <b>Space</b> phát lại
     </div>
     <div class="warn" id="missing" style="display:none">⚠ Không tìm thấy file trên đĩa.</div>
     <div class="warn" id="reviewNotice" role="status"></div>
@@ -680,7 +677,7 @@ label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px
   </div>
 </main>
 <script>
-let S={clips:[],i:0,has_compare:false,reasons:[],draftStart:null,draftEnd:null,intervals:[]};
+let S={clips:[],i:0,has_compare:false,reasons:[],saving:false};
 // Two-way controls; ignore seeking events caused by our own synchronization.
 const originalVideo=document.getElementById('vid');
 const roiVideo=document.getElementById('roivid');
@@ -732,7 +729,7 @@ async function load(){
   document.getElementById('who').textContent=j.reviewer||'(không đặt)';
   document.getElementById('rub').textContent=j.rubric;
   document.getElementById('rgrid').innerHTML=S.reasons.map((p,k)=>
-    `<button onclick="addInterval('${p[0]}')"><i>${k+1}</i>Thêm đoạn: ${p[1]}</button>`).join('');
+    `<button onclick="mark('reject','${p[0]}')"><i>${k+1}</i>${p[1]}</button>`).join('');
   document.getElementById('nreason').textContent=S.reasons.length;  // theo rubric, khong hard-code
   setCounts(j.counts);render();
 }
@@ -745,8 +742,6 @@ function setCounts(c){
 }
 function render(){
   let c=S.clips[S.i];if(!c)return;
-  S.intervals=Array.isArray(c.bad_intervals)?JSON.parse(JSON.stringify(c.bad_intervals)):[];
-  S.draftStart=null;S.draftEnd=null;renderIntervals();
   document.getElementById('pos').textContent=S.i+1;
   document.getElementById('jump').value=S.i+1;
   let v=document.getElementById('vid');
@@ -754,7 +749,11 @@ function render(){
   changingClip=true;
   v.pause();rv.pause();expectedSeeks.delete(v);expectedSeeks.delete(rv);
   v.src='/video?i='+S.i+'&t='+Date.now();v.load();
-  v.muted=Boolean(c.has_roi);
+  if(v.dataset.clipId!==c.clip_id){
+    v.muted=Boolean(c.has_roi);
+    rv.muted=false; // Reset sound only when entering a different clip.
+    v.dataset.clipId=c.clip_id;
+  }
   rv.style.display=c.has_roi?'block':'none';
   document.getElementById('noroi').style.display=c.has_roi?'none':'block';
   if(c.has_roi){rv.src='/roi?i='+S.i+'&t='+Date.now();rv.load();}
@@ -788,46 +787,36 @@ function render(){
   else if(d==='uncertain'){b.className='badge b-unc';b.textContent='CHƯA CHẮC';}
   else{b.className='badge b-none';b.textContent='chưa đánh dấu';}
 }
-function setBoundary(which){
-  let v=document.getElementById('vid');
-  let ms=Math.max(0,Math.round((v.currentTime||0)*1000));
-  if(which==='start')S.draftStart=ms;else S.draftEnd=ms;
-  renderIntervals();
+function openReject(){
+  if(S.saving||!S.clips[S.i])return;
+  originalVideo.pause();roiVideo.pause();
+  document.getElementById('rejectDialog').showModal();
 }
-function addInterval(reason){
-  if(S.draftStart===null||S.draftEnd===null||S.draftEnd<=S.draftStart){
-    alert('Hãy phát video, đặt đầu đoạn (A) rồi đặt cuối đoạn (B).');return;
-  }
-  S.intervals.push({start_ms:S.draftStart,end_ms:S.draftEnd,reason});
-  S.intervals.sort((a,b)=>a.start_ms-b.start_ms);S.draftStart=null;S.draftEnd=null;
-  renderIntervals();
+function closeReject(){if(!S.saving)document.getElementById('rejectDialog').close();}
+async function mark(dec,reason=''){
+  let c=S.clips[S.i];if(!c||S.saving)return;
+  if(dec==='reject'&&!reason){openReject();return;}
+  const dialog=document.getElementById('rejectDialog');
+  S.saving=true;
+  dialog.querySelectorAll('button').forEach(b=>b.disabled=true);
+  try{
+    let r=await fetch('/api/mark',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({i:S.i,decision:dec,reason,bad_intervals:[]})});
+    let j=await r.json();
+    if(!r.ok||!j.ok){alert(j.err||'Không lưu được. Hãy thử lại.');return;}
+    document.getElementById('reviewNotice').textContent=j.warning?`${c.clip_id}: ${j.warning}`:'';
+    if(j.counts)setCounts(j.counts);
+    c.dec=(dec==='unset')?'':dec;c.bad_intervals=j.bad_intervals||[];c.reason=j.reason||'';
+    if(dialog.open)dialog.close();
+    if((dec==='reject'||(dec!=='unset'&&document.getElementById('auto').checked))&&S.i+1<S.clips.length)S.i++;
+    render();
+  }catch(error){alert('Không lưu được kết quả. Hãy kiểm tra kết nối và thử lại.');}
+  finally{S.saving=false;dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
 }
-function removeInterval(index){S.intervals.splice(index,1);renderIntervals();}
-function renderIntervals(){
-  let draft=(S.draftStart===null?'?':(S.draftStart/1000).toFixed(2))+'s → '+
-            (S.draftEnd===null?'?':(S.draftEnd/1000).toFixed(2))+'s';
-  document.getElementById('draft').textContent=draft;
-  let labels=Object.fromEntries(S.reasons);
-  document.getElementById('intervals').innerHTML=S.intervals.length?S.intervals.map((x,i)=>
-    `${(x.start_ms/1000).toFixed(2)}–${(x.end_ms/1000).toFixed(2)}s · ${labels[x.reason]||x.reason}`+
-    `<button onclick="removeInterval(${i})">xóa</button>`).join('<br>'):'Chưa có interval lỗi.';
-}
-async function mark(dec){
-  let c=S.clips[S.i];if(!c)return;
-  let r=await fetch('/api/mark',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({i:S.i,decision:dec,bad_intervals:dec==='reject'?S.intervals:[]})});
-  let j=await r.json();
-  if(!j.ok){alert(j.err||'lỗi');return;}
-  document.getElementById('reviewNotice').textContent=j.warning?`${c.clip_id}: ${j.warning}`:'';
-  if(j.counts)setCounts(j.counts);
-  c.dec=(dec==='unset')?'':dec;
-  c.bad_intervals=j.bad_intervals||[];
-  c.reason=j.reason||'';
-  if(dec!=='unset'&&document.getElementById('auto').checked){go(1);}else{render();}
-}
-function go(d){let n=S.i+d;if(n<0||n>=S.clips.length)return;S.i=n;render();}
-function jumpTo(){let v=parseInt(document.getElementById('jump').value)-1;if(v>=0&&v<S.clips.length){S.i=v;render();}}
-function nextUndecided(){for(let k=S.i+1;k<S.clips.length;k++){if(!S.clips[k].dec){S.i=k;render();return;}}
+document.getElementById('rejectDialog').addEventListener('cancel',e=>{if(S.saving)e.preventDefault();});
+function go(d){if(S.saving)return;let n=S.i+d;if(n<0||n>=S.clips.length)return;S.i=n;render();}
+function jumpTo(){if(S.saving)return;let v=parseInt(document.getElementById('jump').value)-1;if(v>=0&&v<S.clips.length){S.i=v;render();}}
+function nextUndecided(){if(S.saving)return;for(let k=S.i+1;k<S.clips.length;k++){if(!S.clips[k].dec){S.i=k;render();return;}}
   for(let k=0;k<S.clips.length;k++){if(!S.clips[k].dec){S.i=k;render();return;}}}
 async function doCompare(){
   let el=document.getElementById('cmp');
@@ -854,9 +843,14 @@ async function doCompare(){
 }
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;
-  if(e.key>='1'&&e.key<='9'){let k=parseInt(e.key)-1;if(k<S.reasons.length)addInterval(S.reasons[k][0]);return;}
-  if(e.key==='a'||e.key==='A'){setBoundary('start');return;}
-  if(e.key==='b'||e.key==='B'){setBoundary('end');return;}
+  if(S.saving){e.preventDefault();return;}
+  if(document.getElementById('rejectDialog').open){
+    if(e.key>='1'&&e.key<='9'){
+      e.preventDefault();let k=parseInt(e.key)-1;if(k<S.reasons.length)mark('reject',S.reasons[k][0]);
+    }
+    return;
+  }
+  if(e.key==='r'||e.key==='R'){e.preventDefault();openReject();return;}
   if(e.key==='k'||e.key==='K')mark('keep');
   else if(e.key==='c'||e.key==='C')mark('uncertain');
   else if(e.key==='u'||e.key==='U')mark('unset');

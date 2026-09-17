@@ -4,7 +4,7 @@ Audit và gộp kết quả của một hoặc nhiều reviewer.
 Clip primary có đúng một reviewer. Clip calibration phải có kết quả của mọi reviewer;
 nếu không đồng thuận hoặc có nhãn uncertain thì được đưa vào needs_resolution.csv.
 Trong workflow một reviewer, người đó phải sửa nhãn uncertain trong file kết quả rồi
-chạy lại. Script chỉ xuất manual_clean_v3.csv khi coverage hoàn tất và không còn clip
+chạy lại. Script chỉ xuất manifest sạch khi coverage hoàn tất và không còn clip
 cần xử lý.
 """
 
@@ -119,12 +119,12 @@ def main():
     ap.add_argument("--results", nargs="+", required=True)
     ap.add_argument("--manifest",
                     default="data/manifests/dataset_v1/review.csv")
-    ap.add_argument("--rubric", default="v3")
+    ap.add_argument("--rubric", default="v4", choices=["v3", "v4"])
     ap.add_argument("--out_dir", default="data/manifests/dataset_v1/reviews/merged_v3")
     ap.add_argument("--resolution", "--adjudication", dest="resolution", default="",
                     help="needs_resolution.csv đã điền final_decision/final_reason/resolved_by")
     ap.add_argument("--final_clean",
-                    default="data/manifests/dataset_v1/manual_clean_v3.csv")
+                    default="data/manifests/dataset_v1/manual_clean_v4.csv")
     ap.add_argument("--allow_partial", action="store_true",
                     help="cho phép xuất manifest khi CHỦ Ý dừng sớm (đã đủ keep). "
                          "Chỉ gộp clip đã có phán quyết; summary ghi partial=true. "
@@ -166,12 +166,15 @@ def main():
                 raise SystemExit(f"[LỖI] Kết quả trùng: {reviewer}/{cid}")
             if decision not in VALID:
                 raise SystemExit(f"[LỖI] Decision không hợp lệ: {reviewer}/{cid}")
-            if row.get("rubric_version") != args.rubric:
+            allowed_rubrics = {"v3", "v4"} if args.rubric == "v4" else {"v3"}
+            if row.get("rubric_version") not in allowed_rubrics:
                 raise SystemExit(f"[LỖI] Sai rubric: {reviewer}/{cid}")
             intervals = parse_intervals(row)
-            if decision == "reject" and not intervals:
+            if decision == "reject" and row.get("reason", "") not in REASONS:
+                raise SystemExit(f"[LỖI] Reject thiếu lý do hợp lệ: {reviewer}/{cid}")
+            if decision == "reject" and row.get("rubric_version") == "v3" and not intervals:
                 raise SystemExit(f"[LỖI] Reject rubric v3 thiếu interval: {reviewer}/{cid}")
-            if decision == "reject" and row.get("reason", "") != longest_reason(intervals):
+            if decision == "reject" and intervals and row.get("reason", "") != longest_reason(intervals):
                 raise SystemExit(f"[LỖI] reason không khớp interval dài nhất: {reviewer}/{cid}")
             source = manifest_by_id[cid]
             try:
@@ -183,7 +186,7 @@ def main():
                     voiced_ms = int(round(float(source.get("duration", 0)) * 1000))
                 except (TypeError, ValueError):
                     voiced_ms = 0
-            if decision == "reject" and not intervals_are_material(intervals, voiced_ms):
+            if decision == "reject" and intervals and not intervals_are_material(intervals, voiced_ms):
                 print(f"[NHẮC] Reject có đoạn lỗi ngắn, vẫn chấp nhận: {reviewer}/{cid}")
             actual[key] = row
 
@@ -205,8 +208,12 @@ def main():
         if not rows:
             continue
         interval_match, consensus_intervals = intervals_agree(rows)
+        # v4 decides whole clips. Old interval annotations remain in source CSVs;
+        # do not invent consensus timestamps when some reviewers did not mark any.
+        reject_match = interval_match if all(r.get("rubric_version") == "v3" for r in rows) else (
+            len({r.get("reason", "") for r in rows}) == 1)
         if ("uncertain" in decisions or len(decisions) != 1 or not complete_calibration
-                or (decisions == {"reject"} and not interval_match)):
+                or (decisions == {"reject"} and not reject_match)):
             pending.append({
                 "clip_id": cid,
                 "file_path": manifest_by_id[cid].get("file_path", ""),
@@ -241,7 +248,8 @@ def main():
             resolved_by = final.get("resolved_by", "") or final.get("adjudicator", "")
             if decision in {"keep", "reject"} and resolved_by:
                 intervals = parse_intervals(final, "final_bad_intervals_json")
-                if decision == "reject" and not intervals:
+                reason = (final.get("final_reason") or longest_reason(intervals)) if decision == "reject" else ""
+                if decision == "reject" and (reason not in REASONS or (args.rubric == "v3" and not intervals)):
                     unresolved.append(row)
                     continue
                 source = manifest_by_id[row["clip_id"]]
@@ -254,9 +262,8 @@ def main():
                         voiced_ms = int(round(float(source.get("duration", 0)) * 1000))
                     except (TypeError, ValueError):
                         voiced_ms = 0
-                if decision == "reject" and not intervals_are_material(intervals, voiced_ms):
+                if decision == "reject" and intervals and not intervals_are_material(intervals, voiced_ms):
                     print(f"[NHẮC] Phân xử Reject đoạn lỗi ngắn, vẫn chấp nhận: {row['clip_id']}")
-                reason = longest_reason(intervals) if decision == "reject" else ""
                 resolved[row["clip_id"]] = (decision, reason, intervals)
                 resolved_from_resolution += 1
             else:
@@ -310,7 +317,7 @@ def main():
     clean = [dict(row, decision="keep") for row in clean]
     fields = list(dict.fromkeys([*manifest[0], "decision"]))
     write_csv(args.final_clean, clean, fields)
-    labels_path = os.path.join(args.out_dir, "review_labels_v3.csv")
+    labels_path = os.path.join(args.out_dir, f"review_labels_{args.rubric}.csv")
     label_rows = [{
         "clip_id": cid,
         "decision": decision,

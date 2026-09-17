@@ -16,11 +16,18 @@ Trước bước 05 của pipeline, mở `data/manifests/dataset_v1/reviewed_cli
 
 ## Review và đồng bộ bằng Git
 
-Ngưỡng 800 ms liên tục hoặc 500 ms + 20% thời lượng lời nói chỉ là cảnh báo:
-Reject ngắn hơn vẫn được lưu và merge nếu có interval hợp lệ cùng lý do.
-Kết quả rubric v3 cũ vẫn đọc được; thay đổi này nới điều kiện lưu, không tự đổi
-quyết định đã có. Video gốc và ROI đồng bộ tua/phát/dừng/tốc độ; A/B lấy thời gian
-video gốc. Đây là đồng bộ trình phát, không sửa lệch audio/video có sẵn trong file.
+Rubric v4: Keep giữ nguyên hành vi và tùy chọn tự chuyển. Bấm Reject (R) để mở
+popup, chọn một lý do (hoặc phím 1–7) sẽ lưu và chuyển clip tiếp theo, kể cả khi
+tắt tùy chọn tự chuyển của Keep. Hủy/Esc đóng popup mà không ghi nhãn. Không cần A/B.
+Clip cuối sẽ hiện trạng thái đã lưu và ở lại màn hình.
+
+Kết quả v3 cũ và các interval cũ vẫn được giữ, có thể tiếp tục cùng CSV với v4;
+không cần review lại. Bước merge mặc định nhận cả v3/v4, xuất review_labels_v4.csv.
+V4 không bắt buộc interval; nếu phân xử Reject, điền final_reason hợp lệ.
+Các clip calibration vẫn cần đủ reviewer; bất đồng Keep/Reject/lý do vẫn cần phân xử.
+Video gốc và ROI đồng bộ tua/phát/dừng/tốc độ. Đây là đồng bộ trình phát, không
+sửa lệch audio/video có sẵn trong file. Khởi động lại chương trình review và refresh
+trình duyệt sau khi cập nhật code.
 
 Pull nhánh `codex/research-reset`. Giải nén video từ Drive vào
 `data/manifests/dataset_v1/reviews/exports/clips/<tên>/`, cạnh assignment có sẵn.

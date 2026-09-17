@@ -18,6 +18,30 @@ def load_module():
 
 
 class ClipReviewV3Test(unittest.TestCase):
+    def test_reason_only_reject_v4_and_invalid_reason(self):
+        module = load_module()
+        module.CLIPS = [{'clip_id': 'clip', 'duration': 5}]
+        module.REVIEWER_ID = 'tester'
+        handler = object.__new__(module.Handler)
+        handler.path = '/api/mark'
+        for reason, accepted in [('mouth', True), ('not_a_reason', False), ('', False)]:
+            body = json.dumps(dict(i=0, decision='reject', reason=reason, bad_intervals=[])).encode()
+            handler.headers = {'Content-Length': str(len(body))}
+            handler.rfile = io.BytesIO(body)
+            handler._json = Mock()
+            with patch.object(module, 'save_decisions') as save:
+                handler.do_POST()
+            response = handler._json.call_args.args[0]
+            self.assertEqual(response['ok'], accepted)
+            if accepted:
+                self.assertEqual(response['reason'], 'mouth')
+                self.assertEqual(response['bad_intervals'], [])
+                self.assertFalse(response['warning'])
+                self.assertEqual(module.RUBRIC['clip'], 'v4')
+                save.assert_called_once()
+            else:
+                save.assert_not_called()
+
     def test_short_reject_is_saved_with_warning_but_empty_reject_is_blocked(self):
         module = load_module()
         module.CLIPS = [{'clip_id': 'short', 'duration': 5}]
