@@ -24,7 +24,7 @@ except Exception:
 
 
 VALID = {"keep", "reject", "uncertain"}
-REASONS = {"static", "voiceover", "dubbed", "wrong_face", "mouth", "cut", "broken"}
+REASONS = {"static", "voiceover", "dubbed", "wrong_face", "mouth", "cut", "broken", "small_face"}
 
 
 def parse_intervals(row, field="bad_intervals_json"):

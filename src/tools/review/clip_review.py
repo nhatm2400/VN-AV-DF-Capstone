@@ -87,6 +87,7 @@ REASONS = [
     ("mouth",      "Miệng bị che / nghiêng quá / ra khỏi ô ROI"),
     ("cut",        "Có chuyển cảnh (chỉ mô tả; thêm static/voiceover nếu đúng)"),
     ("broken",     "Lỗi file / audio hỏng / quá ít tiếng nói"),
+    ("small_face", "Mặt quá nhỏ / PiP / Outro — dễ nhiễu"),
 ]
 REASON_KEYS = [k for k, _ in REASONS]
 DECISIONS_VALID = ("keep", "reject", "uncertain")
@@ -615,15 +616,37 @@ table.cmp td.mut{color:#8a93a3}
 .warn{color:#e8b339;font-size:12px;margin-top:8px}
 label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px}
 .who{font-size:11px;color:var(--mut);border-top:1px solid #262a33;margin-top:10px;padding-top:8px}
+.list-panel{margin-top:14px;border-top:1px solid #262a33;padding-top:12px}
+.tab-row{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
+.tab-btn{background:#222630;border:1px solid #333946;color:#a0aab8;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer;font-weight:600}
+.tab-btn:hover{background:#2c3240;color:#fff}
+.tab-btn.active{background:var(--acc);color:#fff;border-color:var(--acc)}
+.tab-btn.t-keep.active{background:var(--keep);border-color:var(--keep)}
+.tab-btn.t-rej.active{background:var(--rej);border-color:var(--rej)}
+.tab-btn.t-unc.active{background:var(--unc);color:#2b2200;border-color:var(--unc)}
+.tab-btn.t-rem.active{background:#39404d;border-color:#50596a}
+.list-search{width:100%;background:#0f1115;border:1px solid #333946;color:#e6e9ef;border-radius:6px;padding:6px 8px;font-size:12px;margin-bottom:8px}
+.clip-scroll{max-height:340px;overflow-y:auto;background:#12141a;border:1px solid #262a33;border-radius:6px}
+.clip-item{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid #1a1d26;cursor:pointer;font-size:12px;transition:background .15s}
+.clip-item:hover{background:#1e232e}
+.clip-item.active{background:#233247;border-left:3px solid #4a88e8;font-weight:600}
+.clip-meta-left{display:flex;gap:6px;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clip-idx{color:var(--mut);font-size:11px;min-width:26px}
+.clip-name{color:#cfd6e4;font-family:monospace;font-size:11px}
+.tag-sm{display:inline-block;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;line-height:1}
+.tag-keep{background:rgba(46,158,91,.2);color:#67d699;border:1px solid #2e9e5b}
+.tag-rej{background:rgba(214,69,61,.2);color:#f08a84;border:1px solid #d6453d}
+.tag-unc{background:rgba(237,161,0,.2);color:#edc069;border:1px solid #eda100}
+.tag-rem{color:#6c7687}
 </style></head><body>
 <header>
   <h1>Clip Review — lọc tay</h1>
   <div class="bar"><i id="prog" style="width:0%"></i></div>
-  <div class="pill">#<b id="pos">0</b>/<b id="tot">0</b></div>
-  <div class="pill">Keep <b id="ck" style="color:#67d699">0</b></div>
-  <div class="pill">Reject <b id="cr" style="color:#f08a84">0</b></div>
-  <div class="pill">Chưa chắc <b id="cq" style="color:#edc069">0</b></div>
-  <div class="pill">Còn lại <b id="cu">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Lọc tất cả" onclick="setFilter('all')">#<b id="pos">0</b>/<b id="tot">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Lọc danh sách Keep" onclick="setFilter('keep')">Keep <b id="ck" style="color:#67d699">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Lọc danh sách Reject" onclick="setFilter('reject')">Reject <b id="cr" style="color:#f08a84">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Lọc danh sách Chưa chắc" onclick="setFilter('uncertain')">Chưa chắc <b id="cq" style="color:#edc069">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Lọc danh sách Chưa đánh dấu" onclick="setFilter('undecided')">Còn lại <b id="cu">0</b></div>
 </header>
 <main>
   <div id="stage">
@@ -674,7 +697,22 @@ label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px
       Tới clip: <input type="number" id="jump" min="1"> <button class="ghost" onclick="jumpTo()">Đi</button>
       <button class="ghost" onclick="nextUndecided()">Chưa đánh dấu →</button>
     </div>
-    <div class="row"><button class="ghost" onclick="doCompare()">So sánh với lọc code</button></div>
+    <div class="list-panel">
+      <div style="font-size:12px;font-weight:700;color:#cfd6e4;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+        <span>Danh sách clip</span>
+        <span id="filteredCount" style="color:var(--mut);font-weight:400;font-size:11px"></span>
+      </div>
+      <div class="tab-row">
+        <button class="tab-btn active" id="tab-all" onclick="setFilter('all')">Tất cả (<span id="t-all">0</span>)</button>
+        <button class="tab-btn t-keep" id="tab-keep" onclick="setFilter('keep')">Keep (<span id="t-k">0</span>)</button>
+        <button class="tab-btn t-rej" id="tab-reject" onclick="setFilter('reject')">Reject (<span id="t-r">0</span>)</button>
+        <button class="tab-btn t-unc" id="tab-uncertain" onclick="setFilter('uncertain')">Chưa chắc (<span id="t-u">0</span>)</button>
+        <button class="tab-btn t-rem" id="tab-undecided" onclick="setFilter('undecided')">Còn lại (<span id="t-rem">0</span>)</button>
+      </div>
+      <input type="text" class="list-search" id="clipSearch" placeholder="Lọc theo tên clip / video..." oninput="renderClipList()">
+      <div class="clip-scroll" id="clipList"></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button class="ghost" onclick="doCompare()">So sánh với lọc code</button></div>
     <div id="cmp"></div>
     <div class="who">reviewer: <b id="who">—</b> · rubric: <b id="rub">—</b></div>
   </div>
@@ -742,6 +780,11 @@ function setCounts(c){
   document.getElementById('cq').textContent=c.uncertain;
   document.getElementById('cu').textContent=c.total-c.decided;
   document.getElementById('prog').style.width=(100*c.decided/c.total)+'%';
+  let elAll = document.getElementById('t-all'); if(elAll) elAll.textContent = c.total;
+  let elK = document.getElementById('t-k'); if(elK) elK.textContent = c.keep;
+  let elR = document.getElementById('t-r'); if(elR) elR.textContent = c.reject;
+  let elU = document.getElementById('t-u'); if(elU) elU.textContent = c.uncertain;
+  let elRem = document.getElementById('t-rem'); if(elRem) elRem.textContent = c.total - c.decided;
 }
 function render(){
   let c=S.clips[S.i];if(!c)return;
@@ -787,6 +830,70 @@ function render(){
   else if(d==='reject'){b.className='badge b-rej';b.textContent='REJECT — '+(lab[c.reason]||c.reason||'?');}
   else if(d==='uncertain'){b.className='badge b-unc';b.textContent='CHƯA CHẮC';}
   else{b.className='badge b-none';b.textContent='chưa đánh dấu';}
+  renderClipList(true);
+}
+let currentFilter='all';
+function setFilter(f){
+  currentFilter=f;
+  document.querySelectorAll('.tab-btn').forEach(btn=>btn.classList.remove('active'));
+  let activeBtn=document.getElementById('tab-'+(f==='undecided'?'undecided':f));
+  if(activeBtn)activeBtn.classList.add('active');
+  renderClipList(true);
+}
+function selectClip(idx){
+  if(idx<0||idx>=S.clips.length)return;
+  S.i=idx;render();
+}
+function renderClipList(scrollToActive=false){
+  let container=document.getElementById('clipList');
+  if(!container||!S.clips||!S.clips.length)return;
+  let q=(document.getElementById('clipSearch')?.value||'').trim().toLowerCase();
+  let visible=[];
+  for(let idx=0;idx<S.clips.length;idx++){
+    let c=S.clips[idx];
+    let dec=c.dec||'';
+    if(currentFilter==='keep'&&dec!=='keep')continue;
+    if(currentFilter==='reject'&&dec!=='reject')continue;
+    if(currentFilter==='uncertain'&&dec!=='uncertain')continue;
+    if(currentFilter==='undecided'&&dec!=='')continue;
+    if(q&&!c.clip_id.toLowerCase().includes(q)&&!(c.source_video||'').toLowerCase().includes(q))continue;
+    visible.push({i:idx,clip:c});
+  }
+  let countEl=document.getElementById('filteredCount');
+  if(countEl)countEl.textContent=`${visible.length}/${S.clips.length} clip`;
+  let lab=Object.fromEntries(S.reasons||[]);
+  let html='';
+  for(let item of visible){
+    let idx=item.i;
+    let c=item.clip;
+    let isActive=idx===S.i;
+    let badgeHtml='';
+    if(c.dec==='keep'){
+      badgeHtml='<span class="tag-sm tag-keep">KEEP</span>';
+    }else if(c.dec==='reject'){
+      let reasonTxt=lab[c.reason]||c.reason||'REJ';
+      badgeHtml=`<span class="tag-sm tag-rej" title="${reasonTxt}">REJ · ${c.reason||''}</span>`;
+    }else if(c.dec==='uncertain'){
+      badgeHtml='<span class="tag-sm tag-unc">CHƯA CHẮC</span>';
+    }else{
+      badgeHtml='<span class="tag-sm tag-rem">—</span>';
+    }
+    let shortId=c.clip_id.length>24?c.clip_id.slice(0,10)+'…'+c.clip_id.slice(-10):c.clip_id;
+    html+=`<div class="clip-item ${isActive?'active':''}" id="citem-${idx}" onclick="selectClip(${idx})">`+
+      `<div class="clip-meta-left">`+
+        `<span class="clip-idx">#${idx+1}</span>`+
+        `<span class="clip-name" title="${c.clip_id}">${shortId}</span>`+
+      `</div>`+
+      `<div>${badgeHtml}</div>`+
+    `</div>`;
+  }
+  container.innerHTML=html||'<div style="padding:16px;text-align:center;color:var(--mut);font-size:12px">Không có clip nào phù hợp bộ lọc.</div>';
+  if(scrollToActive){
+    let activeEl=document.getElementById(`citem-${S.i}`);
+    if(activeEl){
+      activeEl.scrollIntoView({block:'nearest',behavior:'smooth'});
+    }
+  }
 }
 function setBoundary(which){
   let v=document.getElementById('vid');
@@ -1060,11 +1167,20 @@ def main():
           + ("" if CODE_GATE else "  (chưa có --rejects -> cột GATE trống)"))
     print(f"Đã đánh dấu (trong tập này): {decided_here}/{len(CLIPS)} "
           f"| tiếp tục từ clip #{first_undecided()+1}")
-    url = f"http://127.0.0.1:{args.port}"
+    port = args.port
+    srv = None
+    for attempt in range(10):
+        try:
+            srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+            break
+        except (OSError, PermissionError):
+            print(f"[CẢNH BÁO] Cổng {port} đang bận, tự động chuyển sang cổng {port + 1}...")
+            port += 1
+
+    url = f"http://127.0.0.1:{port}"
     print(f"Mở: {url}   (Ctrl+C để dừng)")
     print("=" * 60)
 
-    srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     if not args.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
