@@ -73,12 +73,9 @@ class ManualReviewWorkflowTest(unittest.TestCase):
                     "file_path": row["file_path"],
                     "decision": decision,
                     "reason": "static" if decision == "reject" else "",
-                    "bad_intervals_json": (
-                        '[{"start_ms":1000,"end_ms":2000,"reason":"static"}]'
-                        if decision == "reject" else "[]"
-                    ),
+                    "bad_intervals_json": "[]",
                     "reviewer_id": reviewer,
-                    "rubric_version": "v3",
+                    "rubric_version": "v4" if decision == "reject" else "v3",
                     "ts": "",
                 })
             write_csv(result, reviewed, list(reviewed[0]))
@@ -98,7 +95,7 @@ class ManualReviewWorkflowTest(unittest.TestCase):
             )
             self.assertEqual(assignment_summary["review_mode"], "single_reviewer")
             self.assertEqual(assignment_summary["reviewer_count"], 1)
-            self.assertEqual(len(read_csv(merge_dir / "review_labels_v3.csv")), 6)
+            self.assertEqual(len(read_csv(merge_dir / "review_labels_v4.csv")), 6)
             self.assertEqual(len(read_csv(final_clean)), 5)
 
     def test_disjoint_primary_shared_calibration_and_adjudication(self):
@@ -204,7 +201,7 @@ class ManualReviewWorkflowTest(unittest.TestCase):
             self.assertEqual(summary["missing_judgements"], 0)
             self.assertEqual(summary["needs_resolution"], 0)
             self.assertEqual(summary["resolved_from_resolution"], 1)
-            labels = read_csv(merge_dir / "review_labels_v3.csv")
+            labels = read_csv(merge_dir / "review_labels_v4.csv")
             self.assertEqual(len(labels), 9)
 
 
