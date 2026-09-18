@@ -1,11 +1,11 @@
 # PROJECT.md — trạng thái hiện hành
 
-Cập nhật 13/09/2026. Hướng hiện hành: **lip-sync audio–visual tiếng Việt**, so X/Y trên protocol tách người/nguồn, generator chưa thấy và nén.
+Cập nhật 16/09/2026. Hướng hiện hành: **lip-sync audio–visual tiếng Việt**, so X/Y trên protocol tách người/nguồn, generator chưa thấy và nén.
 
 ## Đã chuyển đổi
 
 - Nhánh làm việc: `codex/research-reset`; giữ lịch sử Git và thay đổi trước dọn trong archive/backup.
-- Media, cache và population cũ đã được đưa ra khỏi workspace sau đối chiếu backup. Dữ liệu nguồn mới chưa được thu thập.
+- Media, cache và population cũ đã được đưa ra khỏi workspace sau đối chiếu backup. Dữ liệu mới đã được thu thập/cắt và đang review.
 - Báo cáo, metadata và bằng chứng AVSP-Net cũ ở [legacy_avsp](docs/archives/legacy_avsp/README.md). Số đo cũ không áp dụng cho hướng mới.
 - Công cụ cắt/review/quality được giữ, cập nhật đường dẫn. Preview không còn import bộ feature AVSP-Net.
 - Split real theo nhóm người/nguồn được tách riêng, bỏ điều kiện đủ bốn fake. Có kiểm tra nguồn audio và generator giữ riêng cho biến thể.
@@ -17,13 +17,13 @@ Cập nhật 13/09/2026. Hướng hiện hành: **lip-sync audio–visual tiến
 | Hạng mục | Trạng thái |
 |---|---|
 | Kiểm tra giấy phép theo video | Có CLI lấy metadata và trạng thái pending; chưa gọi API trên nguồn mới. |
-| Thu thập / downloader tuyển chọn | Có file chạy 01/02; nhận URL video/playlist, không bắt buộc kiểm tra giấy phép; chưa tải nguồn mới. |
-| Cắt clip / manifest / review | Đã chuyển công cụ và kiểm tra kỹ thuật; chưa chứng nhận chất lượng nguồn mới. |
+| Thu thập / downloader tuyển chọn | Có file chạy 01/02; nguồn mới đã được tải và đưa qua cắt clip/review. Kiểm tra giấy phép vẫn là bước riêng. |
+| Cắt clip / manifest / review | Theo cập nhật của nhóm ngày 16/09: 2/3 người đã hoàn tất gán nhãn review. Chưa xác minh/gộp đủ kết quả của cả ba người để khóa dataset. |
 | Chia split / quan hệ biến thể | Đã triển khai kiểm tra tự động và test; chưa khóa dataset nghiên cứu. |
 | Active-speaker / gom người tự động | Công cụ tùy chọn được giữ; chưa chạy lại model ngoài hoặc calibrate ngưỡng cho population mới. |
 | Nén real/fake | Có CLI và smoke bằng media tổng hợp, không phải kết quả nghiên cứu. |
 | Generator Wav2Lip/MuseTalk/ứng viên giữ riêng | Đề xuất; chưa tích hợp và benchmark. |
-| AV-HuBERT | Có adapter cho hai nhánh pre-fusion của model đã nạp; mới test với backbone giả lập, chưa nạp checkpoint thật hoặc xử lý media đầu vào. |
+| AV-HuBERT | Có 01_extract: loader Base pre-fusion, xử lý miệng/audio cùng timeline và xuất cache/pairs.csv. Đã cài dlib CPU 20.0.1, nạp checkpoint và chạy một clip thật: cửa sổ 2 giây, 50 frame, không nội suy landmark, hai feature [50,768] hữu hạn. Kết quả ở cache/features/dataset_v1/real_smoke_001. Chưa benchmark toàn bộ dữ liệu; không dùng Transformer hợp nhất. |
 | Detector Y và cải tiến X | Có detector, loader feature pairs, train/validation theo epoch và lưu checkpoint; X thêm consistency. Chỉ kiểm chứng bằng feature giả lập, chưa train nghiên cứu. |
 | Final test và demo detector | Chưa thực hiện. |
 
@@ -46,9 +46,9 @@ Hướng dẫn: [src/data/README.md](src/data/README.md), [review](src/tools/REA
 
 ## Việc kế tiếp
 
-1. Chọn và rà một nhóm nguồn đa dạng, quyền sử dụng và host/người trùng.
-2. Dựng pilot nhỏ với nguồn/người độc lập; chưa mở final test.
-3. Dựng môi trường AV-HuBERT riêng và tích hợp một generator trên mẫu nhỏ.
-4. Đo chi phí và các baseline đơn luồng/kết hợp; quyết định tiếp tục backbone trước X/Y.
+1. Hoàn tất review của người còn lại; nhận, kiểm tra và gộp đủ ba bộ kết quả.
+2. Rà host/người/nguồn trùng và quyền sử dụng; khóa split chống leakage trước khi tạo fake.
+3. Bước kiểm tra extraction một clip thật đã qua; tiếp theo kiểm tra vùng miệng và tỷ lệ lỗi trên một nhóm nhỏ đa dạng trước khi chạy hàng loạt.
+4. Tích hợp một generator trên mẫu phát triển nhỏ; đo chi phí và baseline đơn luồng/kết hợp trước X/Y. Chưa mở final test.
 
 [Báo cáo chuyển đổi](docs/reports/2026-09-13_REPO_RESET.md) ghi kiểm tra thực tế và giới hạn tại thời điểm reset. Cách chạy mới: [pipeline có số](src/data/README.md). Không tự mở full download/train từ kế hoạch này.

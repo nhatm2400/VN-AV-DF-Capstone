@@ -8,7 +8,7 @@ Y là detector audio–visual; X dùng cùng detector, dữ liệu và ngân sá
 
 ## Trạng thái
 
-Repo đã chuyển sang nền xử lý dữ liệu cho hướng mới. Công cụ cắt, kiểm tra media, review, chia split và nén đã được tách khỏi pipeline AVSP-Net. **Dataset mới, generator lip-sync, AV-HuBERT và detector X/Y chưa được chạy/huấn luyện.** Không có kết quả accuracy mới.
+Repo đã chuyển sang nền xử lý dữ liệu cho hướng mới. Công cụ cắt, kiểm tra media, review, chia split và nén đã được tách khỏi pipeline AVSP-Net. Hai nhánh AV-HuBERT đã nạp checkpoint và trích feature từ một clip thật thành công. **Chưa có thí nghiệm huấn luyện/đánh giá detector X/Y trên dataset thật.** Không có kết quả accuracy mới.
 
 Xem [PROJECT.md](PROJECT.md) để phân biệt phần đã triển khai và phần dự kiến. Kết quả pseudo-fake/AVSP-Net nằm trong [archive](docs/archives/legacy_avsp/README.md).
 
@@ -46,7 +46,7 @@ python src/tools/review/clip_review.py --help
 | `data/`, `cache/`, `weights/`, `experiments/` | Vùng dữ liệu mới, cache, weights local và run mới; media không commit. |
 | `docs/` | Nghiên cứu hiện hành, planning, báo cáo và archive cũ. |
 
-Model/train/eval AVSP-Net cũ nằm trong backup và lịch sử Git. Bản model mới tối thiểu có detector, train_step và predict_batch; mở [01_smoke_test.py](src/models/01_smoke_test.py) rồi Run bằng môi trường có PyTorch để thử luồng bằng tensor giả lập. Generator, AV-HuBERT/extractor, loader dataset thật và evaluator theo protocol chưa tích hợp. Môi trường model tối thiểu được ghi ở [requirements-model.txt](environments/requirements-model.txt); chưa thử cài mới từ đầu. Xem [vai trò từng thư mục source](src/README.md).
+Model/train/eval AVSP-Net cũ nằm trong backup và lịch sử Git. Bản model mới có detector, loader feature pairs, training Y/X và predict_batch; mở [01_smoke_test.py](src/models/01_smoke_test.py) để thử bằng tensor giả lập. [01_extract.py](src/features/01_extract.py) đã nối loader checkpoint Base pre-fusion và xử lý media vào cache cho training; xem [cách đặt weights và chạy extraction](src/features/README.md). Đã chạy end-to-end trên một clip thật với dlib/weights thật, chưa benchmark dataset; generator và evaluator theo protocol chưa tích hợp. Môi trường model tối thiểu ở [requirements-model.txt](environments/requirements-model.txt), bổ sung cho extractor ở [requirements-features.txt](environments/requirements-features.txt); chưa thử cài mới từ đầu. Xem [vai trò từng thư mục source](src/README.md).
 
 ## Dữ liệu và báo cáo
 
