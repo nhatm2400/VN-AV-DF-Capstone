@@ -52,6 +52,37 @@ class ResearchDataContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Leakage'):
             verify_splits(output)
 
+    def test_single_speaker_mode_keeps_sources_reuploads_and_episodes_together(self):
+        protocol = 'source_disjoint_single_speaker'
+        rows = [real('a', 'host', 'v1'), real('b', 'host', 'v1'),
+                real('c', 'host', 'copy', canonical_source_id='v1'),
+                real('d', 'host', 'v2', program_id='p', episode_id='e'),
+                real('e', 'host', 'v3', program_id='p', episode_id='e'),
+                real('f', 'host', 'v4')]
+        output = split_real_rows(rows, protocol=protocol)
+        self.assertEqual({r['split'] for r in output}, {'train', 'val', 'test'})
+        self.assertEqual(len({r['split'] for r in output[:3]}), 1)
+        self.assertEqual(output[3]['split'], output[4]['split'])
+        self.assertEqual(output, split_real_rows(list(reversed(rows)), protocol=protocol))
+        variant = inherit_variant_split(dict(clip_id='fake', source_clip='a'), output)
+        self.assertEqual(variant['split_protocol'], protocol)
+        output[1]['split'] = next(r['split'] for r in output if r['split'] != output[0]['split'])
+        with self.assertRaisesRegex(ValueError, 'Leakage'):
+            verify_splits(output)
+
+    def test_single_speaker_mode_rejects_multiple_speakers_and_mixed_protocols(self):
+        protocol = 'source_disjoint_single_speaker'
+        for extra in ({'speaker_id': 'guest'}, {'speaker_ids': 'guest'}):
+            row = real('a', 'host', 'v1')
+            row.update(extra)
+            with self.assertRaisesRegex(ValueError, 'exactly one'):
+                split_real_rows([row, real('b', 'host', 'v2')], (1, 0, 0), protocol=protocol)
+        output = split_real_rows([real('a', 'host', 'v1'), real('b', 'host', 'v2')],
+                                 (1, 0, 0), protocol=protocol)
+        output[0]['split_protocol'] = 'speaker_source_disjoint'
+        with self.assertRaisesRegex(ValueError, 'one split protocol'):
+            verify_splits(output)
+
     def test_variants_inherit_split_and_block_cross_split_audio_and_generator(self):
         rows = split_real_rows([real(str(i),f's{i}',f'v{i}') for i in range(6)])
         train = next(r for r in rows if r['split']=='train')

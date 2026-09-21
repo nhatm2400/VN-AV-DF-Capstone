@@ -1,0 +1,14 @@
+{
+  "schema": "manual_review_merge_v1",
+  "partial": false,
+  "expected_judgements": 2252,
+  "received_judgements": 2252,
+  "missing_judgements": 0,
+  "resolved_clips": 2252,
+  "needs_resolution": 0,
+  "resolved_from_resolution": 0,
+  "decisions_resolved": {
+    "reject": 1109,
+    "keep": 1143
+  }
+}

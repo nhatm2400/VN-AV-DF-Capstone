@@ -16,6 +16,8 @@ Sau review cần clip_id, source_video, file_path, speaker_id và decision=keep.
 
 ## Split
 
+Ngoại lệ cho kết quả sơ bộ ngày 18/09/2026: người dùng xác nhận 18 video hiện tại chỉ có một người nói. Chọn `source_disjoint_single_speaker`, cùng `speaker_id=spk_001` cho mọi clip, chia theo nhóm nguồn/bản đăng lại/tập đã định danh. Đây là đánh giá video mới của cùng người, không phải speaker-disjoint; tập test trong bộ này chỉ phục vụ đánh giá sơ bộ. Chưa xác minh trùng nội dung giữa các URL khi metadata bản gốc/tập để trống. Khi có thêm người, tạo phiên bản split mới theo quy tắc dưới đây; không dùng kết quả bộ một người để khẳng định tổng quát hóa sang người mới.
+
 Nối clip qua cùng người, nguồn video, bản đăng lại và cặp chương trình/tập đã định danh. Cùng host có thể nối nhiều episode; không phá nhóm để đạt tỷ lệ mong muốn. Mỗi nhóm chỉ thuộc một split. Pilot dùng để chọn phương pháp là dữ liệu phát triển; final test phải có nguồn/người riêng chưa được dùng điều chỉnh.
 
 Khóa split trên real trước khi sinh fake. Generator mới phải lưu source_clip, generator/checkpoint/config, nguồn audio và lỗi. Fake/bản nén/cửa sổ kế thừa split; audio thay lời không vượt split. Helper inherit_variant_split kiểm tra điều này, nhưng adapter generator chưa có.

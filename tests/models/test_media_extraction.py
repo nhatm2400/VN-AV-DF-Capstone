@@ -13,7 +13,8 @@ import torch
 
 from src.features.avhubert import _ProjectionBranch, load_checkpoint, load_source
 from src.features.extraction import extract, read_pairs
-from src.features.media import MediaConfig, decode_window, make_inputs, run_media_command
+from src.features.media import (FaceTracker, MediaConfig, decode_window, make_inputs,
+                                run_media_command, save_mouth_preview)
 from src.training.dataset import PairedFeatureDataset
 
 
@@ -22,6 +23,53 @@ class MediaExtractionTest(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+
+    def test_face_tracking_ignores_hand_false_positive_and_detection_order(self):
+        import dlib
+        tracker = FaceTracker()
+        original = dlib.rectangle(740, 277, 1061, 598)
+        hand = dlib.rectangle(468, 528, 735, 795)
+        moved = dlib.rectangle(718, 247, 1103, 632)
+        self.assertIs(tracker.select([original]), original)
+        self.assertIs(tracker.select([hand, moved]), moved)
+        self.assertIs(tracker.select([moved, hand]), moved)
+        self.assertIsNone(tracker.select([hand]))
+        self.assertIsNone(tracker.select([]))
+        self.assertIs(tracker.select([moved]), moved)
+
+    def test_face_tracking_refuses_ambiguous_start_and_overlapping_candidates(self):
+        import dlib
+        face = dlib.rectangle(10, 10, 110, 110)
+        other = dlib.rectangle(12, 10, 112, 110)
+        tracker = FaceTracker()
+        with self.assertRaisesRegex(ValueError, 'initial'):
+            tracker.select([face, other])
+        tracker.select([face])
+        with self.assertRaisesRegex(ValueError, 'tracking'):
+            tracker.select([face, other])
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'FFmpeg required')
+    def test_mouth_preview_uses_model_pixels_and_keeps_audio(self):
+        from scipy.io import wavfile
+        config = MediaConfig()
+        signal = np.zeros(16000, dtype=np.int16)
+        crops = np.random.default_rng(42).integers(0, 256, (25, 96, 96, 3), dtype=np.uint8)
+        _, visual = make_inputs(signal, crops, config)
+        original = visual.clone()
+        wavfile.write(self.root / 'audio.wav', 16000, signal)
+        result = save_mouth_preview(visual, config, self.root / 'audio.wav', self.root / 'mouth.mp4')
+        sheet = cv2.imread(str(self.root / result['preview_frames_file']), cv2.IMREAD_GRAYSCALE)
+        expected = np.concatenate([cv2.cvtColor(crops[i], cv2.COLOR_BGR2GRAY)[4:92, 4:92]
+                                   for i in result['preview_frame_indices']], axis=1)
+        np.testing.assert_array_equal(sheet, expected)
+        torch.testing.assert_close(visual, original)
+        info = json.loads(run_media_command(['ffprobe', '-v', 'error', '-show_streams',
+                                             '-of', 'json', self.root / 'mouth.mp4']))
+        video = next(s for s in info['streams'] if s['codec_type'] == 'video')
+        self.assertEqual((video['width'], video['height'], int(video['nb_frames'])), (88, 88, 25))
+        self.assertTrue(any(s['codec_type'] == 'audio' for s in info['streams']))
+        with self.assertRaises(FileExistsError):
+            save_mouth_preview(visual, config, self.root / 'audio.wav', self.root / 'mouth.mp4')
 
     def test_inputs_match_audio_stack_and_visual_eval_transform(self):
         from python_speech_features import logfbank
@@ -116,7 +164,7 @@ class ResEncoder(nn.Module):
                                checkpoint=None, upstream=None, device='cpu', predictor=None, mean_face=None)
         class Processor:
             provenance = {'test_fixture': True}
-            def __call__(self, *unused):
+            def __call__(self, *unused, **kwargs):
                 return torch.zeros(1, 104, 3), torch.zeros(1, 1, 3, 8, 8), {}
         def adapter(audio, video):
             return torch.ones(1, 3, 4), torch.ones(1, 3, 6)

@@ -12,7 +12,7 @@ Sửa [preparation/settings.py](preparation/settings.py) khi đổi phiên bản
 | 04 | [04_build_manifest.py](04_build_manifest.py) | Accepted CSV/media + nguồn đã chọn → `data/manifests/dataset_v1/clips.csv`, giữ nhóm nguồn/kênh/tập/bản gốc. |
 | Review | [Các bước review](../tools/review/README.md) | Xem/nghe, phân công, gộp quyết định → `reviewed_clips.csv`. **Bổ sung speaker_id nhất quán xuyên tập trước bước 05.** |
 | 05 | [05_build_splits.py](05_build_splits.py) | Clip đã review + người/nguồn → `real_splits.csv`, kiểm tra leakage. |
-| Chưa có | Generator lip-sync | Chưa tích hợp; chưa thể tự sinh fake từ kết quả bước 05. |
+| Generator | [Wav2Lip 00/01/02](../generators/README.md) | Kiểm tra setup → chọn batch train → tạo real/fake candidates. Cần weights và review output; chưa tự nối sang bước 06. |
 | 06 | [06_compress.py](06_compress.py) | Chỉ chạy khi có `masters.csv` real/fake đầy đủ nguồn/nhãn/split và đã điền CRFS trong file. Không tự nối từ bước 05. |
 
 ## Điền videos.csv
@@ -62,6 +62,10 @@ Kiểm tra giấy phép là bước riêng tùy chọn theo yêu cầu hiện t�
 `python src/data/preparation/build_manifest.py --add podcast "<batch>/**/accepted_clips.csv" <media-root> --out <clips.csv>` gộp accepted manifests và kiểm tra 1:1 clip/media. Có thể truyền nhiều `--add`. Kết quả chưa phải đã được review hay đã có speaker_id.
 
 ## Review và split
+
+Giai đoạn sơ bộ hiện tại: người dùng xác nhận toàn bộ video có cùng một người nói. File Run `05_build_splits.py` chọn `PROTOCOL = 'source_disjoint_single_speaker'` và `SINGLE_SPEAKER_ID = 'spk_001'`. Bấm Run để tạo `real_splits.csv`: mã người được bổ sung trong output, không sửa file review; cùng nguồn, bản đăng lại hoặc chương trình/tập đã định danh vẫn nằm chung tập. Cột `split_protocol` ghi rõ đây là đánh giá trên cùng người, chưa đánh giá người chưa thấy. Nguồn trùng nội dung nhưng khác ID cần điền `canonical_source_id` trước khi chia; mã video khác nhau chưa bảo đảm nội dung độc lập.
+
+Khi bổ sung người nói, dùng manifest/phiên bản mới, điền danh tính thật sự nhất quán và đổi `PROTOCOL = 'speaker_source_disjoint'`. CLI mặc định vẫn dùng quy tắc nghiêm ngặt này. Không ghi đè split sơ bộ đã dùng cho thí nghiệm.
 
 Xem [công cụ review](../tools/README.md). Rà clip và bổ sung `speaker_id` nhất quán xuyên nguồn; giữ cùng ID cho host ở các tập. `source_video` là ID nguồn, `canonical_source_id` liên kết bản đăng lại. `speaker_ids` có thể chứa nhiều ID cách nhau bằng dấu chấm phẩy nếu clip liên quan nhiều người.
 

@@ -80,14 +80,14 @@ except Exception:
 # Đổi nội dung/ý nghĩa lý do -> TĂNG version, vì quyết định cũ không còn so sánh được.
 RUBRIC_VERSION = "v4"
 REASONS = [
-    ("static",     "Ảnh tĩnh / miệng không động"),
-    ("voiceover",  "Người trong hình không nói — tiếng của người ngoài hình"),
-    ("dubbed",     "Lồng tiếng — môi không ăn nhịp / khác ngôn ngữ"),
-    ("wrong_face", "ROI cắt nhầm người (không phải người đang nói)"),
-    ("mouth",      "Miệng bị che / nghiêng quá / ra khỏi ô ROI"),
-    ("cut",        "Có chuyển cảnh (chỉ mô tả; thêm static/voiceover nếu đúng)"),
-    ("broken",     "Lỗi file / audio hỏng / quá ít tiếng nói"),
-    ("small_face", "Mặt quá nhỏ / PiP / Outro — dễ nhiễu"),
+    ("static",     "Static image / no mouth movement"),
+    ("voiceover",  "Voiceover / visible person is not speaking"),
+    ("dubbed",     "Dubbed speech / mismatched timing or language"),
+    ("wrong_face", "Wrong face selected in the mouth ROI"),
+    ("mouth",      "Mouth occluded / extreme angle / outside ROI"),
+    ("cut",        "Scene change (descriptive; add other reasons if applicable)"),
+    ("broken",     "Corrupted media / unusable audio / too little speech"),
+    ("small_face", "Face too small / picture-in-picture / outro"),
 ]
 REASON_KEYS = [k for k, _ in REASONS]
 DECISIONS_VALID = ("keep", "reject", "uncertain")
@@ -128,21 +128,21 @@ def normalize_bad_intervals(value):
     if value is None:
         value = []
     if not isinstance(value, list):
-        raise ValueError("bad_intervals phải là một danh sách")
+        raise ValueError("bad_intervals must be a list")
     output = []
     for item in value:
         if not isinstance(item, dict):
-            raise ValueError("mỗi interval phải là object")
+            raise ValueError("Each interval must be an object")
         reason = str(item.get("reason", ""))
         if reason not in REASON_KEYS:
-            raise ValueError(f"lý do interval không hợp lệ: {reason}")
+            raise ValueError(f"Invalid interval reason: {reason}")
         try:
             start_ms = int(round(float(item["start_ms"])))
             end_ms = int(round(float(item["end_ms"])))
         except (KeyError, TypeError, ValueError) as error:
-            raise ValueError("interval thiếu start_ms/end_ms hợp lệ") from error
+            raise ValueError("Interval requires valid start_ms and end_ms") from error
         if start_ms < 0 or end_ms <= start_ms:
-            raise ValueError("interval phải có 0 <= start_ms < end_ms")
+            raise ValueError("Interval must satisfy 0 <= start_ms < end_ms")
         output.append({"start_ms": start_ms, "end_ms": end_ms, "reason": reason})
     output.sort(key=lambda item: (item["start_ms"], item["end_ms"], item["reason"]))
     return output
@@ -444,7 +444,7 @@ class Handler(BaseHTTPRequestHandler):
             if dec == "reject":
                 reasons_list = [k for k in REASON_KEYS if k in raw_reasons]
                 if not reasons_list or not raw_reasons.issubset(set(REASON_KEYS)):
-                    self._json({"ok": False, "err": "Hãy chọn lý do Reject hợp lệ"}, 400)
+                    self._json({"ok": False, "err": "Select a valid rejection reason."}, 400)
                     return
                 reason = ", ".join(reasons_list)
             duration_ms = 0
@@ -453,7 +453,7 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 pass
             if duration_ms and any(item["end_ms"] > duration_ms + 200 for item in intervals):
-                self._json({"ok": False, "err": "interval vượt quá thời lượng clip (+200 ms tolerance)"}, 400)
+                self._json({"ok": False, "err": "Interval exceeds clip duration (200 ms tolerance)."}, 400)
                 return
             try:
                 voiced_ms = int(round(float(CLIPS[i].get("voiced_ms", 0))))
@@ -463,7 +463,7 @@ class Handler(BaseHTTPRequestHandler):
                 voiced_ms = duration_ms
             warning = ""
             if dec == "reject" and intervals and not intervals_are_material(intervals, voiced_ms):
-                warning = "Đã lưu Reject. Đoạn lỗi ngắn hơn ngưỡng tham khảo; hãy bảo đảm lý do loại rõ ràng."
+                warning = "Rejection saved. The marked interval is below the reference duration; verify that the rejection reason is clear."
             cid = CLIPS[i]["clip_id"]
             with LOCK:
                 if dec in DECISIONS_VALID:
@@ -565,164 +565,118 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-HTML = r"""<!doctype html><html lang="vi"><head><meta charset="utf-8">
-<title>Clip Review — lọc tay</title>
+HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clip Quality Review</title>
 <style>
-:root{--bg:#0f1115;--panel:#1a1d24;--mut:#8a93a3;--keep:#2e9e5b;--rej:#d6453d;--unc:#eda100;--acc:#2E5A9C}
-*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:#e6e9ef}
-header{display:flex;align-items:center;gap:16px;padding:10px 16px;background:#12141a;border-bottom:1px solid #262a33;flex-wrap:wrap}
-h1{font-size:15px;margin:0;color:#cfd6e4}
-.bar{flex:1;height:8px;background:#262a33;border-radius:4px;overflow:hidden;min-width:160px}
-.bar > i{display:block;height:100%;background:var(--acc)}
-.pill{font-size:12px;color:var(--mut)}
-.pill b{color:#e6e9ef}
-main{display:flex;gap:16px;padding:16px;align-items:flex-start;flex-wrap:wrap}
-#stage{flex:2;min-width:420px}
-.vwrap{display:flex;gap:12px;align-items:flex-start}
-.vcol{display:flex;flex-direction:column;gap:5px}
-.vcol.orig{flex:3;min-width:0}
-.vcol.roi{flex:1;min-width:200px}
-.vlab{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
-.vlab b{color:#edc069}
-video{width:100%;background:#000;border-radius:10px;outline:none}
-#vid{max-height:52vh}
-#roivid{image-rendering:pixelated;border:2px solid var(--unc)}
-.noroi{font-size:12px;color:#e8b339;padding:10px;border:1px dashed #4a4326;border-radius:8px}
-.side{flex:1;min-width:300px;background:var(--panel);border:1px solid #262a33;border-radius:10px;padding:14px}
-.meta{font-size:13px;line-height:1.9}
-.meta span{color:var(--mut)}.meta b{color:#e6e9ef}
-.meta b.alert{color:#f0a07a}
-.btns{display:flex;gap:10px;margin:12px 0 6px;flex-wrap:wrap}
-button{cursor:pointer;border:0;border-radius:8px;padding:11px 14px;font-size:14px;font-weight:600;color:#fff}
-.keep{background:var(--keep)}.unc{background:var(--unc);color:#2b2200}.nav{background:#39404d}.ghost{background:#2a2f3a;color:#cfd6e4}
-.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
-.rgrid button{background:#3a2422;border:1px solid var(--rej);color:#f2b3ae;font-size:13px;font-weight:500;text-align:left;padding:9px 11px}
-.rgrid button:hover{background:var(--rej);color:#fff}
-.rgrid button i{font-style:normal;color:#fff;background:var(--rej);border-radius:4px;padding:0 6px;margin-right:7px;font-weight:700}
-.reject-final{background:var(--rej);width:100%;margin-top:7px}
-.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700}
-.b-keep{background:rgba(46,158,91,.18);color:#67d699;border:1px solid #2e9e5b}
-.b-rej{background:rgba(214,69,61,.18);color:#f08a84;border:1px solid #d6453d}
-.b-unc{background:rgba(237,161,0,.18);color:#edc069;border:1px solid #eda100}
-.b-none{background:#262a33;color:var(--mut)}
-.row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}
-input[type=number]{width:90px;background:#0f1115;border:1px solid #39404d;color:#fff;border-radius:6px;padding:6px}
-.kbd{font-size:11px;color:var(--mut);margin-top:6px;line-height:1.8}
-.kbd b{color:#cfd6e4;background:#262a33;padding:1px 6px;border-radius:4px}
-#cmp{font-size:13px;line-height:1.7;margin-top:10px;border-top:1px solid #262a33;padding-top:10px}
-table.cmp{border-collapse:collapse;margin:8px 0;font-size:12px;width:100%}
-table.cmp th,table.cmp td{border:1px solid #2a2f3a;padding:6px 7px;text-align:center}
-table.cmp th{color:#cfd6e4;background:#222733;font-weight:600}
-table.cmp td.ok{color:#67d699;font-weight:700}
-table.cmp td.bad{color:#f0a07a;font-weight:700}
-table.cmp td.mut{color:#8a93a3}
-.warn{color:#e8b339;font-size:12px;margin-top:8px}
-label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px}
-.who{font-size:11px;color:var(--mut);border-top:1px solid #262a33;margin-top:10px;padding-top:8px}
-.list-panel{margin-top:14px;border-top:1px solid #262a33;padding-top:12px}
-.tab-row{display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap}
-.tab-btn{background:#222630;border:1px solid #333946;color:#a0aab8;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer;font-weight:600}
-.tab-btn:hover{background:#2c3240;color:#fff}
-.tab-btn.active{background:var(--acc);color:#fff;border-color:var(--acc)}
-.tab-btn.t-keep.active{background:var(--keep);border-color:var(--keep)}
-.tab-btn.t-rej.active{background:var(--rej);border-color:var(--rej)}
-.tab-btn.t-unc.active{background:var(--unc);color:#2b2200;border-color:var(--unc)}
-.tab-btn.t-rem.active{background:#39404d;border-color:#50596a}
-.list-search{width:100%;background:#0f1115;border:1px solid #333946;color:#e6e9ef;border-radius:6px;padding:6px 8px;font-size:12px;margin-bottom:8px}
-.clip-scroll{max-height:340px;overflow-y:auto;background:#12141a;border:1px solid #262a33;border-radius:6px}
-.clip-item{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-bottom:1px solid #1a1d26;cursor:pointer;font-size:12px;transition:background .15s}
-.clip-item:hover{background:#1e232e}
-.clip-item.active{background:#233247;border-left:3px solid #4a88e8;font-weight:600}
-.clip-meta-left{display:flex;gap:6px;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.clip-idx{color:var(--mut);font-size:11px;min-width:26px}
-.clip-name{color:#cfd6e4;font-family:monospace;font-size:11px}
-.tag-sm{display:inline-block;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;line-height:1}
-.tag-keep{background:rgba(46,158,91,.2);color:#67d699;border:1px solid #2e9e5b}
-.tag-rej{background:rgba(214,69,61,.2);color:#f08a84;border:1px solid #d6453d}
-.tag-unc{background:rgba(237,161,0,.2);color:#edc069;border:1px solid #eda100}
-.tag-rem{color:#6c7687}
-dialog{background:var(--panel);color:#e6e9ef;border:1px solid #555;border-radius:12px;width:min(620px,95vw);max-height:90vh;overflow:auto;padding:22px}
-dialog::backdrop{background:rgba(0,0,0,.75)}
-dialog button{min-height:42px}dialog button:focus-visible{outline:3px solid #edc069;outline-offset:2px}
-.rgrid button.selected{background:#a32b24;border-color:#f08a84;color:#fff;font-weight:700;box-shadow:0 0 0 2px #d6453d}
-.rgrid button.selected i{background:#fff;color:#a32b24}
+:root{--bg:#f6f7f8;--panel:#fff;--ink:#20272d;--mut:#59646e;--line:#dce1e5;--soft:#eef1f3;--keep:#263b45;--rej:#734743;--unc:#655b42;--acc:#334d5c}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;line-height:1.5}
+header{display:flex;align-items:center;gap:20px;padding:18px 28px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+h1{font-size:19px;font-weight:600;margin:0;letter-spacing:-.3px}.bar{flex:1;height:5px;background:var(--soft);border-radius:3px;overflow:hidden;min-width:100px}.bar>i{display:block;height:100%;background:var(--acc)}
+.pill{font-size:12px;color:var(--mut);white-space:nowrap}.pill b{color:var(--ink)}
+main{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:24px;max-width:1560px;margin:auto;padding:26px 28px;align-items:start}
+#stage{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:20px}
+.vwrap{display:grid;grid-template-columns:minmax(0,2.5fr) minmax(180px,1fr);gap:18px;align-items:start}.vcol{min-width:0;display:flex;flex-direction:column;gap:10px}.vlab{font-size:13px;font-weight:600;color:var(--ink)}.vlab small{display:block;color:var(--mut);font-weight:400;font-size:12px;margin-top:2px}
+video{display:block;width:100%;background:#151719;border-radius:3px;outline:none}#vid{aspect-ratio:16/9;object-fit:contain}#roivid{aspect-ratio:1;object-fit:contain;border:1px solid var(--line)}
+.noroi{font-size:13px;color:var(--mut);padding:18px;border:1px dashed var(--line);border-radius:3px}
+.side{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px}.section-title{font-size:14px;margin:0 0 12px;font-weight:600}
+.meta{font-size:12px;line-height:1.9;overflow-wrap:anywhere}.meta span{color:var(--mut)}.meta b{font-weight:500;color:var(--ink)}.meta b.alert{color:var(--rej)}
+.btns{display:flex;gap:8px;padding-top:18px;margin:18px 0 10px;border-top:1px solid var(--line);flex-wrap:wrap}
+button{cursor:pointer;border:1px solid var(--line);border-radius:4px;padding:10px 13px;font:600 13px Arial,Helvetica,sans-serif;min-height:40px;color:var(--ink);background:#fff;transition:background .15s}
+button:hover{background:var(--soft)}button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--acc);outline-offset:3px}button:disabled{opacity:.5;cursor:wait}
+.keep{background:var(--keep);border-color:var(--keep);color:#fff}.keep:hover{background:#182a33}.reject-final{color:var(--rej);border-color:#cbb7b4;background:#fff}.reject-final:hover{background:#f5eeed}.unc,.nav,.ghost{background:#fff;color:var(--ink)}
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.rgrid button{display:flex;gap:10px;align-items:start;text-align:left;font-size:14px;font-weight:400;line-height:1.5;padding:13px;min-height:72px}.rgrid button i{font-style:normal;font-size:12px;font-weight:600;color:var(--mut);flex:none}.rgrid button.selected{background:#e8eef1;border-color:var(--acc);color:var(--ink)}
+.badge{display:inline-block;padding:4px 8px;border-radius:3px;font-size:11px;font-weight:600;border:1px solid var(--line);overflow-wrap:anywhere}.b-keep,.tag-keep{background:#eaf0ed;color:#354b40}.b-rej,.tag-rej{background:#f4eceb;color:#744943}.b-unc,.tag-unc{background:#f3f0e8;color:#655b42}.b-none{background:var(--soft);color:var(--mut)}
+.row{display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap}.row label{color:var(--mut);font-size:12px}input[type=number]{width:64px;border:1px solid var(--line);color:var(--ink);border-radius:4px;padding:8px;background:#fff}input[type=checkbox]{accent-color:var(--acc)}
+.kbd{font-size:11px;color:var(--mut);line-height:2}.kbd b{font-weight:500;border:1px solid var(--line);padding:2px 5px;border-radius:3px;background:#fafafa}
+.warn{color:var(--rej);font-size:13px;margin-top:10px}.warn:empty{display:none}label.cb{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:7px}
+.who{font-size:11px;color:var(--mut);border-top:1px solid var(--line);margin-top:16px;padding-top:12px}
+.list-panel{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}.list-heading{font-size:13px;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}#filteredCount{font-weight:400;font-size:11px;color:var(--mut)}
+.tab-row{display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap}.tab-btn{font-size:11px;padding:5px 7px;min-height:32px;font-weight:400}.tab-btn.active{background:var(--acc);color:#fff;border-color:var(--acc)}
+.list-search{width:100%;background:#fff;border:1px solid var(--line);color:var(--ink);border-radius:4px;padding:9px;font-size:12px;margin-bottom:10px}.clip-scroll{max-height:148px;overflow:auto;border:1px solid var(--line);border-radius:4px}
+.clip-item{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:10px 8px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px}.clip-item:hover{background:#f4f6f7}.clip-item.active{background:#eaf0f3;box-shadow:inset 3px 0 var(--acc)}.clip-item:last-child{border-bottom:0}
+.clip-meta-left{display:flex;gap:6px;align-items:center;min-width:0}.clip-idx{color:var(--mut);font-size:11px;min-width:24px}.clip-name{color:var(--ink);font-family:Consolas,monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tag-sm{display:inline-block;padding:4px 5px;border-radius:3px;font-size:10px;font-weight:600;white-space:nowrap}.tag-rem{color:var(--mut)}
+details{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}summary{cursor:pointer;font-size:12px;color:var(--mut)}#cmp{font-size:12px;line-height:1.8;overflow:auto}table.cmp{border-collapse:collapse;margin:10px 0;font-size:11px;width:100%}table.cmp th,table.cmp td{border:1px solid var(--line);padding:6px;text-align:center}table.cmp th{background:var(--soft)}table.cmp td.ok{color:var(--keep)}table.cmp td.bad{color:var(--rej)}table.cmp td.mut{color:var(--mut)}
+dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;width:min(680px,94vw);max-height:90vh;overflow:auto;padding:26px}dialog::backdrop{background:rgba(20,28,35,.4)}dialog h2{font-size:20px;font-weight:600}.dialog-help{color:var(--mut);font-size:13px}.dialog-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end}
+@media(max-width:1050px){main{grid-template-columns:minmax(0,1fr);max-width:960px}.clip-scroll{max-height:200px}.side{padding:20px}.vwrap{grid-template-columns:minmax(0,2.5fr) minmax(160px,1fr)}}
+@media(max-width:580px){header{padding:16px;gap:12px}main{padding:12px;gap:12px}#stage{padding:12px}.vwrap{grid-template-columns:1fr}.vcol.roi{max-width:240px}.rgrid{grid-template-columns:1fr}button{min-height:44px}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style></head><body>
 <header>
-  <h1>Clip Review — lọc tay</h1>
+  <h1>Clip Quality Review</h1>
   <div class="bar"><i id="prog" style="width:0%"></i></div>
-  <div class="pill" style="cursor:pointer" title="Lọc tất cả" onclick="setFilter('all')">#<b id="pos">0</b>/<b id="tot">0</b></div>
-  <div class="pill" style="cursor:pointer" title="Lọc danh sách Keep" onclick="setFilter('keep')">Keep <b id="ck" style="color:#67d699">0</b></div>
-  <div class="pill" style="cursor:pointer" title="Lọc danh sách Reject" onclick="setFilter('reject')">Reject <b id="cr" style="color:#f08a84">0</b></div>
-  <div class="pill" style="cursor:pointer" title="Lọc danh sách Chưa chắc" onclick="setFilter('uncertain')">Chưa chắc <b id="cq" style="color:#edc069">0</b></div>
-  <div class="pill" style="cursor:pointer" title="Lọc danh sách Chưa đánh dấu" onclick="setFilter('undecided')">Còn lại <b id="cu">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Show all clips" onclick="setFilter('all')">#<b id="pos">0</b>/<b id="tot">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Show kept clips" onclick="setFilter('keep')">Keep <b id="ck" style="color:var(--keep)">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Show rejected clips" onclick="setFilter('reject')">Reject <b id="cr" style="color:var(--rej)">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Show uncertain clips" onclick="setFilter('uncertain')">Uncertain <b id="cq" style="color:var(--unc)">0</b></div>
+  <div class="pill" style="cursor:pointer" title="Show unreviewed clips" onclick="setFilter('undecided')">Unreviewed <b id="cu">0</b></div>
 </header>
 <main>
   <div id="stage">
     <div class="vwrap">
       <div class="vcol orig">
-        <div class="vlab">video gốc (đã tắt tiếng)</div>
+        <div class="vlab">Original video<small>Full-frame context</small></div>
         <video id="vid" controls autoplay loop muted></video>
       </div>
       <div class="vcol roi">
-        <div class="vlab"><b>◀ ROI + TIẾNG</b> — thứ model thật sự nhận</div>
+        <div class="vlab">Mouth ROI<small>Synchronized review preview</small></div>
         <video id="roivid" controls autoplay loop></video>
-        <div class="noroi" id="noroi" style="display:none">Chưa dựng preview ROI cho clip này.</div>
+        <div class="noroi" id="noroi" style="display:none">No mouth preview is available for this clip.</div>
       </div>
     </div>
     <div class="btns">
-      <button class="keep" onclick="mark('keep')">✓ Keep (K)</button>
+      <button class="keep" onclick="mark('keep')">Keep (K)</button>
       <button class="reject-final" onclick="openReject()">Reject (R)</button>
-      <button class="unc" onclick="mark('uncertain')">? Chưa chắc (C)</button>
-      <button class="nav" onclick="go(-1)">← Trước</button>
-      <button class="nav" onclick="go(1)">Sau →</button>
-      <button class="ghost" onclick="mark('unset')">Bỏ đánh dấu (U)</button>
+      <button class="unc" onclick="mark('uncertain')">Uncertain (C)</button>
+      <button class="nav" onclick="go(-1)">Previous</button>
+      <button class="nav" onclick="go(1)">Next</button>
+      <button class="ghost" onclick="mark('unset')">Clear (U)</button>
     </div>
     <dialog id="rejectDialog" aria-labelledby="rejectTitle">
-      <h2 id="rejectTitle" style="margin-top:0">Chọn các lý do Reject</h2>
-      <p style="color:var(--mut);font-size:13px;margin:4px 0 12px">Có thể chọn một hoặc nhiều lý do (phím 1–<b id="nreason">8</b> để bật/tắt, Enter để xác nhận):</p>
+      <h2 id="rejectTitle" style="margin-top:0">Rejection reasons</h2>
+      <p style="color:var(--mut);font-size:13px;margin:4px 0 12px">Select one or more reasons. Use keys 1–<b id="nreason">8</b> to toggle and Enter to confirm.</p>
       <div class="rgrid" id="rgrid"></div>
       <div style="display:flex;gap:10px;margin-top:14px;justify-content:flex-end">
-        <button class="ghost" type="button" onclick="closeReject()">Hủy (Esc)</button>
-        <button class="reject-final" type="button" id="btnConfirmReject" style="width:auto;margin:0" onclick="confirmReject()">Xác nhận Reject (Enter)</button>
+        <button class="ghost" type="button" onclick="closeReject()">Cancel (Esc)</button>
+        <button class="reject-final" type="button" id="btnConfirmReject" style="width:auto;margin:0" onclick="confirmReject()">Confirm reject (Enter)</button>
       </div>
     </dialog>
     <div class="kbd">
-      <b>K</b> keep · <b>R</b> reject · <b>C</b> chưa chắc ·
-      <b>1</b>–<b id="nreason-kbd">8</b> chọn lý do trong popup ·
-      <b>U</b> bỏ · <b>←</b>/<b>→</b> chuyển · <b>Space</b> phát lại
+      <b>K</b> keep · <b>R</b> reject · <b>C</b> uncertain ·
+      <b>1</b>–<b id="nreason-kbd">8</b> select reasons ·
+      <b>U</b> clear · <b>←</b>/<b>→</b> navigate · <b>Space</b> replay
     </div>
-    <div class="warn" id="missing" style="display:none">⚠ Không tìm thấy file trên đĩa.</div>
+    <div class="warn" id="missing" style="display:none">Media file not found. Check the local media folder.</div>
     <div class="warn" id="reviewNotice" role="status"></div>
   </div>
-  <div class="side">
-    <div class="row">Trạng thái: <span id="badge" class="badge b-none">chưa đánh dấu</span></div>
+  <aside class="side" aria-label="Review details">
+    <h2 class="section-title">Clip details</h2>
+    <div class="row">Decision: <span id="badge" class="badge b-none">unreviewed</span></div>
     <div class="meta" id="meta"></div>
     <div class="row">
-      <label class="cb"><input type="checkbox" id="auto" checked> tự chuyển sau khi đánh dấu</label>
+      <label class="cb"><input type="checkbox" id="auto" checked> Advance after labeling</label>
     </div>
     <div class="row">
-      Tới clip: <input type="number" id="jump" min="1"> <button class="ghost" onclick="jumpTo()">Đi</button>
-      <button class="ghost" onclick="nextUndecided()">Chưa đánh dấu →</button>
+      Go to clip: <input type="number" id="jump" min="1" aria-label="Clip number"> <button class="ghost" onclick="jumpTo()">Go</button>
+      <button class="ghost" onclick="nextUndecided()">Next unreviewed</button>
     </div>
     <div class="list-panel">
-      <div style="font-size:12px;font-weight:700;color:#cfd6e4;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
-        <span>Danh sách clip</span>
+      <div class="list-heading">
+        <span>Review queue</span>
         <span id="filteredCount" style="color:var(--mut);font-weight:400;font-size:11px"></span>
       </div>
       <div class="tab-row">
-        <button class="tab-btn active" id="tab-all" onclick="setFilter('all')">Tất cả (<span id="t-all">0</span>)</button>
+        <button class="tab-btn active" id="tab-all" onclick="setFilter('all')">All (<span id="t-all">0</span>)</button>
         <button class="tab-btn t-keep" id="tab-keep" onclick="setFilter('keep')">Keep (<span id="t-k">0</span>)</button>
         <button class="tab-btn t-rej" id="tab-reject" onclick="setFilter('reject')">Reject (<span id="t-r">0</span>)</button>
-        <button class="tab-btn t-unc" id="tab-uncertain" onclick="setFilter('uncertain')">Chưa chắc (<span id="t-u">0</span>)</button>
-        <button class="tab-btn t-rem" id="tab-undecided" onclick="setFilter('undecided')">Còn lại (<span id="t-rem">0</span>)</button>
+        <button class="tab-btn t-unc" id="tab-uncertain" onclick="setFilter('uncertain')">Uncertain (<span id="t-u">0</span>)</button>
+        <button class="tab-btn t-rem" id="tab-undecided" onclick="setFilter('undecided')">Unreviewed (<span id="t-rem">0</span>)</button>
       </div>
-      <input type="text" class="list-search" id="clipSearch" placeholder="Lọc theo tên clip / video..." oninput="renderClipList()">
+      <input type="text" class="list-search" id="clipSearch" aria-label="Search clips" placeholder="Search clip or source ID" oninput="renderClipList()">
       <div class="clip-scroll" id="clipList"></div>
     </div>
-    <div class="row" style="margin-top:10px"><button class="ghost" onclick="doCompare()">So sánh với lọc code</button></div>
-    <div id="cmp"></div>
+    <details><summary>Automated filtering comparison</summary><div class="row"><button class="ghost" onclick="doCompare()">Load comparison</button></div><div id="cmp"></div></details>
     <div class="who">reviewer: <b id="who">—</b> · rubric: <b id="rub">—</b></div>
-  </div>
+  </aside>
 </main>
 <script>
 let S={clips:[],i:0,has_compare:false,reasons:[],saving:false};
@@ -774,7 +728,7 @@ async function load(){
   S.clips=j.clips;S.i=j.start;S.has_compare=j.has_compare;S.has_gate=j.has_gate;S.reasons=j.reasons;
   document.getElementById('tot').textContent=j.counts.total;
   document.getElementById('jump').max=j.counts.total;
-  document.getElementById('who').textContent=j.reviewer||'(không đặt)';
+  document.getElementById('who').textContent=j.reviewer||'(not set)';
   document.getElementById('rub').textContent=j.rubric;
   renderReasonChoices();
   document.getElementById('nreason').textContent=S.reasons.length;  // theo rubric, khong hard-code
@@ -817,22 +771,22 @@ function render(){
   // motion thấp -> tô cảnh báo, nhắc người review nhìn kỹ xem có phải ảnh tĩnh
   let mm=(c.motion_median===undefined||c.motion_median==='')?null:Number(c.motion_median);
   let mcls=(mm!==null&&mm<1.0)?' class="alert"':'';
-  let m=`<div><span>clip_id:</span> <b>${c.clip_id}</b></div>`+
-    `<div><span>tier:</span> <b>${c.tier||'—'}</b> · <span>video:</span> <b>${c.source_video||'—'}</b></div>`+
-    `<div><span>duration:</span> <b>${fmt(c.duration,2)}s</b> · <span>snr:</span> <b>${fmt(c.snr,1)} dB</b></div>`+
-    `<div><span>det_ratio:</span> <b>${fmt(c.det_ratio)}</b> · <span>face_area:</span> <b>${fmt(c.mean_face_area,4)}</b></div>`+
-    `<div><span>consistency:</span> <b>${fmt(c.embed_consistency)}</b></div>`;
+  let m=`<div><span>Clip ID:</span> <b>${c.clip_id}</b></div>`+
+    `<div><span>Source type:</span> <b>${c.tier||'—'}</b> · <span>Video:</span> <b>${c.source_video||'—'}</b></div>`+
+    `<div><span>Duration:</span> <b>${fmt(c.duration,2)}s</b> · <span>SNR:</span> <b>${fmt(c.snr,1)} dB</b></div>`+
+    `<details><summary>Quality measurements</summary><div><span>Detection ratio:</span> <b>${fmt(c.det_ratio)}</b> · <span>Face area:</span> <b>${fmt(c.mean_face_area,4)}</b></div>`+
+    `<div><span>Embedding consistency:</span> <b>${fmt(c.embed_consistency)}</b></div>`;
   if(c.motion_median!==undefined)
-    m+=`<div><span>motion:</span> <b${mcls}>${fmt(c.motion_median)}</b>`+
-       ` · <span>tĩnh:</span> <b${mcls}>${fmt(c.frac_near_static,2)}</b></div>`;
+    m+=`<div><span>Motion:</span> <b${mcls}>${fmt(c.motion_median)}</b>`+
+       ` · <span>Near-static ratio:</span> <b${mcls}>${fmt(c.frac_near_static,2)}</b></div>`;
   if(c.n_faces_med!==undefined){
     // ratio cao = mat nhi to xap xi mat nhat -> luat 'mat to nhat' de chon nham nguoi
     let rr=Number(c.ratio_med), rcls=(rr>0.6)?' class="alert"':'';
-    m+=`<div><span>số mặt:</span> <b${rcls}>${fmt(c.n_faces_med,0)}</b>`+
-       ` · <span>mặt nhì/nhất:</span> <b${rcls}>${fmt(c.ratio_med,2)}</b></div>`;}
+    m+=`<div><span>Face count:</span> <b${rcls}>${fmt(c.n_faces_med,0)}</b>`+
+       ` · <span>Second / largest face:</span> <b${rcls}>${fmt(c.ratio_med,2)}</b></div>`;}
   if(c.sync_conf!==undefined)
-    m+=`<div><span>sync_conf:</span> <b>${fmt(c.sync_conf,2)}</b></div>`;
-  document.getElementById('meta').innerHTML=m;
+    m+=`<div><span>Sync confidence:</span> <b>${fmt(c.sync_conf,2)}</b></div>`;
+  document.getElementById('meta').innerHTML=m+'</details>';
   let b=document.getElementById('badge');let d=c.dec;
   let lab=Object.fromEntries(S.reasons);
   if(d==='keep'){b.className='badge b-keep';b.textContent='KEEP';}
@@ -841,8 +795,8 @@ function render(){
     let rTxt=(c.reason||'').split(',').map(x=>lab[x.trim()]||x.trim()).filter(Boolean).join(' + ')||'?';
     b.textContent='REJECT — '+rTxt;
   }
-  else if(d==='uncertain'){b.className='badge b-unc';b.textContent='CHƯA CHẮC';}
-  else{b.className='badge b-none';b.textContent='chưa đánh dấu';}
+  else if(d==='uncertain'){b.className='badge b-unc';b.textContent='UNCERTAIN';}
+  else{b.className='badge b-none';b.textContent='unreviewed';}
   renderClipList(true);
 }
 let currentFilter='all';
@@ -873,7 +827,7 @@ function renderClipList(scrollToActive=false){
     visible.push({i:idx,clip:c});
   }
   let countEl=document.getElementById('filteredCount');
-  if(countEl)countEl.textContent=`${visible.length}/${S.clips.length} clip`;
+  if(countEl)countEl.textContent=`${visible.length} / ${S.clips.length}`;
   let lab=Object.fromEntries(S.reasons||[]);
   let html='';
   for(let item of visible){
@@ -885,9 +839,9 @@ function renderClipList(scrollToActive=false){
       badgeHtml='<span class="tag-sm tag-keep">KEEP</span>';
     }else if(c.dec==='reject'){
       let reasonTxt=(c.reason||'').split(',').map(x=>lab[x.trim()]||x.trim()).filter(Boolean).join(' + ')||'REJ';
-      badgeHtml=`<span class="tag-sm tag-rej" title="${reasonTxt}">REJ · ${c.reason||''}</span>`;
+      badgeHtml=`<span class="tag-sm tag-rej" title="${reasonTxt}">REJECT</span>`;
     }else if(c.dec==='uncertain'){
-      badgeHtml='<span class="tag-sm tag-unc">CHƯA CHẮC</span>';
+      badgeHtml='<span class="tag-sm tag-unc">UNCERTAIN</span>';
     }else{
       badgeHtml='<span class="tag-sm tag-rem">—</span>';
     }
@@ -900,7 +854,7 @@ function renderClipList(scrollToActive=false){
       `<div>${badgeHtml}</div>`+
     `</div>`;
   }
-  container.innerHTML=html||'<div style="padding:16px;text-align:center;color:var(--mut);font-size:12px">Không có clip nào phù hợp bộ lọc.</div>';
+  container.innerHTML=html||'<div style="padding:16px;text-align:center;color:var(--mut);font-size:12px">No clips match the current filter.</div>';
   if(scrollToActive){
     let activeEl=document.getElementById(`citem-${S.i}`);
     if(activeEl){
@@ -914,8 +868,8 @@ function renderReasonChoices(){
   if(!grid)return;
   grid.innerHTML=S.reasons.map((p,k)=>{
     const isSel=selectedRejectReasons.has(p[0]);
-    return `<button type="button" class="${isSel?'selected':''}" onclick="toggleReasonChoice('${p[0]}')">`+
-      `<i>${k+1}</i>${p[1]} ${isSel?'✓':''}</button>`;
+    return `<button type="button" class="${isSel?'selected':''}" aria-pressed="${isSel}" onclick="toggleReasonChoice('${p[0]}')">`+
+      `<i>${k+1}</i>${p[1]} ${isSel?'(selected)':''}</button>`;
   }).join('');
 }
 function toggleReasonChoice(key){
@@ -928,7 +882,7 @@ function toggleReasonChoice(key){
 }
 function confirmReject(){
   if(selectedRejectReasons.size===0){
-    alert('Vui lòng chọn ít nhất một lý do Reject (phím 1–'+S.reasons.length+').');
+    alert('Select at least one rejection reason (keys 1–'+S.reasons.length+').');
     return;
   }
   const chosen=Array.from(selectedRejectReasons);
@@ -959,14 +913,14 @@ async function mark(dec,reason=''){
     let r=await fetch('/api/mark',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({i:S.i,decision:dec,reason,bad_intervals:[]})});
     let j=await r.json();
-    if(!r.ok||!j.ok){alert(j.err||'Không lưu được. Hãy thử lại.');return;}
+    if(!r.ok||!j.ok){alert(j.err||'Unable to save. Please try again.');return;}
     document.getElementById('reviewNotice').textContent=j.warning?`${c.clip_id}: ${j.warning}`:'';
     if(j.counts)setCounts(j.counts);
     c.dec=(dec==='unset')?'':dec;c.bad_intervals=j.bad_intervals||[];c.reason=j.reason||'';
     if(dialog.open)dialog.close();
     if((dec==='reject'||(dec!=='unset'&&document.getElementById('auto').checked))&&S.i+1<S.clips.length)S.i++;
     render();
-  }catch(error){alert('Không lưu được kết quả. Hãy kiểm tra kết nối và thử lại.');}
+  }catch(error){alert('Unable to save the decision. Check the connection and try again.');}
   finally{S.saving=false;dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
 }
 document.getElementById('rejectDialog').addEventListener('cancel',e=>{if(S.saving)e.preventDefault();});
@@ -976,26 +930,26 @@ function nextUndecided(){if(S.saving)return;for(let k=S.i+1;k<S.clips.length;k++
   for(let k=0;k<S.clips.length;k++){if(!S.clips[k].dec){S.i=k;render();return;}}}
 async function doCompare(){
   let el=document.getElementById('cmp');
-  if(!S.has_compare){el.innerHTML='<i>Không có file lọc code để so sánh.</i>';return;}
+  if(!S.has_compare){el.innerHTML='<i>No automated filtering results are available.</i>';return;}
   let j=await(await fetch('/api/compare')).json();
   let m=j.matrix;
   let tbl=`<table class="cmp">`+
     `<tr><th></th><th>code KEEP</th><th>code GATE-REJECT</th><th>code BALANCE-DROP</th></tr>`+
-    `<tr><th>Tay KEEP</th><td class="ok">${m.keep.keep}</td><td class="bad">${m.keep.gate}</td><td class="mut">${m.keep.balance}</td></tr>`+
-    `<tr><th>Tay REJECT</th><td class="bad">${m.reject.keep}</td><td class="ok">${m.reject.gate}</td><td class="mut">${m.reject.balance}</td></tr>`+
+    `<tr><th>Manual KEEP</th><td class="ok">${m.keep.keep}</td><td class="bad">${m.keep.gate}</td><td class="mut">${m.keep.balance}</td></tr>`+
+    `<tr><th>Manual REJECT</th><td class="bad">${m.reject.keep}</td><td class="ok">${m.reject.gate}</td><td class="mut">${m.reject.balance}</td></tr>`+
     `</table>`;
   let rc=Object.entries(j.reason_counts).filter(([k,v])=>v>0)
         .sort((a,b)=>b[1]-a[1])
         .map(([k,v])=>`<div><span style="color:var(--mut)">${j.reason_labels[k]}:</span> <b>${v}</b></div>`).join('');
-  el.innerHTML=`<b>So sánh tay vs code</b> (trên ${j.decided} clip đã phán keep/reject)`+tbl+
-   `Đồng thuận trục RÁC: <b style="color:#67d699">${j.quality_agreement}%</b> `+
-   `<span style="color:var(--mut)">(trên ${j.quality_decided} clip code có phán chất lượng)</span><br>`+
-   `Rác code BỎ SÓT (tay reject / code keep): <b style="color:#f0a07a">${j.found_missed_garbage}</b><br>`+
-   `Tay giữ / code gate-reject: <b style="color:#f0a07a">${j.manual_keep_gate}</b><br>`+
-   `Clip tốt code bỏ do CÂN BẰNG (không tính bất đồng): <b style="color:#8a93a3">${j.balance_only}</b><br>`+
-   `Chưa chắc (không tính vào ma trận): <b style="color:#edc069">${j.uncertain}</b>`+
-   (rc?`<div style="margin-top:8px"><b>Lý do reject</b>${rc}</div>`:'')+
-   (j.has_gate?'':`<div class="warn">Chưa có file gate-rejects → cột GATE trống. Chạy lại với --rejects.</div>`);
+  el.innerHTML=`<b>Manual vs automated review</b> (${j.decided} clips labeled keep or reject)`+tbl+
+   `Quality agreement: <b style="color:var(--keep)">${j.quality_agreement}%</b> `+
+   `<span style="color:var(--mut)">(across ${j.quality_decided} clips with automated quality decisions)</span><br>`+
+   `Manual reject / automated keep: <b style="color:var(--rej)">${j.found_missed_garbage}</b><br>`+
+   `Manual keep / automated gate reject: <b style="color:var(--rej)">${j.manual_keep_gate}</b><br>`+
+   `Removed for balancing (excluded from disagreement): <b style="color:var(--mut)">${j.balance_only}</b><br>`+
+   `Uncertain (excluded from the matrix): <b style="color:var(--unc)">${j.uncertain}</b>`+
+   (rc?`<div style="margin-top:8px"><b>Rejection reasons</b>${rc}</div>`:'')+
+   (j.has_gate?'':`<div class="warn">No gate-rejection file supplied. Use --rejects to populate the GATE column.</div>`);
 }
 document.addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;

@@ -46,6 +46,10 @@ Trong `01_extract.py`:
 
 Kết quả là `000000_feature_path.pt` và `run.json`. Clip thử có nhãn `None`, split `unassigned`: không tự coi video chưa duyệt là real và không dùng cache thử làm dữ liệu train.
 
+Mặc định `SAVE_PREVIEWS = True`: mỗi feature còn có `000000_feature_path_mouth.mp4` (miệng grayscale sau center-crop, 88×88 với Base, kèm audio cùng cửa sổ) và `000000_feature_path_mouth.png` (tối đa 8 frame mẫu trước chuẩn hóa, giữ đúng giá trị pixel). MP4 chỉ để xem/nghe, không đưa ngược vào model; PNG được lấy trực tiếp từ tensor đầu vào sau khi hoàn tác chuẩn hóa. Trong `run.json`, quality lưu chỉ số frame mẫu, số mặt phát hiện và box khuôn mặt được chọn từng frame. Có thể tắt bằng `SAVE_PREVIEWS = False` hoặc `--no-previews` khi đã kiểm tra và cần giảm output.
+
+Ngày 18/09/2026, clip `5CNS_gaH16c_s0000015202_e0000020958` lỗi ở frame 47 do Dlib nhận nhầm bàn tay là mặt phụ. Preprocessing mới khởi tạo từ một mặt duy nhất, sau đó bám box có độ chồng lấn rõ nhất với box trước đó (IoU tối thiểu 0,3 và hơn ứng viên thứ hai ít nhất 0,15). Không chọn mặt lớn nhất và không nhảy sang mặt ở vị trí khác khi mất target. Nếu ngay đầu có nhiều mặt hoặc việc bám mặt không rõ ràng, vẫn dừng; đây chưa phải model xác định ai đang nói. Không loại clip chỉ vì lỗi extractor. Quy tắc này cần kiểm chứng khi mở rộng dữ liệu.
+
 CLI tương đương:
 
 ```powershell
@@ -72,7 +76,7 @@ Mỗi view được xử lý riêng và lưu feature riêng. Kết quả đầy 
 ## 5. Code xử lý những gì?
 
 1. FFmpeg cắt hai luồng theo cùng cửa sổ, chuyển video sang 25 fps lossless tạm thời và audio PCM mono 16 kHz. Giữ độ lệch timestamp vốn có giữa hai stream; không tự chỉnh môi/tiếng cho khớp.
-2. Dlib tìm 68 landmark trên từng frame. Từ chối nhiều mặt và khoảng mất mặt dài; cho nội suy tối đa 3 frame liên tiếp và tổng không quá 10%. Đây là quy tắc preprocessing có ghi lại, cần kiểm tra tỷ lệ lỗi theo nhãn/generator.
+2. Dlib tìm và bám một mặt, rồi lấy 68 landmark trên từng frame. Dừng khi chọn mặt không rõ ràng hoặc mất target quá lâu; cho nội suy tối đa 3 frame liên tiếp và tổng không quá 10%. Đây là quy tắc preprocessing có ghi lại, cần kiểm tra tỷ lệ lỗi theo nhãn/generator.
 3. Dùng `crop_patch` của upstream để căn chỉnh mặt và cắt miệng 96×96; grayscale rồi center-crop, chuẩn hóa theo cấu hình checkpoint (Base thường 88×88). Không dùng ROI YOLO phục vụ review. Không nén lại ROI bằng CRF 20 như bước xuất file của upstream.
 4. Audio dùng log-filterbank 26 chiều, ghép mỗi 4 frame thành 104 chiều tại 25 Hz, rồi chuẩn hóa theo checkpoint. Chỉ cho lệch chiều dài tối đa một frame ở biên; không kéo giãn feature để che lỗi timeline.
 5. Nạp **đúng weights hai nhánh trước fusion**: visual ResEncoder + projection và audio projection. Đóng băng, `eval`, không gradient. Với Base, mỗi đầu ra là `[T,768]`. Thiếu/sai key weights thì lỗi, không dùng random weights thay thế.

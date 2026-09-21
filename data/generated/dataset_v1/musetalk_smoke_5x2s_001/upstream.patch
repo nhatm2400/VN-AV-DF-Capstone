@@ -1,0 +1,14 @@
+diff --git a/scripts/inference.py b/scripts/inference.py
+index 428afb9..b40eeb5 100644
+--- a/scripts/inference.py
++++ b/scripts/inference.py
+@@ -232,7 +232,8 @@ def main(args):
+             print("Video generation command:", cmd_img2video)
+             os.system(cmd_img2video)   
+             
+-            cmd_combine_audio = f"ffmpeg -y -v warning -i {audio_path} -i {temp_vid_path} {output_vid_name}"
++            # Preserve generated video; avoid a second lossy video encode when adding audio.
++            cmd_combine_audio = f"ffmpeg -y -v warning -i {audio_path} -i {temp_vid_path} -map 1:v:0 -map 0:a:0 -c:v copy -c:a aac -b:a 128k -shortest {output_vid_name}"
+             print("Audio combination command:", cmd_combine_audio) 
+             os.system(cmd_combine_audio)
+             

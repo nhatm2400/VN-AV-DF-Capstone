@@ -1,0 +1,8 @@
+{
+  "requested": 50,
+  "successful_pairs": 33,
+  "failures": 0,
+  "unattempted": 17,
+  "partial": true,
+  "status": "partial_awaiting_visual_review"
+}

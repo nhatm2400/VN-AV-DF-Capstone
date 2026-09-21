@@ -11,11 +11,14 @@ UPSTREAM = ROOT / 'external/av_hubert'
 PREDICTOR = ROOT / 'weights/face_landmarks/shape_predictor_68_face_landmarks.dat'
 MEAN_FACE = ROOT / 'weights/face_landmarks/20words_mean_face.npy'
 INPUT_MANIFEST = ROOT / 'data/manifests/dataset_v1/features/media_pairs.csv'
-INPUT_VIDEO = None  # Set to a raw clip path for one unlabelled smoke extraction.
-OUTPUT = ROOT / 'cache/features/dataset_v1/extract_001'  # Must be a new directory.
+INPUT_VIDEO = ROOT / 'data/real/dataset_v1/cut_cut_001/podcast/0_18/media/5CNS_gaH16c_s0000015202_e0000020958.mp4'
+
+OUTPUT = ROOT / 'cache/features/dataset_v1/train_smoke_003_retry_001'
+
 START_FRAME = 0
-NUM_FRAMES = 125  # 5 seconds at 25 fps; choose a window within the clip.
-DEVICE = 'cpu'  # Change to 'cuda' only in a compatible GPU environment.
+NUM_FRAMES = 50  # 2 giây ở 25 fps
+DEVICE = 'cpu'
+SAVE_PREVIEWS = True  # Exact mouth input with audio, plus sampled frames beside each feature cache.
 
 
 def main():
@@ -32,6 +35,7 @@ def main():
     parser.add_argument('--start-frame', type=int, default=START_FRAME)
     parser.add_argument('--num-frames', type=int, default=NUM_FRAMES)
     parser.add_argument('--device', choices=['cpu', 'cuda'], default=DEVICE)
+    parser.add_argument('--previews', action=argparse.BooleanOptionalAction, default=SAVE_PREVIEWS)
     parser.add_argument('--check', action='store_true', help='Check dependencies/assets without loading weights')
     args = parser.parse_args()
     from src.features.extraction import check_assets, extract

@@ -1,0 +1,11 @@
+{
+  "schema": "wav2lip_plan_v1",
+  "run_id": "wav2lip_gpu_batch_001",
+  "manifest_sha256": "aa5cc59104f1a96740511b3e157cf37dc45da52d1b185e812d5997d9f38a1535",
+  "plan_sha256": "b9b68c4095fd701bd6c986fa4d51081802921a8b227e7f14be0a04df8aeae61d",
+  "count": 10,
+  "num_frames": 50,
+  "split": "train",
+  "audio_policy": "same_speaker_other_train_video",
+  "selection": "source_round_robin_sorted"
+}

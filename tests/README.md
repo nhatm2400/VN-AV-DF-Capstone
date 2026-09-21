@@ -5,6 +5,7 @@
 | `data/` | URL/thu thập/tải, cắt clip, manifest, split chống leakage, timeline và nén. |
 | `quality/` | Face/curation, active-speaker, LASER, gộp điểm và calibration. |
 | `review/` | Giao diện review, chia/gộp công việc, ROI preview. |
+| `generators/` | Chọn train/source/audio, chống vượt split, output bất biến, FFmpeg real/fake bằng model stub; MuseTalk kiểm tra resume/checksum tải, 5 đầu vào 2 giây và thứ tự các cột so sánh bằng media tổng hợp. Không kiểm chứng chất lượng generator thật. |
 | `models/` | Hai luồng có gradient, padding, supervision X/Y; nạp checkpoint giả lập, preprocessing và giữ độ lệch timestamp bằng media tổng hợp. Cần PyTorch, python_speech_features; media tests dùng FFmpeg. |
 
 Chạy tất cả từ root: `python -m unittest discover -s tests -q`.

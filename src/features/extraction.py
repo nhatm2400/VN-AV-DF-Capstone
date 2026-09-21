@@ -97,7 +97,9 @@ def extract(args):
             view_specs.append(('paired_media_path', 'paired_view_id', 'paired_feature_path'))
         for media_key, view_key, feature_key in view_specs:
             source_hash = sha256(row[media_key])
-            audio, video, quality = processor(row[media_key], row['start_frame'], row['num_frames'])
+            preview = args.out / f'{index:06d}_{feature_key}_mouth.mp4' if getattr(args, 'previews', True) else None
+            audio, video, quality = processor(row[media_key], row['start_frame'], row['num_frames'],
+                                              preview_path=preview)
             a, v = adapter(audio.to(args.device), video.to(args.device))
             if (a.shape[1] != row['num_frames'] or not torch.isfinite(a).all()
                     or not torch.isfinite(v).all()):

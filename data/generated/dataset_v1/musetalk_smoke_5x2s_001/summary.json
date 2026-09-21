@@ -1,0 +1,59 @@
+{
+  "requested": 5,
+  "valid_outputs": 5,
+  "exit_code": 0,
+  "elapsed_seconds": 3817.2,
+  "outputs": [
+    {
+      "task": "task_01",
+      "file_path": "E:\\FPTU\\PRJ\\VN-AV-DF-Capstone\\data\\generated\\dataset_v1\\musetalk_smoke_5x2s_001\\output\\v15\\task_01_musetalk_v15_fake.mp4",
+      "valid": true,
+      "frames": 50,
+      "duration": 2.0,
+      "width": 1920,
+      "height": 1080,
+      "audio_duration": 2.0
+    },
+    {
+      "task": "task_02",
+      "file_path": "E:\\FPTU\\PRJ\\VN-AV-DF-Capstone\\data\\generated\\dataset_v1\\musetalk_smoke_5x2s_001\\output\\v15\\task_02_musetalk_v15_fake.mp4",
+      "valid": true,
+      "frames": 50,
+      "duration": 2.0,
+      "width": 3840,
+      "height": 2160,
+      "audio_duration": 2.0
+    },
+    {
+      "task": "task_03",
+      "file_path": "E:\\FPTU\\PRJ\\VN-AV-DF-Capstone\\data\\generated\\dataset_v1\\musetalk_smoke_5x2s_001\\output\\v15\\task_03_musetalk_v15_fake.mp4",
+      "valid": true,
+      "frames": 50,
+      "duration": 2.0,
+      "width": 1920,
+      "height": 1080,
+      "audio_duration": 2.0
+    },
+    {
+      "task": "task_04",
+      "file_path": "E:\\FPTU\\PRJ\\VN-AV-DF-Capstone\\data\\generated\\dataset_v1\\musetalk_smoke_5x2s_001\\output\\v15\\task_04_musetalk_v15_fake.mp4",
+      "valid": true,
+      "frames": 50,
+      "duration": 2.0,
+      "width": 1920,
+      "height": 1080,
+      "audio_duration": 2.0
+    },
+    {
+      "task": "task_05",
+      "file_path": "E:\\FPTU\\PRJ\\VN-AV-DF-Capstone\\data\\generated\\dataset_v1\\musetalk_smoke_5x2s_001\\output\\v15\\task_05_musetalk_v15_fake.mp4",
+      "valid": true,
+      "frames": 50,
+      "duration": 2.0,
+      "width": 1920,
+      "height": 1080,
+      "audio_duration": 2.0
+    }
+  ],
+  "status": "awaiting_visual_review"
+}

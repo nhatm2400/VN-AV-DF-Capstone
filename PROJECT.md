@@ -1,6 +1,6 @@
 # PROJECT.md — trạng thái hiện hành
 
-Cập nhật 16/09/2026. Hướng hiện hành: **lip-sync audio–visual tiếng Việt**, so X/Y trên protocol tách người/nguồn, generator chưa thấy và nén.
+Cập nhật 19/09/2026. Hướng hiện hành: **lip-sync audio–visual tiếng Việt**, so X/Y trên protocol tách người/nguồn, generator chưa thấy và nén. Giai đoạn sơ bộ chỉ có một người: dùng `source_disjoint_single_speaker` để chia theo nguồn; bổ sung người cho đánh giá speaker-disjoint sau.
 
 ## Đã chuyển đổi
 
@@ -18,11 +18,11 @@ Cập nhật 16/09/2026. Hướng hiện hành: **lip-sync audio–visual tiến
 |---|---|
 | Kiểm tra giấy phép theo video | Có CLI lấy metadata và trạng thái pending; chưa gọi API trên nguồn mới. |
 | Thu thập / downloader tuyển chọn | Có file chạy 01/02; nguồn mới đã được tải và đưa qua cắt clip/review. Kiểm tra giấy phép vẫn là bước riêng. |
-| Cắt clip / manifest / review | Theo cập nhật của nhóm ngày 16/09: 2/3 người đã hoàn tất gán nhãn review. Chưa xác minh/gộp đủ kết quả của cả ba người để khóa dataset. |
-| Chia split / quan hệ biến thể | Đã triển khai kiểm tra tự động và test; chưa khóa dataset nghiên cứu. |
+| Cắt clip / manifest / review | Đã gộp đủ 2.252 quyết định của ba người: 1.143 Keep, 1.109 Reject, không còn uncertain; xuất reviewed_clips.csv. |
+| Chia split / quan hệ biến thể | Đã chạy bước 05 cho bộ một người: 786 train, 192 val, 165 test; 18 nhóm nguồn, protocol source_disjoint_single_speaker. Chưa phải split nghiên cứu trên người chưa thấy. |
 | Active-speaker / gom người tự động | Công cụ tùy chọn được giữ; chưa chạy lại model ngoài hoặc calibrate ngưỡng cho population mới. |
 | Nén real/fake | Có CLI và smoke bằng media tổng hợp, không phải kết quả nghiên cứu. |
-| Generator Wav2Lip/MuseTalk/ứng viên giữ riêng | Đề xuất; chưa tích hợp và benchmark. |
+| Generator Wav2Lip/MuseTalk/ứng viên giữ riêng | MuseTalk 1.5 đã cài đủ và chạy xong smoke 5 clip. Bước 07 đã chạy `quality_10x2s_002`: 10 clip train × 2 giây, 1080p, chung frame/audio cho Wav2Lip GAN và MuseTalk; đủ 20 fake và 10 comparison, chờ review. Preprocessing vẫn inline; S3FD dùng ảnh nhỏ, tắt benchmark và giải phóng cache GPU thừa; ghép mềm vùng dưới mặt. 19 kiểm tra generator qua; chưa phải kết quả detector hay bằng chứng fake đủ tinh vi. Generator giữ riêng chưa tích hợp. |
 | AV-HuBERT | Có 01_extract: loader Base pre-fusion, xử lý miệng/audio cùng timeline và xuất cache/pairs.csv. Đã cài dlib CPU 20.0.1, nạp checkpoint và chạy một clip thật: cửa sổ 2 giây, 50 frame, không nội suy landmark, hai feature [50,768] hữu hạn. Kết quả ở cache/features/dataset_v1/real_smoke_001. Chưa benchmark toàn bộ dữ liệu; không dùng Transformer hợp nhất. |
 | Detector Y và cải tiến X | Có detector, loader feature pairs, train/validation theo epoch và lưu checkpoint; X thêm consistency. Chỉ kiểm chứng bằng feature giả lập, chưa train nghiên cứu. |
 | Final test và demo detector | Chưa thực hiện. |
@@ -46,8 +46,8 @@ Hướng dẫn: [src/data/README.md](src/data/README.md), [review](src/tools/REA
 
 ## Việc kế tiếp
 
-1. Hoàn tất review của người còn lại; nhận, kiểm tra và gộp đủ ba bộ kết quả.
-2. Rà host/người/nguồn trùng và quyền sử dụng; khóa split chống leakage trước khi tạo fake.
+1. Review đã hoàn tất. Người dùng xác nhận mọi video cùng một người; bước 05 được cấu hình chia theo nguồn cho kết quả sơ bộ, không tuyên bố speaker-disjoint.
+2. Rà nguồn trùng và quyền sử dụng trước khi tạo fake; bổ sung người sau kết quả sơ bộ AV-HuBERT và tạo phiên bản split nghiên cứu mới.
 3. Bước kiểm tra extraction một clip thật đã qua; tiếp theo kiểm tra vùng miệng và tỷ lệ lỗi trên một nhóm nhỏ đa dạng trước khi chạy hàng loạt.
 4. Tích hợp một generator trên mẫu phát triển nhỏ; đo chi phí và baseline đơn luồng/kết hợp trước X/Y. Chưa mở final test.
 

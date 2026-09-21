@@ -38,8 +38,8 @@ class MediaConfig:
         return config
 
 
-def run_media_command(command):
-    result = subprocess.run([str(part) for part in command], capture_output=True)
+def run_media_command(command, input_data=None):
+    result = subprocess.run([str(part) for part in command], input=input_data, capture_output=True)
     if result.returncode:
         raise RuntimeError(result.stderr.decode('utf-8', errors='replace')[-3000:])
     return result.stdout
@@ -115,6 +115,66 @@ def make_inputs(waveform, mouth_bgr, config):
     return audio.T.unsqueeze(0).contiguous(), video.unsqueeze(0).unsqueeze(0)
 
 
+def face_box(face):
+    return (face.left(), face.top(), face.right() + 1, face.bottom() + 1)
+
+
+class FaceTracker:
+    """Follow the initially unambiguous face; this is not active-speaker detection."""
+    min_iou = 0.3
+    min_margin = 0.15
+
+    def __init__(self):
+        self.previous = None
+
+    def select(self, faces):
+        if not faces:
+            return None
+        if self.previous is None:
+            if len(faces) != 1:
+                raise ValueError('Ambiguous initial faces: select a window with one clear speaking person')
+            selected = faces[0]
+        else:
+            x1, y1, x2, y2 = self.previous
+            scores = []
+            for face in faces:
+                a1, b1, a2, b2 = face_box(face)
+                intersection = max(0, min(x2, a2) - max(x1, a1)) * max(0, min(y2, b2) - max(y1, b1))
+                union = (x2-x1)*(y2-y1) + (a2-a1)*(b2-b1) - intersection
+                scores.append(intersection / union if union > 0 else 0)
+            order = sorted(range(len(faces)), key=lambda i: scores[i], reverse=True)
+            if scores[order[0]] < self.min_iou:
+                return None  # Never jump to an unrelated face after a missed detection.
+            if len(order) > 1 and scores[order[0]] - scores[order[1]] < self.min_margin:
+                raise ValueError('Ambiguous face tracking: multiple faces overlap the previous target')
+            selected = faces[order[0]]
+        self.previous = face_box(selected)
+        return selected
+
+
+def save_mouth_preview(visual, config, audio_path, destination):
+    """Render the exact visual input before normalization; never feed preview back into the model."""
+    destination = Path(destination)
+    sheet_path = destination.with_suffix('.png')
+    if destination.exists() or sheet_path.exists():
+        raise FileExistsError(f'Preview already exists: {destination}')
+    frames = ((visual[0, 0].detach().cpu().numpy() * config.image_std + config.image_mean)
+              * 255).round().clip(0, 255).astype(np.uint8)
+    height, width = frames.shape[1:]
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    run_media_command([
+        'ffmpeg', '-nostdin', '-v', 'error', '-n', '-f', 'rawvideo', '-pixel_format', 'gray',
+        '-video_size', f'{width}x{height}', '-framerate', '25', '-i', 'pipe:0',
+        '-i', audio_path, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'libx264',
+        '-crf', '0', '-pix_fmt', 'yuv444p', '-c:a', 'aac', '-shortest', destination], frames.tobytes())
+    indices = np.linspace(0, len(frames)-1, min(8, len(frames)), dtype=int)
+    sheet = np.concatenate([frames[i] for i in indices], axis=1)
+    if not cv2.imwrite(str(sheet_path), sheet):
+        raise OSError(f'Cannot write mouth contact sheet: {sheet_path}')
+    return dict(preview_file=destination.name, preview_frames_file=sheet_path.name,
+                preview_frame_indices=indices.tolist())
+
+
 class MediaProcessor:
     def __init__(self, upstream, predictor, mean_face, config):
         for path in (predictor, mean_face):
@@ -129,17 +189,21 @@ class MediaProcessor:
         align_path = Path(upstream) / 'avhubert/preparation/align_mouth.py'
         self.align = load_source(align_path, '_avhubert_align')
         self.config = config
-        self.provenance = dict(preprocessing='aligned_mouth_logfbank_v1', config=asdict(config),
-                               landmark_detector='dlib_hog_single_face', max_missing_run=3,
+        self.provenance = dict(preprocessing='aligned_mouth_logfbank_v2', config=asdict(config),
+                               landmark_detector='dlib_hog_tracked_face', max_missing_run=3,
+                               face_tracking=dict(initial='single_face', min_iou=FaceTracker.min_iou,
+                                                  min_margin=FaceTracker.min_margin),
                                max_missing_fraction=0.1, mouth_size=96, smoothing_frames=12,
                                roi_reencode=False, align_sha256=sha256(align_path),
                                predictor_sha256=sha256(predictor), mean_face_sha256=sha256(mean_face))
 
-    def __call__(self, path, start_frame, num_frames):
+    def __call__(self, path, start_frame, num_frames, preview_path=None):
         with tempfile.TemporaryDirectory(prefix='avhubert_') as temporary:
             video_path, waveform = decode_window(path, start_frame, num_frames, temporary)
             cap = cv2.VideoCapture(str(video_path))
             landmarks, missing, longest, streak = [], 0, 0, 0
+            tracker = FaceTracker()
+            detection_counts, selected_boxes = [], []
             try:
                 while True:
                     ok, frame = cap.read()
@@ -147,15 +211,19 @@ class MediaProcessor:
                         break
                     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     faces = self.detector(gray, 1)
-                    if len(faces) > 1:
-                        raise ValueError('Multiple faces: review/select the speaking person before extraction')
-                    if len(faces) == 0:
+                    detection_counts.append(len(faces))
+                    try:
+                        selected = tracker.select(faces)
+                    except ValueError as exc:
+                        raise ValueError(f'{exc}; window frame {len(landmarks)}') from exc
+                    selected_boxes.append(face_box(selected) if selected is not None else None)
+                    if selected is None:
                         landmarks.append(None)
                         missing += 1
                         streak += 1
                         longest = max(longest, streak)
                     else:
-                        shape = self.predictor(gray, faces[0])
+                        shape = self.predictor(gray, selected)
                         landmarks.append(np.array([(shape.part(i).x, shape.part(i).y)
                                                    for i in range(68)], dtype=np.float32))
                         streak = 0
@@ -171,5 +239,9 @@ class MediaProcessor:
             if crops is None or len(crops) != num_frames:
                 raise ValueError('Mouth cropping changed the timeline')
             audio, visual = make_inputs(waveform, crops, self.config)
-            return audio, visual, dict(interpolated_frames=missing, frames=num_frames,
-                                      audio_samples=len(waveform))
+            quality = dict(interpolated_frames=missing, frames=num_frames,
+                           audio_samples=len(waveform), multiple_face_frames=sum(n > 1 for n in detection_counts),
+                           detected_faces_per_frame=detection_counts, selected_face_boxes=selected_boxes)
+            if preview_path is not None:
+                quality.update(save_mouth_preview(visual, self.config, Path(temporary) / 'audio.wav', preview_path))
+            return audio, visual, quality
