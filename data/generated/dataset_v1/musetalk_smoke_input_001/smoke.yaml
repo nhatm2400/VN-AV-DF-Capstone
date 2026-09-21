@@ -1,4 +1,0 @@
-task_0:
-  video_path: "/kaggle/input/vn-av-musetalk-smoke/source_real.mp4"
-  audio_path: "/kaggle/input/vn-av-musetalk-smoke/driver_audio.wav"
-  result_name: "musetalk_v15_fake.mp4"

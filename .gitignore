@@ -40,11 +40,7 @@ cache/**
 !cache/README.md
 weights/**
 !weights/README.md
-data/real/
-# Share data metadata and review CSVs; media remains on Drive.
-data/**/*.zip
-data/**/*.7z
-data/**/*.rar
+data/
 experiments/**/checkpoints/
 experiments/**/*.log
 

@@ -1,73 +1,0 @@
-Using cuda for inference.
-{"versions": {"torch": "2.12.0+cu126", "numpy": "2.2.6", "librosa": "0.11.0", "opencv-python": "4.13.0.92", "scipy": "1.15.3", "numba": "0.65.1", "tqdm": "4.67.3"}, "device": "cuda"}
-Checking generator checkpoint and forward before face detection...
-{"checkpoint_format": "torchscript", "forward_check": "passed", "batches": [1, 8], "device": "cuda"}
-Reading video frames...
-Number of frames available for inference: 100
-(80, 337)
-Length of mel chunks: 102
-  0%|          | 0/13 [00:00<?, ?it/s]
-  0%|          | 0/100 [00:00<?, ?it/s][A
-  1%|          | 1/100 [00:13<21:41, 13.15s/it][A
-  2%|▏         | 2/100 [00:13<09:20,  5.72s/it][A
-  3%|▎         | 3/100 [00:13<05:14,  3.25s/it][A
-  4%|▍         | 4/100 [00:14<03:20,  2.09s/it][A
-  5%|▌         | 5/100 [00:14<02:16,  1.43s/it][A
-  6%|▌         | 6/100 [00:14<01:37,  1.04s/it][A
-  7%|▋         | 7/100 [00:15<01:13,  1.27it/s][A
-  8%|▊         | 8/100 [00:15<00:58,  1.58it/s][A
-  9%|▉         | 9/100 [00:15<00:48,  1.88it/s][A
- 10%|█         | 10/100 [00:16<00:41,  2.18it/s][A
- 11%|█         | 11/100 [00:16<00:36,  2.43it/s][A
- 12%|█▏        | 12/100 [00:16<00:33,  2.64it/s][A
- 13%|█▎        | 13/100 [00:16<00:30,  2.84it/s][A
- 14%|█▍        | 14/100 [00:17<00:28,  3.00it/s][A
- 15%|█▌        | 15/100 [00:17<00:27,  3.14it/s][A
- 16%|█▌        | 16/100 [00:17<00:26,  3.21it/s][A
- 17%|█▋        | 17/100 [00:18<00:25,  3.27it/s][A
- 18%|█▊        | 18/100 [00:18<00:24,  3.30it/s][A
- 19%|█▉        | 19/100 [00:18<00:24,  3.35it/s][A
- 20%|██        | 20/100 [00:18<00:23,  3.37it/s][A
- 21%|██        | 21/100 [00:19<00:23,  3.33it/s][A
- 22%|██▏       | 22/100 [00:19<00:23,  3.38it/s][A
- 23%|██▎       | 23/100 [00:19<00:22,  3.44it/s][A
- 24%|██▍       | 24/100 [00:20<00:22,  3.43it/s][A
- 25%|██▌       | 25/100 [00:20<00:21,  3.42it/s][A
- 26%|██▌       | 26/100 [00:20<00:21,  3.39it/s][A
- 27%|██▋       | 27/100 [00:21<00:21,  3.34it/s][A
- 28%|██▊       | 28/100 [00:21<00:22,  3.27it/s][A
- 29%|██▉       | 29/100 [00:21<00:21,  3.27it/s][A
- 30%|███       | 30/100 [00:21<00:21,  3.31it/s][A
- 31%|███       | 31/100 [00:22<00:20,  3.31it/s][A
- 32%|███▏      | 32/100 [00:22<00:20,  3.32it/s][A
- 33%|███▎      | 33/100 [00:22<00:20,  3.33it/s][A
- 34%|███▍      | 34/100 [00:23<00:19,  3.36it/s][A
- 35%|███▌      | 35/100 [00:23<00:19,  3.34it/s][A
- 36%|███▌      | 36/100 [00:23<00:19,  3.34it/s][A
- 37%|███▋      | 37/100 [00:24<00:19,  3.30it/s][A
- 38%|███▊      | 38/100 [00:24<00:18,  3.29it/s][A
- 39%|███▉      | 39/100 [00:24<00:17,  3.39it/s][A
- 40%|████      | 40/100 [00:24<00:17,  3.49it/s][A 40%|████      | 40/100 [00:25<00:37,  1.59it/s]
-  0%|          | 0/13 [00:25<?, ?it/s]
-Traceback (most recent call last):
-  File "E:\FPTU\PRJ\VN-AV-DF-Capstone\src\generators\preparation\worker.py", line 98, in <module>
-    main()
-  File "E:\FPTU\PRJ\VN-AV-DF-Capstone\src\generators\preparation\worker.py", line 94, in main
-    inference.main()
-  File "E:\FPTU\PRJ\VN-AV-DF-Capstone\external\Wav2Lip\inference.py", line 249, in main
-    for i, (img_batch, mel_batch, frames, coords) in enumerate(tqdm(gen, 
-  File "D:\Anaconda\envs\vn_av_df\lib\site-packages\tqdm\std.py", line 1181, in __iter__
-    for obj in iterable:
-  File "E:\FPTU\PRJ\VN-AV-DF-Capstone\external\Wav2Lip\inference.py", line 113, in datagen
-    face_det_results = face_detect(frames) # BGR2RGB for CNN face detection
-  File "E:\FPTU\PRJ\VN-AV-DF-Capstone\external\Wav2Lip\inference.py", line 78, in face_detect
-    predictions.extend(detector.get_detections_for_batch(np.array(images[i:i + batch_size])))
-  File "E:\FPTU\PRJ\VN-AV-DF-Capstone\external\Wav2Lip\face_detection\api.py", line 66, in get_detections_for_batch
-    detected_faces = self.face_detector.detect_from_batch(images.copy())
-  File "E:\FPTU\PRJ\VN-AV-DF-Capstone\external\Wav2Lip\face_detection\detection\sfd\sfd_detector.py", line 42, in detect_from_batch
-    bboxlists = batch_detect(self.face_detector, images, device=self.device)
-  File "E:\FPTU\PRJ\VN-AV-DF-Capstone\external\Wav2Lip\face_detection\detection\sfd\detect.py", line 73, in batch_detect
-    olist = [oelem.data.cpu() for oelem in olist]
-  File "E:\FPTU\PRJ\VN-AV-DF-Capstone\external\Wav2Lip\face_detection\detection\sfd\detect.py", line 73, in <listcomp>
-    olist = [oelem.data.cpu() for oelem in olist]
-KeyboardInterrupt

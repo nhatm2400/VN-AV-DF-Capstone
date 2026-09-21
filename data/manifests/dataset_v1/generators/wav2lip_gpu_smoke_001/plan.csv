@@ -1,2 +1,0 @@
-clip_id,source_clip,audio_source_clip_id,start_frame,audio_start_frame,num_frames,generator,label,split
-2fqXC4RQyOw_s0000017506_e0000020254__wav2lip_gpu_smoke_001__fake,2fqXC4RQyOw_s0000017506_e0000020254,3lHEAWJhKe8_s0000024162_e0000029162,0,0,50,wav2lip,1,train
