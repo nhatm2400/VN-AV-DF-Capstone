@@ -1,6 +1,6 @@
 # PROJECT.md — trạng thái hiện hành
 
-Cập nhật 19/09/2026. Hướng hiện hành: **lip-sync audio–visual tiếng Việt**, so X/Y trên protocol tách người/nguồn, generator chưa thấy và nén. Giai đoạn sơ bộ chỉ có một người: dùng `source_disjoint_single_speaker` để chia theo nguồn; bổ sung người cho đánh giá speaker-disjoint sau.
+Cập nhật 23/09/2026. Hướng hiện hành: **lip-sync audio–visual tiếng Việt**, so X/Y trên protocol tách người/nguồn, generator chưa thấy và nén. Giai đoạn sơ bộ `dataset_v1` chỉ có một người: dùng `source_disjoint_single_speaker` để chia theo nguồn; bổ sung người cho đánh giá speaker-disjoint sau. Nguồn mở rộng đang được thu thập riêng ở `dataset_v2`.
 
 ## Đã chuyển đổi
 
@@ -26,6 +26,7 @@ Cập nhật 19/09/2026. Hướng hiện hành: **lip-sync audio–visual tiến
 | AV-HuBERT | Có 01_extract: loader Base pre-fusion, xử lý miệng/audio cùng timeline và xuất cache/pairs.csv. Đã cài dlib CPU 20.0.1, nạp checkpoint và chạy một clip thật: cửa sổ 2 giây, 50 frame, không nội suy landmark, hai feature [50,768] hữu hạn. Kết quả ở cache/features/dataset_v1/real_smoke_001. Chưa benchmark toàn bộ dữ liệu; không dùng Transformer hợp nhất. |
 | Detector Y và cải tiến X | Có detector, loader feature pairs, train/validation theo epoch và lưu checkpoint; X thêm consistency. Chỉ kiểm chứng bằng feature giả lập, chưa train nghiên cứu. |
 | Final test và demo detector | Chưa thực hiện. |
+| Nguồn mở rộng `dataset_v2` | Máy kiểm kê đang đặt `src/data/preparation/settings.py` thành `dataset_v2` (thay đổi local chưa commit); `data/sources/dataset_v2/selected_videos.csv` và `data/raw/dataset_v2/download_001/` đã có. Ngày 23/09: 1.954 nguồn đã chọn, 186 downloaded, 475 failed, 1.293 pending theo `download_results.csv`; chưa cắt/review/chia split V2. Đây là ảnh chụp trạng thái khi audit, không phải tổng kết đợt tải. |
 
 ## Quyết định nghiên cứu
 
@@ -38,11 +39,18 @@ Cập nhật 19/09/2026. Hướng hiện hành: **lip-sync audio–visual tiến
 
 ## Pipeline đang chạy được
 
-URL video/playlist đã chọn → 01 thu thập danh sách → 02 tải → 03 cắt clip → 04 gộp manifest → các bước review + xác định người/nguồn → 05 chia split. Các file chạy có số ở src/data và src/tools/review; cấu hình chính ở src/data/preparation/settings.py, mặc định dataset_v1. Kiểm tra giấy phép tách riêng, hiện không chặn download.
+URL video/playlist đã chọn → 01 thu thập danh sách → 02 tải → 03 cắt clip → 04 gộp manifest → các bước review + xác định người/nguồn → 05 chia split. Các file chạy có số ở src/data và src/tools/review; để chạy V2, đặt `DATASET_VERSION = 'dataset_v2'` trong `src/data/preparation/settings.py`. Máy kiểm kê đã đặt như vậy nhưng thay đổi này chưa commit. `dataset_v1` vẫn giữ manifest, clip và các run thử của giai đoạn sơ bộ. Generator Wav2Lip/MuseTalk có cấu hình riêng vẫn trỏ `dataset_v1`; không tự chuyển theo settings của pipeline data. Kiểm tra giấy phép tách riêng, hiện không chặn download.
 
 `src/data/preparation/compress.py` nhận master đã có nhãn/split để tạo bản nén. Chưa có generator nối tự động từ split tới fake. Tất cả lệnh phải nhận dataset/đường dẫn mới, không lấy manifest từ archive làm mặc định.
 
 Hướng dẫn: [src/data/README.md](src/data/README.md), [review](src/tools/README.md), [DATA_PROTOCOL](docs/research/DATA_PROTOCOL.md).
+
+## Sau review 1: dữ liệu và dọn workspace
+
+- Tiếp tục nguồn mới trong `data/sources/dataset_v2/` và `data/raw/dataset_v2/<DOWNLOAD_RUN>/`; các bước sau sẽ sinh `data/real/dataset_v2/`, `data/manifests/dataset_v2/` theo cùng tên phiên bản. Không dùng thư mục `data/dataset/_V2` vì code hiện không đọc đường dẫn đó.
+- `download_001` đang khóa danh sách nguồn bằng `download_sources.csv`. Tiếp tục cùng danh sách thì giữ `DOWNLOAD_RUN`; nếu thêm/bớt nguồn trong `selected_videos.csv`, dùng run tải mới. Chưa chạy bước 03 khi `download_results.csv` còn failed/pending.
+- Không coi bất kỳ output generator V1 nào là dataset fake đã duyệt: các candidates còn `awaiting_visual_review`, và `quality_10x2s_002` mới được kiểm tra kỹ thuật 40 video. Giữ run cần review trước khi dọn.
+- [Kiểm kê dọn dẹp 23/09/2026](docs/reports/2026-09-23_WORKSPACE_CLEANUP_AUDIT.md) phân biệt bản nguồn/nhãn phải giữ, media xuất để review có thể tái tạo, run thử cũ và cache. Chưa xóa dữ liệu trong lần kiểm kê này.
 
 ## Việc kế tiếp
 

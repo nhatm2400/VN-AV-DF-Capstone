@@ -7,8 +7,8 @@
 - [Data protocol](research/DATA_PROTOCOL.md): nguồn/quyền, review, split và biến thể.
 - [Kế hoạch pilot](planning/KE_HOACH_PILOT_LIP_SYNC_VI.md): kế hoạch kiểm chứng trước khi mở rộng.
 - [Phân công](planning/TEAM_PLAN.md): ba đầu mối và kiểm tra chéo.
-- [Báo cáo chuyển đổi 13/09/2026](reports/research/2026-09-13_REPO_RESET.md): bằng chứng kỹ thuật.
-- [Kế hoạch dọn đã dùng](../KE_HOACH_DON_DEP_VA_TAI_CAU_TRUC_REPO.md): đề xuất cấu trúc đầy đủ; không phải mọi module trong đó đã được viết.
+- [Báo cáo chuyển đổi 13/09/2026](reports/2026-09-13_REPO_RESET.md): bằng chứng kỹ thuật.
+- [Kiểm kê dọn workspace 23/09/2026](reports/2026-09-23_WORKSPACE_CLEANUP_AUDIT.md): các vùng có thể dọn sau review 1 và trạng thái nguồn V2.
 
 ## Lịch sử
 

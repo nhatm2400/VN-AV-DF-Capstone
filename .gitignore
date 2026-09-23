@@ -40,7 +40,8 @@ cache/**
 !cache/README.md
 weights/**
 !weights/README.md
-data/
+/data/*
+!/data/README.md
 experiments/**/checkpoints/
 experiments/**/*.log
 

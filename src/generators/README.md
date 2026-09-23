@@ -2,30 +2,31 @@
 
 ## MuseTalk 1.5: 5 video × 2 giây trên máy hiện tại
 
-Trạng thái: đã chuẩn bị 5 đầu vào từ 5 video nguồn khác nhau, cùng một người nói,
-tất cả thuộc train. Mỗi video có 50 frame/25 fps, audio lái 16 kHz/mono dài đúng 2 giây.
-Hình được cắt từ nguồn với H.264 lossless; audio lấy trực tiếp từ đúng donor đã dùng
-cho Wav2Lip GAN. Chưa tải/cài đủ dependencies và weights, **chưa sinh video MuseTalk**.
+Trạng thái ngày 23/09/2026: run này đã sinh 5 video MuseTalk hợp lệ về 50 frame/25 fps
+và audio 2 giây; `summary.json` còn ghi `awaiting_visual_review`. Đây là run V1 để xem
+chất lượng, chưa phải fake được duyệt cho training. Bước 07 đã tạo run so sánh mới hơn
+`quality_10x2s_002` với 10 clip, 40 video real/fake/comparison qua kiểm tra kỹ thuật;
+vẫn chờ review hình/tiếng. Mỗi run giữ riêng, không tự nhập vào manifest nghiên cứu.
 
 Mở file rồi bấm **Run Python File**, chọn interpreter `vn_av_df` (Python 3.10).
 Các file tự gọi venv riêng `external/MuseTalk/.venv`; không cần đổi interpreter giữa các bước.
 
 | Thứ tự | File Run | Thực hiện |
 |---|---|---|
-| 04, khi có mạng mạnh | [04_musetalk_setup.py](04_musetalk_setup.py) | Tiếp tục tải, kiểm tra checksum, cài PyTorch/thư viện và weights vào môi trường riêng. Không tạo video. |
+| 04, khi cài lại môi trường | [04_musetalk_setup.py](04_musetalk_setup.py) | Tải/kiểm tra checksum và cài PyTorch, thư viện, weights vào môi trường riêng. Không tạo video. |
 | 05 | [05_musetalk_check.py](05_musetalk_check.py) | Kiểm tra đủ 5 đầu vào, checksum weights, CUDA/MMCV và nạp model tìm mặt/landmark. Chạy offline; không tự tải. |
-| 06 | [06_musetalk_generate.py](06_musetalk_generate.py) | Chạy MuseTalk 1.5, fp16, batch size 1, đúng 5 video × 2 giây; kiểm tra output rồi tạo bản so sánh. |
+| 06, cho run mới | [06_musetalk_generate.py](06_musetalk_generate.py) | Chạy MuseTalk 1.5, fp16, batch size 1, 5 video × 2 giây; đổi `RUN` trong `preparation/musetalk_smoke.py` và chuẩn bị input mới trước khi chạy lại. Output hiện có sẽ bị từ chối ghi đè. |
 
 Tải/cài lần đầu ước tính 7–8 GB; nên có 15–20 GB trống để giải nén và giữ cache.
 Mã nguồn MuseTalk đã clone ở commit `0a89dec45a0192b824e3cf4daf96c239440c5ed8`.
 Python/CUDA dựa trên hướng dẫn upstream; dùng wheel MMCV 2.0.0 có sẵn cho Windows/Python 3.10/
 PyTorch 2.0/CUDA 11.8. Danh sách dành riêng cho inference nằm trong
 [requirements-musetalk.txt](../../environments/requirements-musetalk.txt).
-Môi trường cài đầy đủ chưa được kiểm chứng trên máy này; bước 05 sẽ xác nhận runtime sau khi tải xong.
+Môi trường hiện tại đã chạy xong smoke, nhưng cần chạy bước 05 nếu cài lại hoặc chuyển máy.
 
-**Mai chỉ cần Run 04 → 05 → 06.** Nếu 04 bị ngắt, chạy lại 04 để tiếp tục. Giữ lại
-`.tmp/wheels/` và `external/MuseTalk/models/`: các phần tải 16 MiB đã hoàn thành sẽ được
-dùng lại, phần thiếu được tải lại, file cuối phải đúng checksum mới được cài/nạp.
+Nếu cần cài lại, chạy 04 → 05 trước khi tạo run mới. Giữ lại
+`.tmp/wheels/` nếu còn cần cài lại và `external/MuseTalk/models/` để chạy inference;
+file cuối phải đúng checksum mới được cài/nạp.
 Không chạy đồng thời hai bản 04. Log cài đặt: `cache/musetalk_setup/setup.log`.
 Bản clone hiện có và S3FD từ Wav2Lip là prerequisites của setup này; đây chưa phải installer cho một máy trắng.
 
@@ -33,7 +34,7 @@ Các file của lần thử nằm trong `data/generated/dataset_v1/musetalk_smok
 
 - `input/`: 5 video nguồn 2 giây và 5 audio lái.
 - `mapping.csv`, `smoke.yaml`: đối chiếu nguồn và cấu hình 5 clip.
-- `output/v15/`: 5 fake xuất lần lượt; có thể mở clip đầu ngay khi terminal báo `Results saved`.
+- `output/v15/`: 5 fake đã xuất; cần xem kỹ trước khi chọn dùng tiếp.
 - `comparison/`: 5 video ba cột, từ trái sang phải **Real → Wav2Lip GAN → MuseTalk**.
   Cả ba cột cùng resize để xem tổng thể; soi chi tiết pixel bằng video gốc ở `input/`,
   video Wav2Lip trong `mapping.csv`, và MuseTalk ở `output/v15/`.

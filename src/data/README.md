@@ -2,17 +2,17 @@
 
 Chọn interpreter `vn_av_df` trong IDE một lần (máy hiện tại: `D:\Anaconda\envs\vn_av_df\python.exe`). Dùng **Run Python File**, chạy cả file. Các bước tự xác định root repo nên không cần paste lệnh/chuyển thư mục. Không dùng Run Selection cho các file này.
 
-Sửa [preparation/settings.py](preparation/settings.py) khi đổi phiên bản, đợt tải/cắt hoặc tên reviewer. Mặc định `dataset_v1` là bộ dữ liệu chính thức đang xây dựng, chưa có nghĩa đã khóa chất lượng/split.
+Sửa [preparation/settings.py](preparation/settings.py) khi đổi phiên bản, đợt tải/cắt hoặc tên reviewer. Để chạy nguồn mở rộng V2, đặt `DATASET_VERSION = 'dataset_v2'`; máy kiểm kê đã đặt local nhưng chưa commit. `dataset_v1` là bộ sơ bộ đã review và chia split. Tên phiên bản chưa có nghĩa đã khóa chất lượng/split. `download_001` của V2 đang có nguồn và file tải dở; xem [data/README.md](../../data/README.md) trước khi đổi danh sách nguồn.
 
 | Thứ tự | File mở để Run | Đầu vào → đầu ra |
 |---|---|---|
-| 01 | [01_collect.py](01_collect.py) | `data/sources/dataset_v1/videos.csv` → `selected_videos.csv`; chuẩn hóa URL/ID, lấy danh sách trong playlist đã chọn, bỏ video trùng. Chưa tải media. |
-| 02 | [02_download.py](02_download.py) | `selected_videos.csv` → `data/raw/dataset_v1/download_001/*.mp4` và `download_results.csv`. Tải hình + tiếng, không yêu cầu API key/rights.csv. |
-| 03 | [03_cut_clips.py](03_cut_clips.py) | Batch tải thành công → `data/real/dataset_v1/` với clip, accepted/rejected CSV và log. Số nguồn được đọc từ kết quả tải. Cần VAD/YOLO/FFmpeg. |
-| 04 | [04_build_manifest.py](04_build_manifest.py) | Accepted CSV/media + nguồn đã chọn → `data/manifests/dataset_v1/clips.csv`, giữ nhóm nguồn/kênh/tập/bản gốc. |
+| 01 | [01_collect.py](01_collect.py) | `data/sources/<dataset_version>/videos.csv` → `selected_videos.csv`; chuẩn hóa URL/ID, lấy danh sách trong playlist đã chọn, bỏ video trùng. Chưa tải media. |
+| 02 | [02_download.py](02_download.py) | `selected_videos.csv` → `data/raw/<dataset_version>/<download_run>/*.mp4` và `download_results.csv`. Tải hình + tiếng, không yêu cầu API key/rights.csv. |
+| 03 | [03_cut_clips.py](03_cut_clips.py) | Batch tải thành công → `data/real/<dataset_version>/` với clip, accepted/rejected CSV và log. Số nguồn được đọc từ kết quả tải. Cần VAD/YOLO/FFmpeg. |
+| 04 | [04_build_manifest.py](04_build_manifest.py) | Accepted CSV/media + nguồn đã chọn → `data/manifests/<dataset_version>/clips.csv`, giữ nhóm nguồn/kênh/tập/bản gốc. |
 | Review | [Các bước review](../tools/review/README.md) | Xem/nghe, phân công, gộp quyết định → `reviewed_clips.csv`. **Bổ sung speaker_id nhất quán xuyên tập trước bước 05.** |
 | 05 | [05_build_splits.py](05_build_splits.py) | Clip đã review + người/nguồn → `real_splits.csv`, kiểm tra leakage. |
-| Generator | [Wav2Lip 00/01/02](../generators/README.md) | Kiểm tra setup → chọn batch train → tạo real/fake candidates. Cần weights và review output; chưa tự nối sang bước 06. |
+| Generator | [Wav2Lip 00/01/02](../generators/README.md) | Có settings riêng vẫn chọn `dataset_v1`. Kiểm tra setup → chọn batch train → tạo real/fake candidates. Cần weights và review output; chưa tự nối sang bước 06. |
 | 06 | [06_compress.py](06_compress.py) | Chỉ chạy khi có `masters.csv` real/fake đầy đủ nguồn/nhãn/split và đã điền CRFS trong file. Không tự nối từ bước 05. |
 
 ## Điền videos.csv
@@ -34,7 +34,7 @@ Bước 01 chỉ gọi mạng khi mở rộng playlist. Video riêng được ch
 
 Chạy lại 02 sẽ tiếp tục trong cùng DOWNLOAD_RUN: bỏ qua MP4 đã có cả hình và tiếng, tiếp tục file .part, thử lại video lỗi và cập nhật download_results.csv sau từng video. download_sources.csv khóa danh sách nguồn của đợt tải; khi đổi danh sách, dùng DOWNLOAD_RUN mới. Không chạy đồng thời hai bước 02 vào cùng một thư mục.
 
-Khi chỉ sửa danh sách đầu vào và chưa tải, có thể tự bỏ selected_videos.csv cũ rồi chạy lại 01. Với đợt cắt mới, đổi CUT_RUN; không đổi tên dataset chỉ vì thêm một đợt tải. Manifest clip/split đã tạo vẫn được bảo vệ, không tự ghi đè.
+Khi chỉ sửa danh sách đầu vào và chưa tải, có thể tạo lại selected_videos.csv bằng bước 01. Riêng V2 hiện đã có `download_001/download_sources.csv`; nếu danh sách selected thay đổi thì phải dùng DOWNLOAD_RUN mới. Với đợt cắt mới, đổi CUT_RUN; không đổi tên dataset chỉ vì thêm một đợt tải. Manifest clip/split đã tạo vẫn được bảo vệ, không tự ghi đè.
 
 Bước 03 dừng nếu batch còn video failed/pending. Bước 02 có --limit 1 để thử một video chưa hoàn tất; chạy bình thường sẽ xử lý phần còn lại. Mỗi bước do bạn chủ động chạy, không tự mở job tiếp theo. Kiểm tra giấy phép vẫn có ở `src/data/preparation/check_licenses.py`, nhưng không nằm trong chuỗi bắt buộc.
 
